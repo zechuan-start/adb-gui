@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ClipboardList, LayoutList, RefreshCw, TabletSmartphone } from "lucide-react";
+import { ClipboardList, LayoutList, Moon, RefreshCw, Sun, TabletSmartphone } from "lucide-react";
 import { useDeviceStore } from "@/store/device";
+import { useThemeStore } from "@/store/theme";
 import {
   getAdbInfo,
   getCurrentActivity,
@@ -34,6 +35,7 @@ function App() {
     setCurrentActivity,
     currentActivity,
   } = useDeviceStore();
+  const { theme, setTheme } = useThemeStore();
 
   useEffect(() => {
     getAdbInfo().then(setAdbInfo).catch(console.error);
@@ -98,6 +100,17 @@ function App() {
           <DeviceSelector />
           <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
             <span className="font-mono">{adbLabel}</span>
+            <button
+              type="button"
+              onClick={() => {
+                const next = theme === "dark" ? "light" : "dark";
+                setTheme(next);
+              }}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-secondary text-muted-foreground transition-colors hover:text-foreground"
+              title={theme === "dark" ? "切换到亮色模式" : "切换到暗色模式"}
+            >
+              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
             <button
               type="button"
               onClick={() => {
