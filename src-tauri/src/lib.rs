@@ -45,6 +45,7 @@ pub fn run() {
             commands::logcat::stop_logcat,
             commands::device_info::get_device_info,
             commands::packages::list_packages,
+            commands::app_icon::get_app_icon,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

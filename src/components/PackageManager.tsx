@@ -1,18 +1,34 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Play, RefreshCw, Search, Square, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Box, Play, RefreshCw, Search, Square, Trash2 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useRef } from "react";
 import { useDeviceStore } from "@/store/device";
 import { useFeedbackStore } from "@/store/feedback";
 import { getDeviceBySerial, isOnlineDevice } from "@/lib/device";
 import {
   clearAppData,
   forceStopApp,
+  getAppIcon,
   launchApp,
   listPackages,
   uninstallApp,
 } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
+
+const iconCache = new Map<string, string>();
+
+function AppIcon({ src, size = 20 }: { src?: string; size?: number }) {
+  if (src) {
+    return <img src={src} alt="" className="shrink-0 rounded" style={{ width: size, height: size }} />;
+  }
+  return (
+    <div
+      className="shrink-0 flex items-center justify-center rounded bg-secondary text-muted-foreground"
+      style={{ width: size, height: size }}
+    >
+      <Box style={{ width: size * 0.6, height: size * 0.6 }} />
+    </div>
+  );
+}
 
 export function PackageManagerPanel() {
   const devices = useDeviceStore((s) => s.devices);
@@ -50,12 +66,49 @@ export function PackageManagerPanel() {
     return packages.filter((p) => p.toLowerCase().includes(lower));
   }, [packages, search]);
 
+  const [icons, setIcons] = useState<Map<string, string>>(new Map());
+
   const virtualizer = useVirtualizer({
     count: filtered.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 32,
+    estimateSize: () => 36,
     overscan: 20,
   });
+
+  // Lazy load icons for visible items
+  useEffect(() => {
+    if (!device || !isOnlineDevice(device)) return;
+    const visibleItems = virtualizer.getVirtualItems();
+    const toLoad: string[] = [];
+    for (const vItem of visibleItems) {
+      const pkg = filtered[vItem.index];
+      if (pkg && !iconCache.has(pkg)) {
+        toLoad.push(pkg);
+      }
+    }
+    if (toLoad.length === 0) return;
+
+    // Mark as loading to avoid duplicate requests
+    for (const pkg of toLoad) {
+      iconCache.set(pkg, "");
+    }
+
+    const serial = device.serial;
+    // Load icons in batches of 5 concurrently
+    const batch = toLoad.slice(0, 5);
+    Promise.all(
+      batch.map(async (pkg) => {
+        try {
+          const dataUrl = await getAppIcon(serial, pkg);
+          iconCache.set(pkg, dataUrl);
+        } catch {
+          iconCache.set(pkg, "");
+        }
+      })
+    ).then(() => {
+      setIcons(new Map(iconCache));
+    });
+  }, [virtualizer.getVirtualItems(), device?.serial, filtered]);
 
   const canAct = !!device && isOnlineDevice(device) && !!selectedPkg;
 
@@ -133,13 +186,14 @@ export function PackageManagerPanel() {
                     transform: `translateY(${vItem.start}px)`,
                   }}
                   className={cn(
-                    "flex items-center px-3 text-left text-xs font-mono truncate transition-colors",
+                    "flex items-center gap-2 px-3 text-left text-xs font-mono truncate transition-colors",
                     selectedPkg === pkg
                       ? "bg-primary/10 text-foreground"
                       : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
                   )}
                 >
-                  {pkg}
+                  <AppIcon src={icons.get(pkg)} />
+                  <span className="min-w-0 truncate">{pkg}</span>
                 </button>
               );
             })}
@@ -149,9 +203,12 @@ export function PackageManagerPanel() {
         <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6">
           {selectedPkg ? (
             <>
-              <div className="text-center">
-                <div className="text-xs text-muted-foreground">选中包名</div>
-                <div className="mt-1 font-mono text-sm">{selectedPkg}</div>
+              <div className="flex flex-col items-center gap-2">
+                <AppIcon src={icons.get(selectedPkg)} size={48} />
+                <div className="text-center">
+                  <div className="text-xs text-muted-foreground">选中包名</div>
+                  <div className="mt-1 font-mono text-sm">{selectedPkg}</div>
+                </div>
               </div>
 
               <div className="flex flex-wrap justify-center gap-2">

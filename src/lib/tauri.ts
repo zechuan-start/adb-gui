@@ -128,6 +128,10 @@ export async function listPackages(serial: string): Promise<string[]> {
   return invoke<string[]>("list_packages", { serial });
 }
 
+export async function getAppIcon(serial: string, pkg: string): Promise<string> {
+  return invoke<string>("get_app_icon", { serial, pkg });
+}
+
 export async function startLogcat(serial: string): Promise<void> {
   return invoke<void>("start_logcat", { serial });
 }
