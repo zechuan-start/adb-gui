@@ -1,51 +1,13 @@
 # Database Guidelines
 
-> Database patterns and conventions for this project.
+> Not applicable.
 
 ---
 
 ## Overview
 
-<!--
-Document your project's database conventions here.
+本项目是纯工具型桌面应用, 不使用数据库. 所有状态保持在内存中 (Zustand store + Rust AppState).
 
-Questions to answer:
-- What ORM/query library do you use?
-- How are migrations managed?
-- What are the naming conventions for tables/columns?
-- How do you handle transactions?
--->
-
-(To be filled by the team)
-
----
-
-## Query Patterns
-
-<!-- How should queries be written? Batch operations? -->
-
-(To be filled by the team)
-
----
-
-## Migrations
-
-<!-- How to create and run migrations -->
-
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- Table names, column names, index names -->
-
-(To be filled by the team)
-
----
-
-## Common Mistakes
-
-<!-- Database-related mistakes your team has made -->
-
-(To be filled by the team)
+如果未来需要持久化配置, 优先考虑:
+1. Tauri 的 `app.path().app_config_dir()` + JSON 文件
+2. 如需结构化存储, 使用 SQLite via `tauri-plugin-sql`

@@ -1,51 +1,25 @@
 # Logging Guidelines
 
-> How logging is done in this project.
+> Minimal logging for desktop app.
 
 ---
 
 ## Overview
 
-<!--
-Document your project's logging conventions here.
-
-Questions to answer:
-- What logging library do you use?
-- What are the log levels and when to use each?
-- What should be logged?
-- What should NOT be logged (PII, secrets)?
--->
-
-(To be filled by the team)
+依赖 `log` crate, 但当前未配置 subscriber (Tauri 默认输出到 stderr). 桌面应用日志需求很低, 主要用 `eprintln!` 记录非关键错误.
 
 ---
 
-## Log Levels
+## 当前模式
 
-<!-- When to use each level: debug, info, warn, error -->
-
-(To be filled by the team)
-
----
-
-## Structured Logging
-
-<!-- Log format, required fields -->
-
-(To be filled by the team)
+- **错误但不致命**: `eprintln!("failed to ...: {err}")` — 如截图后打开文件失败.
+- **致命错误**: 通过 `Result<T, String>` 向上层传播, 最终由前端 toast 展示.
+- **调试**: 开发时直接 `println!` 或 `dbg!`, 提交前移除.
 
 ---
 
-## What to Log
+## 规则
 
-<!-- Important events to log -->
-
-(To be filled by the team)
-
----
-
-## What NOT to Log
-
-<!-- Sensitive data, PII, secrets -->
-
-(To be filled by the team)
+- 不引入额外的日志框架 (如 env_logger, tracing) 除非有明确需求.
+- 不记录用户路径、设备序列号等到持久化日志文件中.
+- 前端: 使用 `console.error` 记录异常, `console.log` 仅用于开发调试.

@@ -6,7 +6,7 @@
 
 ## Overview
 
-This directory contains guidelines for frontend development. Fill in each file with your project's specific conventions.
+React 19 + TypeScript + TailwindCSS v4 + Zustand v5. Tauri 桥接层封装在 lib/tauri.ts.
 
 ---
 
@@ -14,12 +14,12 @@ This directory contains guidelines for frontend development. Fill in each file w
 
 | Guide | Description | Status |
 |-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Component Guidelines](./component-guidelines.md) | Component patterns, props, composition | To fill |
-| [Hook Guidelines](./hook-guidelines.md) | Custom hooks, data fetching patterns | To fill |
-| [State Management](./state-management.md) | Local state, global state, server state | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Type Safety](./type-safety.md) | Type patterns, validation | To fill |
+| [Directory Structure](./directory-structure.md) | React/TS/Vite layout | ✅ Done |
+| [Component Guidelines](./component-guidelines.md) | Functional components, Tailwind, lucide | ✅ Done |
+| [Hook Guidelines](./hook-guidelines.md) | Zustand + React built-in hooks | ✅ Done |
+| [State Management](./state-management.md) | Zustand v5 stores | ✅ Done |
+| [Quality Guidelines](./quality-guidelines.md) | TypeScript strict, forbidden patterns | ✅ Done |
+| [Type Safety](./type-safety.md) | Strict TS, interface/type conventions | ✅ Done |
 
 ---
 

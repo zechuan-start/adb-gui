@@ -1,51 +1,55 @@
 # Hook Guidelines
 
-> How hooks are used in this project.
+> Hook usage patterns.
 
 ---
 
 ## Overview
 
-<!--
-Document your project's hook conventions here.
-
-Questions to answer:
-- What custom hooks do you have?
-- How do you handle data fetching?
-- What are the naming conventions?
-- How do you share stateful logic?
--->
-
-(To be filled by the team)
+当前项目无自定义 hooks 文件. 共享状态通过 Zustand store hooks (`useDeviceStore`, `useFeedbackStore`) 实现. 组件内逻辑直接用 React 内置 hooks.
 
 ---
 
-## Custom Hook Patterns
+## 常用 Hooks
 
-<!-- How to create and structure custom hooks -->
-
-(To be filled by the team)
+- `useState` — 组件局部 UI 状态 (busy, lastPath 等)
+- `useEffect` — 初始化数据获取, 事件监听, 定时器
+- `useCallback` — 稳定引用 (配合 useEffect 依赖)
+- `useMemo` — 派生计算 (如 adbLabel, selected device)
 
 ---
 
 ## Data Fetching
 
-<!-- How data fetching is handled (React Query, SWR, etc.) -->
+不使用 React Query / SWR. 数据获取模式:
 
-(To be filled by the team)
+```tsx
+useEffect(() => {
+  someCommand().then(setSomeState).catch(console.error);
+}, []);
+```
+
+事件监听 (Tauri events):
+
+```tsx
+useEffect(() => {
+  let unlisten: (() => void) | null = null;
+  onSomeEvent((data) => setState(data)).then((fn) => { unlisten = fn; });
+  return () => { unlisten?.(); };
+}, []);
+```
 
 ---
 
 ## Naming Conventions
 
-<!-- Hook naming rules (use*, etc.) -->
-
-(To be filled by the team)
+- Zustand store hooks: `use<Domain>Store`
+- 如果未来抽取自定义 hook: `use<Feature>` (如 `usePolling`, `useDeviceActivity`)
 
 ---
 
 ## Common Mistakes
 
-<!-- Hook-related mistakes your team has made -->
-
-(To be filled by the team)
+- `useEffect` 中 async 函数需要包装: `void asyncFn()` 或 IIFE.
+- 忘记在 useEffect 中返回 cleanup (尤其是 `listen` 和 `setInterval`).
+- Zustand selector 应使用 `(s) => s.field` 而非 destructure 整个 store (避免不必要 re-render).

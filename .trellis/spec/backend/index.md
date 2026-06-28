@@ -6,7 +6,7 @@
 
 ## Overview
 
-This directory contains guidelines for backend development. Fill in each file with your project's specific conventions.
+Rust (Tauri 2) backend. ADB 调用封装, 命令模块化, Result 错误传播.
 
 ---
 
@@ -14,11 +14,11 @@ This directory contains guidelines for backend development. Fill in each file wi
 
 | Guide | Description | Status |
 |-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
-| [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
+| [Directory Structure](./directory-structure.md) | Tauri/Rust module layout | ✅ Done |
+| [Database Guidelines](./database-guidelines.md) | N/A (no database) | ✅ Done |
+| [Error Handling](./error-handling.md) | Result<T, String> patterns | ✅ Done |
+| [Quality Guidelines](./quality-guidelines.md) | Clippy, forbidden patterns | ✅ Done |
+| [Logging Guidelines](./logging-guidelines.md) | Minimal eprintln approach | ✅ Done |
 
 ---
 
