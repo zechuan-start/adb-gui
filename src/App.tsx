@@ -12,8 +12,11 @@ import { DeviceSelector } from "@/components/DeviceSelector";
 import { ScreenshotTool } from "@/components/Screenshot";
 import { ApkInstallTool } from "@/components/AppManager";
 import { QuickKeysTool } from "@/components/LogcatViewer";
+import { LogcatPanel } from "@/components/Logcat";
 import { CurrentAppActionsTool } from "@/components/ActivityMonitor";
 import { UpdateChecker } from "@/components/UpdateChecker";
+import { DeviceInfoButton } from "@/components/DeviceInfoPanel";
+import { PackageManagerPanel } from "@/components/PackageManager";
 import { ToastBar } from "@/components/ToastBar";
 import { cn } from "@/lib/utils";
 
@@ -21,8 +24,8 @@ type TabId = "tools" | "logcat" | "apps";
 
 const TABS: { id: TabId; label: string; icon: typeof TabletSmartphone; badge?: string }[] = [
   { id: "tools", label: "工具", icon: TabletSmartphone },
-  { id: "logcat", label: "日志", icon: ClipboardList, badge: "P1" },
-  { id: "apps", label: "应用", icon: LayoutList, badge: "P1" },
+  { id: "logcat", label: "日志", icon: ClipboardList },
+  { id: "apps", label: "应用", icon: LayoutList },
 ];
 
 function App() {
@@ -100,6 +103,7 @@ function App() {
           <DeviceSelector />
           <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
             <span className="font-mono">{adbLabel}</span>
+            <DeviceInfoButton />
             <button
               type="button"
               onClick={() => {
@@ -180,16 +184,8 @@ function App() {
               </div>
             </section>
           )}
-          {activeTab === "logcat" && (
-            <section className="h-full overflow-auto p-4 text-sm text-muted-foreground">
-              Logcat 入口保留为后续能力。
-            </section>
-          )}
-          {activeTab === "apps" && (
-            <section className="h-full overflow-auto p-4 text-sm text-muted-foreground">
-              App 辅助管理保留为后续能力。
-            </section>
-          )}
+          {activeTab === "logcat" && <LogcatPanel />}
+          {activeTab === "apps" && <PackageManagerPanel />}
         </div>
       </main>
       <ToastBar />

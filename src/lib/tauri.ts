@@ -37,6 +37,18 @@ export interface ScreenshotResult {
   revealed: boolean;
 }
 
+export interface DeviceDetail {
+  model: string;
+  manufacturer: string;
+  android_version: string;
+  sdk_level: string;
+  abi: string;
+  resolution: string;
+  density: string;
+  battery_level: string;
+  battery_status: string;
+}
+
 export type KeyAction =
   | "back"
   | "home"
@@ -106,6 +118,22 @@ export async function revealFile(path: string): Promise<void> {
 
 export async function onDevicesUpdated(callback: (devices: DeviceInfo[]) => void): Promise<UnlistenFn> {
   return listen<DeviceInfo[]>("devices-updated", (e) => callback(e.payload));
+}
+
+export async function getDeviceInfo(serial: string): Promise<DeviceDetail> {
+  return invoke<DeviceDetail>("get_device_info", { serial });
+}
+
+export async function listPackages(serial: string): Promise<string[]> {
+  return invoke<string[]>("list_packages", { serial });
+}
+
+export async function startLogcat(serial: string): Promise<void> {
+  return invoke<void>("start_logcat", { serial });
+}
+
+export async function stopLogcat(): Promise<void> {
+  return invoke<void>("stop_logcat");
 }
 
 export async function onLogcatLine(callback: (line: LogcatLine) => void): Promise<UnlistenFn> {
