@@ -30,8 +30,8 @@ export function ToastBar() {
         className={cn(
           "mx-auto flex max-w-4xl items-center gap-3 rounded-lg border px-4 py-2 shadow-lg",
           toast.kind === "success"
-            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-100"
-            : "border-red-500/40 bg-red-500/10 text-red-100"
+            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-100"
+            : "border-red-500/40 bg-red-500/10 text-red-800 dark:text-red-100"
         )}
       >
         {toast.kind === "success" ? (
