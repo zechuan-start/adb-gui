@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: "--target aarch64-apple-darwin"
+          - platform: macos-latest
+            args: "--target x86_64-apple-darwin"
+          - platform: windows-latest
+            args: ""
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "ADB GUI ${{ github.ref_name }}"
+          releaseBody: "See the assets below to download this version."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  generate-latest-json:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ github.ref_name }}" --dir ./assets --clobber
+          ls -la ./assets
+
+      - name: Generate latest.json
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          MACOS_ARM_URL=""
+          MACOS_X86_URL=""
+          WINDOWS_URL=""
+
+          for f in ./assets/*; do
+            filename=$(basename "$f")
+            if echo "$filename" | grep -q "aarch64.*\.dmg"; then
+              MACOS_ARM_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${filename}"
+            elif echo "$filename" | grep -q "x86_64.*\.dmg"; then
+              MACOS_X86_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${filename}"
+            elif echo "$filename" | grep -q "\.msi$"; then
+              WINDOWS_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${filename}"
+            fi
+          done
+
+          cat > latest.json << EOF
+          {
+            "version": "${VERSION}",
+            "notes": "Release ${VERSION}",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "darwin-aarch64": {
+                "signature": "",
+                "url": "${MACOS_ARM_URL}"
+              },
+              "darwin-x86_64": {
+                "signature": "",
+                "url": "${MACOS_X86_URL}"
+              },
+              "windows-x86_64": {
+                "signature": "",
+                "url": "${WINDOWS_URL}"
+              }
+            }
+          }
+          EOF
+
+          cat latest.json
+
+      - name: Upload latest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" latest.json --clobber
