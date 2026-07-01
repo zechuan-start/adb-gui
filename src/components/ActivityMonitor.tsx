@@ -77,6 +77,10 @@ export function CurrentAppActionsTool() {
             value={manualPkg}
             onChange={(e) => setManualPkg(e.target.value)}
             placeholder="输入包名..."
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
             className="w-full rounded-md border border-border bg-secondary px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
           />
         </div>

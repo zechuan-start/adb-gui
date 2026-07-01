@@ -149,6 +149,10 @@ export function PackageManagerPanel() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="搜索包名..."
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
             className="w-full rounded-md border border-border bg-secondary py-1.5 pl-8 pr-3 text-xs outline-none focus:ring-1 focus:ring-ring"
           />
         </div>

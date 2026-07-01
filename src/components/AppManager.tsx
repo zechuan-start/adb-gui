@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileUp, Upload } from "lucide-react";
 import { useDeviceStore } from "@/store/device";
 import { useFeedbackStore } from "@/store/feedback";
@@ -6,94 +6,146 @@ import { getDeviceBySerial, isOnlineDevice } from "@/lib/device";
 import { installApk, onDragDrop, pickApkFile } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
+type DragState = "idle" | "valid" | "invalid";
+
+function isApkPath(path: string) {
+  return path.toLowerCase().endsWith(".apk");
+}
+
+function installMessage(result: string) {
+  return result.trim() === "Success" ? "APK 安装成功" : result.trim();
+}
+
 export function ApkInstallTool() {
   const devices = useDeviceStore((s) => s.devices);
   const selectedDevice = useDeviceStore((s) => s.selectedDevice);
   const device = getDeviceBySerial(devices, selectedDevice);
   const showToast = useFeedbackStore((s) => s.showToast);
   const [busy, setBusy] = useState(false);
-  const [dragging, setDragging] = useState(false);
+  const busyRef = useRef(false);
+  const [dragState, setDragState] = useState<DragState>("idle");
   const [currentFile, setCurrentFile] = useState("");
   const [status, setStatus] = useState<string>("");
 
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    onDragDrop((event) => {
-      if (event.type === "enter" || event.type === "over") {
-        setDragging(true);
+  const fileName = useMemo(() => currentFile.split(/[\\/]/).pop() ?? "", [currentFile]);
+  const dropHint = useMemo(() => {
+    if (busy) return "正在安装, 请稍候";
+    if (!device || !isOnlineDevice(device)) return "先选择在线设备";
+    if (dragState === "valid") return "释放以安装 APK";
+    if (dragState === "invalid") return "仅支持 APK 文件";
+    return "拖拽 APK 到此窗口";
+  }, [busy, device, dragState]);
+
+  const handleInstall = useCallback(
+    async (path: string) => {
+      if (busyRef.current) {
+        showToast("error", "正在安装 APK, 请稍候");
         return;
       }
 
-      if (event.type === "leave") {
-        setDragging(false);
+      if (!isApkPath(path)) {
+        const message = "仅支持 APK 文件";
+        setStatus(message);
+        showToast("error", message);
+        return;
+      }
+
+      if (!device || !isOnlineDevice(device)) {
+        const message = "请先选择一台在线设备";
+        setStatus(message);
+        showToast("error", message);
+        return;
+      }
+
+      busyRef.current = true;
+      setBusy(true);
+      setCurrentFile(path);
+      setStatus("安装中...");
+      try {
+        const result = installMessage(await installApk(device.serial, path));
+        const message = result || "APK 安装成功";
+        setStatus(message);
+        showToast("success", message);
+      } catch (error) {
+        const message = `安装失败: ${error}`;
+        setStatus(message);
+        showToast("error", message);
+      } finally {
+        busyRef.current = false;
+        setBusy(false);
+      }
+    },
+    [device, showToast]
+  );
+
+  const handleDroppedPaths = useCallback(
+    (paths: string[]) => {
+      const apkPaths = paths.filter(isApkPath);
+
+      if (apkPaths.length === 0) {
+        const message = "仅支持 APK 文件";
+        setStatus(message);
+        showToast("error", message);
+        return;
+      }
+
+      if (apkPaths.length > 1) {
+        const message = "一次只能安装一个 APK";
+        setStatus(message);
+        showToast("error", message);
+        return;
+      }
+
+      void handleInstall(apkPaths[0]);
+    },
+    [handleInstall, showToast]
+  );
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+
+    onDragDrop((event) => {
+      if (event.type === "enter") {
+        setDragState(event.paths.some(isApkPath) ? "valid" : "invalid");
         return;
       }
 
       if (event.type === "drop") {
-        setDragging(false);
-        const selected = event.paths.find((path) => path.toLowerCase().endsWith(".apk"));
-        if (selected) {
-          void handleInstall(selected);
-        } else {
-          showToast("error", "仅支持 APK 文件");
-        }
+        setDragState("idle");
+        handleDroppedPaths(event.paths);
+        return;
       }
-    }).then((fn) => {
-      unlisten = fn;
-    });
+
+      if (event.type === "leave") {
+        setDragState("idle");
+      }
+    })
+      .then((fn) => {
+        if (disposed) {
+          fn();
+          return;
+        }
+        unlisten = fn;
+      })
+      .catch((error) => {
+        showToast("error", `拖拽监听启动失败: ${error}`);
+      });
 
     return () => {
+      disposed = true;
       unlisten?.();
     };
-  }, [showToast]);
-
-  async function handleInstall(path: string) {
-    if (!device || !isOnlineDevice(device) || busy) {
-      return;
-    }
-
-    setBusy(true);
-    setCurrentFile(path);
-    setStatus("安装中...");
-    try {
-      const result = await installApk(device.serial, path);
-      setStatus(result);
-      showToast("success", result || "APK 安装成功");
-    } catch (error) {
-      const message = `安装失败: ${error}`;
-      setStatus(message);
-      showToast("error", message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const fileName = useMemo(() => currentFile.split(/[\\/]/).pop() ?? "", [currentFile]);
-
-  function handleFileDrop(event: globalThis.React.DragEvent<HTMLElement>) {
-    event.preventDefault();
-    setDragging(false);
-
-    const file = event.dataTransfer.files[0];
-    const droppedPath = (file as File & { path?: string }).path;
-    if (droppedPath) {
-      void handleInstall(droppedPath);
-    }
-  }
+  }, [handleDroppedPaths, showToast]);
 
   return (
     <section
       className={cn(
         "rounded-lg border border-dashed bg-card p-4 transition-colors",
-        dragging ? "border-primary bg-primary/5" : "border-border"
+        dragState === "valid" && "border-primary bg-primary/5",
+        dragState === "invalid" && "border-destructive bg-destructive/5",
+        dragState === "idle" && "border-border"
       )}
-      onDragEnter={() => setDragging(true)}
-      onDragLeave={() => setDragging(false)}
-      onDragOver={(event) => {
-        event.preventDefault();
-        setDragging(true);
-      }}
-      onDrop={handleFileDrop}
     >
       <div className="flex items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
@@ -107,7 +159,7 @@ export function ApkInstallTool() {
 
       <div className="mt-4 flex min-h-20 items-center justify-center rounded-md border border-dashed border-border bg-secondary/30 px-4 text-center text-sm text-muted-foreground">
         <div className="space-y-2">
-          <div>{dragging ? "释放以安装" : "拖拽 APK 文件到此处"}</div>
+          <div>{dropHint}</div>
           <button
             type="button"
             onClick={async () => {
