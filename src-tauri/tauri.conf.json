@@ -42,10 +42,10 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://github.com/qi/adb-gui/releases/latest/download/latest.json"
+        "https://github.com/zechuan-start/adb-gui/releases/latest/download/latest.json"
       ],
       "dialog": true,
-      "pubkey": ""
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhDMUJBNkE1MDIwOEI5Q0MKUldUTXVRZ0NwYVlialB4YUFZeTJraG0wU0JIV1ZxZ2k2NU5qemtKQ0t6T3lyNllwcUszemQrL1MK"
     }
   }
 }

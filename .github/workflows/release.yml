@@ -1,6 +1,7 @@
-name: Release
+name: Package
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - "v*"
@@ -10,35 +11,59 @@ permissions:
 
 jobs:
   build:
+    name: Package ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
+          - name: macOS arm64
+            platform: macos-latest
             args: "--target aarch64-apple-darwin"
-          - platform: macos-latest
+          - name: macOS x64
+            platform: macos-latest
             args: "--target x86_64-apple-darwin"
-          - platform: windows-latest
+          - name: Windows x64
+            platform: windows-latest
+            args: ""
+          - name: Linux x64
+            platform: ubuntu-22.04
             args: ""
 
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            wget \
+            xdg-utils
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -46,78 +71,35 @@ jobs:
           workspaces: "src-tauri -> target"
 
       - name: Install frontend dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
-      - name: Build and release
-        uses: tauri-apps/tauri-action@v0
+      - name: Build workflow artifacts
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
+          args: ${{ matrix.args }}
+          uploadWorkflowArtifacts: true
+          workflowArtifactNamePattern: "adb-gui-[platform]-[arch]-[bundle]"
+
+      - name: Build draft release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          args: ${{ matrix.args }}
           tagName: ${{ github.ref_name }}
           releaseName: "ADB GUI ${{ github.ref_name }}"
           releaseBody: "See the assets below to download this version."
           releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
-
-  generate-latest-json:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all release assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release download "${{ github.ref_name }}" --dir ./assets --clobber
-          ls -la ./assets
-
-      - name: Generate latest.json
-        run: |
-          TAG="${{ github.ref_name }}"
-          VERSION="${TAG#v}"
-          MACOS_ARM_URL=""
-          MACOS_X86_URL=""
-          WINDOWS_URL=""
-
-          for f in ./assets/*; do
-            filename=$(basename "$f")
-            if echo "$filename" | grep -q "aarch64.*\.dmg"; then
-              MACOS_ARM_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${filename}"
-            elif echo "$filename" | grep -q "x86_64.*\.dmg"; then
-              MACOS_X86_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${filename}"
-            elif echo "$filename" | grep -q "\.msi$"; then
-              WINDOWS_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${filename}"
-            fi
-          done
-
-          cat > latest.json << EOF
-          {
-            "version": "${VERSION}",
-            "notes": "Release ${VERSION}",
-            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "platforms": {
-              "darwin-aarch64": {
-                "signature": "",
-                "url": "${MACOS_ARM_URL}"
-              },
-              "darwin-x86_64": {
-                "signature": "",
-                "url": "${MACOS_X86_URL}"
-              },
-              "windows-x86_64": {
-                "signature": "",
-                "url": "${WINDOWS_URL}"
-              }
-            }
-          }
-          EOF
-
-          cat latest.json
-
-      - name: Upload latest.json
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload "${{ github.ref_name }}" latest.json --clobber
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          uploadUpdaterJson: true
+          uploadWorkflowArtifacts: true
+          releaseAssetNamePattern: "adb-gui-v[version]-[platform]-[arch][setup][ext]"
+          workflowArtifactNamePattern: "adb-gui-[platform]-[arch]-[bundle]"
