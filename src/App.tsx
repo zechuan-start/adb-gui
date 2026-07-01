@@ -16,8 +16,10 @@ import { LogcatPanel } from "@/components/Logcat";
 import { CurrentAppActionsTool } from "@/components/ActivityMonitor";
 import { UpdateChecker } from "@/components/UpdateChecker";
 import { DeviceInfoButton } from "@/components/DeviceInfoPanel";
+import { DeepLinkTool } from "@/components/DeepLinkTool";
 import { PackageManagerPanel } from "@/components/PackageManager";
 import { ToastBar } from "@/components/ToastBar";
+import { WifiConnectButton } from "@/components/WifiConnect";
 import { cn } from "@/lib/utils";
 
 type TabId = "tools" | "logcat" | "apps";
@@ -101,6 +103,7 @@ function App() {
             <span>ADB GUI</span>
           </div>
           <DeviceSelector />
+          <WifiConnectButton />
           <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
             <span className="font-mono">{adbLabel}</span>
             <DeviceInfoButton />
@@ -174,9 +177,10 @@ function App() {
         <div className="min-h-0 flex-1 overflow-hidden">
           {activeTab === "tools" && (
             <section className="flex min-h-0 h-full flex-col gap-3 overflow-y-auto p-4">
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[55fr_45fr]">
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
                 <ScreenshotTool />
                 <ApkInstallTool />
+                <DeepLinkTool />
               </div>
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-[2fr_3fr]">
                 <QuickKeysTool />

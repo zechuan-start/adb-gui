@@ -1,9 +1,12 @@
+use std::path::PathBuf;
 use std::sync::LazyLock;
-use tokio::sync::Mutex;
 use tauri::{AppHandle, Emitter};
-use tokio::process::Command;
+use tauri_plugin_opener::OpenerExt;
 use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Command;
+use tokio::sync::Mutex;
 
+use super::device::run_adb_with_serial;
 use crate::adb;
 
 static LOGCAT_CHILD: LazyLock<Mutex<Option<tokio::process::Child>>> = LazyLock::new(|| Mutex::new(None));
@@ -15,6 +18,56 @@ pub struct LogcatLine {
     pub pid: String,
     pub message: String,
     pub raw: String,
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct ExportResult {
+    pub path: String,
+    pub revealed: bool,
+}
+
+#[tauri::command]
+pub fn clear_logcat(app: AppHandle, serial: String) -> Result<(), String> {
+    run_adb_with_serial(&app, &serial, &["logcat", "-c"]).map(|_| ())
+}
+
+#[tauri::command]
+pub fn get_package_pids(
+    app: AppHandle,
+    serial: String,
+    pkg: String,
+) -> Result<Vec<String>, String> {
+    let output = run_adb_with_serial(&app, &serial, &["shell", "pidof", &pkg]).unwrap_or_default();
+    Ok(output.split_whitespace().map(ToString::to_string).collect())
+}
+
+#[tauri::command]
+pub fn export_logcat(
+    app: AppHandle,
+    serial: String,
+    content: String,
+) -> Result<ExportResult, String> {
+    let save_dir = logcat_dir();
+    std::fs::create_dir_all(&save_dir).map_err(|e| format!("Failed to create dir: {e}"))?;
+
+    let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let safe_serial = serial.replace(['/', ':', ' '], "_");
+    let file_path = save_dir.join(format!("{}-{}.log", safe_serial, timestamp));
+
+    std::fs::write(&file_path, content).map_err(|e| format!("Failed to write file: {e}"))?;
+
+    let path_str = file_path.to_string_lossy().to_string();
+    let mut revealed = false;
+    if let Err(err) = app.opener().reveal_item_in_dir(&path_str) {
+        eprintln!("failed to reveal logcat export: {err}");
+    } else {
+        revealed = true;
+    }
+
+    Ok(ExportResult {
+        path: path_str,
+        revealed,
+    })
 }
 
 #[tauri::command]
@@ -85,4 +138,12 @@ pub async fn stop_logcat() -> Result<(), String> {
         let _ = child.kill().await;
     }
     Ok(())
+}
+
+fn logcat_dir() -> PathBuf {
+    if let Some(dir) = dirs::document_dir() {
+        dir.join("ADB GUI").join("logs")
+    } else {
+        PathBuf::from("/tmp/ADB GUI/logs")
+    }
 }

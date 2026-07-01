@@ -27,7 +27,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(adb::AppState::new())
         .setup(|app| {
-            start_device_poll(&app.handle());
+            start_device_poll(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -41,11 +41,18 @@ pub fn run() {
             commands::app::clear_app_data,
             commands::keys::send_key_event,
             commands::screenshot::take_screenshot,
+            commands::logcat::clear_logcat,
+            commands::logcat::get_package_pids,
+            commands::logcat::export_logcat,
             commands::logcat::start_logcat,
             commands::logcat::stop_logcat,
             commands::device_info::get_device_info,
             commands::packages::list_packages,
             commands::app_icon::get_app_icon,
+            commands::wifi::adb_connect,
+            commands::wifi::adb_disconnect,
+            commands::wifi::enable_wifi_debugging,
+            commands::deeplink::open_deep_link,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

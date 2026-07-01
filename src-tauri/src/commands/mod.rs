@@ -7,3 +7,5 @@ pub mod logcat;
 pub mod device_info;
 pub mod packages;
 pub mod app_icon;
+pub mod wifi;
+pub mod deeplink;

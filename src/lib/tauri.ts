@@ -37,6 +37,11 @@ export interface ScreenshotResult {
   revealed: boolean;
 }
 
+export interface ExportLogcatResult {
+  path: string;
+  revealed: boolean;
+}
+
 export interface DeviceDetail {
   model: string;
   manufacturer: string;
@@ -138,6 +143,34 @@ export async function startLogcat(serial: string): Promise<void> {
 
 export async function stopLogcat(): Promise<void> {
   return invoke<void>("stop_logcat");
+}
+
+export async function clearLogcat(serial: string): Promise<void> {
+  return invoke<void>("clear_logcat", { serial });
+}
+
+export async function getPackagePids(serial: string, pkg: string): Promise<string[]> {
+  return invoke<string[]>("get_package_pids", { serial, pkg });
+}
+
+export async function exportLogcat(serial: string, content: string): Promise<ExportLogcatResult> {
+  return invoke<ExportLogcatResult>("export_logcat", { serial, content });
+}
+
+export async function adbConnect(address: string): Promise<string> {
+  return invoke<string>("adb_connect", { address });
+}
+
+export async function adbDisconnect(address: string): Promise<string> {
+  return invoke<string>("adb_disconnect", { address });
+}
+
+export async function enableWifiDebugging(serial: string): Promise<string> {
+  return invoke<string>("enable_wifi_debugging", { serial });
+}
+
+export async function openDeepLink(serial: string, url: string): Promise<string> {
+  return invoke<string>("open_deep_link", { serial, url });
 }
 
 export async function onLogcatLine(callback: (line: LogcatLine) => void): Promise<UnlistenFn> {
