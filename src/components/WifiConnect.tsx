@@ -3,7 +3,7 @@ import { Link2, RefreshCw, Unplug, Wifi, X } from "lucide-react";
 import { useDeviceStore } from "@/store/device";
 import { useFeedbackStore } from "@/store/feedback";
 import { adbConnect, adbDisconnect, enableWifiDebugging, listDevices } from "@/lib/tauri";
-import { getDeviceBySerial, isOnlineDevice } from "@/lib/device";
+import { getDeviceBySerial, getDeviceStateLabel, isConnectedNetworkDevice, isOnlineDevice } from "@/lib/device";
 import { cn } from "@/lib/utils";
 
 type BusyState = "connect" | "wifi" | `disconnect:${string}` | null;
@@ -15,7 +15,7 @@ export function WifiConnectButton() {
   const showToast = useFeedbackStore((s) => s.showToast);
   const device = getDeviceBySerial(devices, selectedDevice);
   const networkDevices = useMemo(
-    () => devices.filter((item) => item.serial.includes(":")),
+    () => devices.filter(isConnectedNetworkDevice),
     [devices],
   );
   const [open, setOpen] = useState(false);
@@ -144,7 +144,7 @@ export function WifiConnectButton() {
             </div>
 
             <div>
-              <div className="mb-1 text-xs text-muted-foreground">已连接网络设备</div>
+              <div className="mb-1 text-xs text-muted-foreground">网络设备</div>
               <div className="space-y-1">
                 {networkDevices.length === 0 && (
                   <div className="rounded-md border border-border bg-secondary/40 px-2 py-2 text-xs text-muted-foreground">
@@ -159,6 +159,14 @@ export function WifiConnectButton() {
                       className="flex items-center justify-between gap-2 rounded-md border border-border bg-secondary/40 px-2 py-1.5 text-xs"
                     >
                       <span className="min-w-0 flex-1 truncate font-mono">{item.serial}</span>
+                      <span
+                        className={cn(
+                          "shrink-0 rounded px-1.5 py-0.5 text-[10px]",
+                          isOnlineDevice(item) ? "bg-emerald-500/10 text-emerald-600" : "bg-secondary text-muted-foreground",
+                        )}
+                      >
+                        {getDeviceStateLabel(item.state)}
+                      </span>
                       <button
                         type="button"
                         onClick={() => void handleDisconnect(item.serial)}

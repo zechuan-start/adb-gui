@@ -2,20 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, RefreshCw, Smartphone } from "lucide-react";
 import { useDeviceStore } from "@/store/device";
 import { listDevices } from "@/lib/tauri";
+import { getDeviceBySerial, getDeviceDisplayLabel, getDeviceStateLabel, getSelectableDevices } from "@/lib/device";
 import { cn } from "@/lib/utils";
-
-function deviceLabel(state: string) {
-  switch (state) {
-    case "device":
-      return "在线";
-    case "unauthorized":
-      return "未授权";
-    case "offline":
-      return "离线";
-    default:
-      return state || "未知";
-  }
-}
 
 function deviceColor(state: string) {
   switch (state) {
@@ -51,9 +39,10 @@ export function DeviceSelector() {
   }, []);
 
   const selected = useMemo(
-    () => devices.find((device) => device.serial === selectedDevice) ?? null,
+    () => getDeviceBySerial(devices, selectedDevice),
     [devices, selectedDevice],
   );
+  const selectableDevices = useMemo(() => getSelectableDevices(devices), [devices]);
 
   return (
     <div className="flex min-w-0 items-center gap-2 text-sm">
@@ -64,10 +53,10 @@ export function DeviceSelector() {
           onChange={(e) => setSelectedDevice(e.target.value || null)}
           className="peer w-full appearance-none rounded-md border border-border bg-secondary px-3 py-1.5 pr-8 text-left text-sm text-foreground outline-none transition-colors focus:ring-1 focus:ring-ring"
         >
-          {devices.length === 0 && <option value="">未连接设备</option>}
-          {devices.map((device) => (
+          {selectableDevices.length === 0 && <option value="">未连接设备</option>}
+          {selectableDevices.map((device) => (
             <option key={device.serial} value={device.serial}>
-              {device.model || device.serial} ({deviceLabel(device.state)})
+              {getDeviceDisplayLabel(device)} ({getDeviceStateLabel(device.state)})
             </option>
           ))}
         </select>
@@ -84,7 +73,7 @@ export function DeviceSelector() {
       {selected && (
         <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs", "bg-secondary text-muted-foreground")}>
           <span className={cn("h-2 w-2 rounded-full", deviceColor(selected.state))} />
-          {deviceLabel(selected.state)}
+          {getDeviceStateLabel(selected.state)}
         </span>
       )}
     </div>

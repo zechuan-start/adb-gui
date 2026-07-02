@@ -1,6 +1,6 @@
-
 import { create } from "zustand";
 import type { DeviceInfo, AdbInfo } from "@/lib/tauri";
+import { getPreferredSelectedDeviceSerial } from "@/lib/device";
 
 interface DeviceStore {
   adbInfo: AdbInfo | null;
@@ -23,14 +23,16 @@ export const useDeviceStore = create<DeviceStore>((set) => ({
   setAdbInfo: (info) => set({ adbInfo: info }),
   setDevices: (devices) => {
     set((state) => {
-      const stillExists = devices.some((d) => d.serial === state.selectedDevice);
       return {
         devices,
-        selectedDevice: stillExists ? state.selectedDevice : devices[0]?.serial ?? null,
+        selectedDevice: getPreferredSelectedDeviceSerial(devices, state.selectedDevice),
       };
     });
   },
-  setSelectedDevice: (serial) => set({ selectedDevice: serial }),
+  setSelectedDevice: (serial) =>
+    set((state) => ({
+      selectedDevice: serial ? getPreferredSelectedDeviceSerial(state.devices, serial) : null,
+    })),
   setCurrentActivity: (activity) => {
     const currentPackage = parsePackageFromActivity(activity);
     set({ currentActivity: activity, currentPackage });
