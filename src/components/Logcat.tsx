@@ -36,11 +36,23 @@ type AppFilterValue =
   | typeof APP_FILTER_AUTO
   | `${typeof PACKAGE_FILTER_PREFIX}${string}`;
 
+interface LogcatEntry extends LogcatLine {
+  id: number;
+}
+
+function appendLogEntries(prev: LogcatEntry[], entries: LogcatEntry[]): LogcatEntry[] {
+  if (entries.length === 0) {
+    return prev;
+  }
+  const combined = [...prev, ...entries];
+  return combined.length > MAX_LINES ? combined.slice(-MAX_LINES) : combined;
+}
+
 export function LogcatPanel() {
   const selectedDevice = useDeviceStore((s) => s.selectedDevice);
   const currentPackage = useDeviceStore((s) => s.currentPackage);
   const showToast = useFeedbackStore((s) => s.showToast);
-  const [lines, setLines] = useState<LogcatLine[]>([]);
+  const [lines, setLines] = useState<LogcatEntry[]>([]);
   const [paused, setPaused] = useState(false);
   const [filterLevel, setFilterLevel] = useState<Level | "">("");
   const [searchText, setSearchText] = useState("");
@@ -52,10 +64,14 @@ export function LogcatPanel() {
   const [pidLoading, setPidLoading] = useState(false);
   const [pidStatus, setPidStatus] = useState("");
   const [active, setActive] = useState(false);
+  const [following, setFollowing] = useState(true);
+  const [pendingCount, setPendingCount] = useState(0);
   const pausedRef = useRef(paused);
-  const bufferRef = useRef<LogcatLine[]>([]);
+  const bufferRef = useRef<LogcatEntry[]>([]);
   const parentRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
+  const programmaticScrollRef = useRef(false);
+  const lineIdRef = useRef(0);
 
   pausedRef.current = paused;
 
@@ -92,19 +108,43 @@ export function LogcatPanel() {
     return result;
   }, [appFilterEnabled, appPidSet, filterLevel, lines, searchText]);
 
+  const filterSignature = useMemo(
+    () =>
+      [filterLevel, searchText, appFilter, appPids.join("\u0000")].join("\u0000"),
+    [appFilter, appPids, filterLevel, searchText]
+  );
+
+  const lastFilteredLineId = filtered[filtered.length - 1]?.id ?? 0;
+
   const virtualizer = useVirtualizer({
     count: filtered.length,
     getScrollElement: () => parentRef.current,
+    getItemKey: (index) => filtered[index]?.id ?? index,
     estimateSize: () => 20,
     overscan: 30,
   });
 
   useEffect(() => {
-    if (autoScrollRef.current && !paused && parentRef.current) {
-      const el = parentRef.current;
-      el.scrollTop = el.scrollHeight;
+    const el = parentRef.current;
+    if (!el) {
+      return;
     }
-  }, [filtered.length, paused]);
+
+    const frame = window.requestAnimationFrame(() => {
+      const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+      if (autoScrollRef.current && !paused) {
+        programmaticScrollRef.current = true;
+        el.scrollTop = el.scrollHeight;
+        return;
+      }
+      if (el.scrollTop > maxScrollTop) {
+        programmaticScrollRef.current = true;
+        el.scrollTop = maxScrollTop;
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [filterSignature, filtered.length, lastFilteredLineId, paused]);
 
   useEffect(() => {
     if (!selectedDevice) {
@@ -114,34 +154,57 @@ export function LogcatPanel() {
 
     let unlisten: (() => void) | null = null;
     let mounted = true;
+    let disposed = false;
 
-    startLogcat(selectedDevice)
-      .then(() => {
-        if (mounted) setActive(true);
-      })
-      .catch(console.error);
+    const logcatSerial = selectedDevice;
 
+    // Register the event listener *before* starting logcat: the backend
+    // starts emitting lines immediately (and with -T dumps thousands of
+    // buffered lines within milliseconds), so starting the process first
+    // can lose the entire initial burst if the listener isn't attached yet.
     onLogcatLine((line) => {
+      if (disposed || line.serial !== logcatSerial) {
+        return;
+      }
+
+      const entry = {
+        ...line,
+        id: lineIdRef.current,
+      };
+      lineIdRef.current += 1;
+
+      // Explicit pause (via the pause button) freezes the list entirely so the
+      // user can inspect a snapshot; new lines just queue up in the buffer.
       if (pausedRef.current) {
-        bufferRef.current.push(line);
+        bufferRef.current.push(entry);
         if (bufferRef.current.length > MAX_LINES) {
           bufferRef.current = bufferRef.current.slice(-MAX_LINES);
         }
-      } else {
-        setLines((prev) => {
-          const combined = [...prev, ...bufferRef.current, line];
-          bufferRef.current = [];
-          return combined.length > MAX_LINES
-            ? combined.slice(-MAX_LINES)
-            : combined;
-        });
+        setPendingCount(bufferRef.current.length);
+        return;
+      }
+
+      // Not paused: keep processing/appending lines live regardless of scroll
+      // position. Scrolling away from the bottom should only stop the
+      // viewport from auto-jumping to the newest line, not stop data flow.
+      setLines((prev) => appendLogEntries(prev, [entry]));
+      if (!autoScrollRef.current) {
+        setPendingCount((count) => count + 1);
       }
     }).then((fn) => {
+      if (disposed) {
+        fn();
+        return;
+      }
       unlisten = fn;
-    });
+      return startLogcat(selectedDevice).then(() => {
+        if (mounted) setActive(true);
+      });
+    }).catch(console.error);
 
     return () => {
       mounted = false;
+      disposed = true;
       unlisten?.();
       void stopLogcat();
       setActive(false);
@@ -154,6 +217,11 @@ export function LogcatPanel() {
     setPackagesLoadedFor(null);
     setAppPids([]);
     setPidStatus("");
+    setLines([]);
+    bufferRef.current = [];
+    setPendingCount(0);
+    setAutoFollow(true);
+    lineIdRef.current = 0;
   }, [selectedDevice]);
 
   useEffect(() => {
@@ -185,7 +253,7 @@ export function LogcatPanel() {
           return;
         }
         setAppPids([]);
-        setPidStatus(`未找到运行中的进程`);
+        setPidStatus("未找到运行中的进程");
       } finally {
         if (!cancelled) {
           setPidLoading(false);
@@ -230,20 +298,31 @@ export function LogcatPanel() {
 
   function handlePauseToggle() {
     if (paused) {
-      setLines((prev) => {
-        const combined = [...prev, ...bufferRef.current];
-        bufferRef.current = [];
-        return combined.length > MAX_LINES
-          ? combined.slice(-MAX_LINES)
-          : combined;
-      });
+      setPaused(false);
+      flushBufferedLines();
+      setAutoFollow(true);
+      scrollToBottom();
+      return;
     }
-    setPaused(!paused);
+
+    if (!following) {
+      // Data was never paused, only the viewport wasn't following -
+      // the lines are already live, just resume tracking the bottom.
+      setAutoFollow(true);
+      setPendingCount(0);
+      scrollToBottom();
+      return;
+    }
+
+    setPaused(true);
   }
 
   async function handleClear() {
     setLines([]);
     bufferRef.current = [];
+    setPendingCount(0);
+    setAutoFollow(true);
+    lineIdRef.current = 0;
 
     if (!selectedDevice) {
       return;
@@ -277,9 +356,50 @@ export function LogcatPanel() {
 
   function handleScroll() {
     if (!parentRef.current) return;
+    if (programmaticScrollRef.current) {
+      programmaticScrollRef.current = false;
+      return;
+    }
     const el = parentRef.current;
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    autoScrollRef.current = atBottom;
+    setAutoFollow(atBottom);
+    if (atBottom) {
+      setPendingCount(0);
+    }
+  }
+
+  function handleUserScrollIntent() {
+    setAutoFollow(false);
+  }
+
+  function flushBufferedLines() {
+    if (bufferRef.current.length === 0) {
+      return;
+    }
+
+    setLines((prev) => {
+      const combined = appendLogEntries(prev, bufferRef.current);
+      bufferRef.current = [];
+      setPendingCount(0);
+      return combined;
+    });
+  }
+
+  function scrollToBottom() {
+    const el = parentRef.current;
+    if (!el) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      programmaticScrollRef.current = true;
+      el.scrollTop = el.scrollHeight;
+    });
+  }
+
+  function setAutoFollow(enabled: boolean) {
+    autoScrollRef.current = enabled;
+    setFollowing(enabled);
   }
 
   if (!selectedDevice) {
@@ -351,13 +471,17 @@ export function LogcatPanel() {
           onClick={handlePauseToggle}
           className={cn(
             "inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors",
-            paused
+            paused || !following
               ? "bg-amber-500/20 text-amber-400"
               : "bg-secondary text-muted-foreground hover:text-foreground"
           )}
-          title={paused ? "恢复" : "暂停"}
+          title={paused || !following ? "恢复跟随" : "暂停"}
         >
-          {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+          {paused || !following ? (
+            <Play className="h-3.5 w-3.5" />
+          ) : (
+            <Pause className="h-3.5 w-3.5" />
+          )}
         </button>
 
         <button
@@ -383,6 +507,9 @@ export function LogcatPanel() {
           {filtered.length}/{lines.length}
           {active && <span className="ml-1 text-emerald-400">●</span>}
           {paused && <span className="ml-1 text-amber-400">(暂停)</span>}
+          {!paused && !following && pendingCount > 0 && (
+            <span className="ml-1 text-amber-400">(+{pendingCount})</span>
+          )}
           {appFilterEnabled && (
             <span className="ml-2 text-muted-foreground">
               {pidLoading ? "解析 PID..." : pidStatus}
@@ -395,6 +522,8 @@ export function LogcatPanel() {
         ref={parentRef}
         className="min-h-0 flex-1 overflow-auto font-mono text-xs"
         onScroll={handleScroll}
+        onWheel={handleUserScrollIntent}
+        onTouchMove={handleUserScrollIntent}
       >
         <div
           style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}
@@ -405,7 +534,8 @@ export function LogcatPanel() {
             const levelColor = LEVEL_COLORS[(line.level as Level)] || "text-foreground";
             return (
               <div
-                key={virtualItem.index}
+                key={virtualItem.key}
+                data-index={virtualItem.index}
                 style={{
                   position: "absolute",
                   top: 0,
@@ -416,16 +546,28 @@ export function LogcatPanel() {
                 }}
                 className="flex items-center gap-2 px-4 hover:bg-secondary/40"
               >
-                <span className={cn("w-3 shrink-0 text-center", levelColor)}>
+                <span className={cn("w-3 shrink-0 select-none text-center", levelColor)}>
                   {line.level}
                 </span>
-                <span className="w-14 shrink-0 truncate text-muted-foreground">
+                <span
+                  className="w-14 shrink-0 select-none truncate text-muted-foreground"
+                  title={line.tag}
+                >
                   {line.tag}
                 </span>
-                <span className="w-12 shrink-0 text-muted-foreground">
+                <span
+                  className="w-12 shrink-0 select-none text-muted-foreground"
+                  title={line.pid}
+                >
                   {line.pid}
                 </span>
-                <span className={cn("min-w-0 flex-1 truncate", levelColor)}>
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 select-text overflow-hidden text-ellipsis whitespace-pre",
+                    levelColor
+                  )}
+                  title={line.message}
+                >
                   {line.message}
                 </span>
               </div>

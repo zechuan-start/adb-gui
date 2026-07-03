@@ -1,0 +1,3 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": "src-tauri/src/commands/device_info.rs", "reason": "设备信息字段复用"}
+{"file": "src-tauri/src/commands/screenshot.rs", "reason": "screencap 实现参考"}

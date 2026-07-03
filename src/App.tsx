@@ -10,6 +10,7 @@ import {
 } from "@/lib/tauri";
 import { DeviceSelector } from "@/components/DeviceSelector";
 import { ScreenshotTool } from "@/components/Screenshot";
+import { ScreenRecordTool } from "@/components/ScreenRecordTool";
 import { ApkInstallTool } from "@/components/AppManager";
 import { QuickKeysTool } from "@/components/LogcatViewer";
 import { LogcatPanel } from "@/components/Logcat";
@@ -17,6 +18,8 @@ import { CurrentAppActionsTool } from "@/components/ActivityMonitor";
 import { UpdateChecker } from "@/components/UpdateChecker";
 import { DeviceInfoButton } from "@/components/DeviceInfoPanel";
 import { DeepLinkTool } from "@/components/DeepLinkTool";
+import { PortForwardTool } from "@/components/PortForwardTool";
+import { BugReportTool } from "@/components/BugReportTool";
 import { PackageManagerPanel } from "@/components/PackageManager";
 import { ToastBar } from "@/components/ToastBar";
 import { WifiConnectButton } from "@/components/WifiConnect";
@@ -177,10 +180,15 @@ function App() {
         <div className="min-h-0 flex-1 overflow-hidden">
           {activeTab === "tools" && (
             <section className="flex min-h-0 h-full flex-col gap-3 overflow-y-auto p-4">
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-4">
                 <ScreenshotTool />
+                <ScreenRecordTool />
                 <ApkInstallTool />
                 <DeepLinkTool />
+              </div>
+              <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(280px,1fr)_minmax(0,2fr)]">
+                <BugReportTool />
+                <PortForwardTool />
               </div>
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-[2fr_3fr]">
                 <QuickKeysTool />

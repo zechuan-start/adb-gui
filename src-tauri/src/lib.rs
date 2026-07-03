@@ -53,6 +53,14 @@ pub fn run() {
             commands::wifi::adb_disconnect,
             commands::wifi::enable_wifi_debugging,
             commands::deeplink::open_deep_link,
+            commands::port_forward::list_port_forwards,
+            commands::port_forward::add_port_forward,
+            commands::port_forward::remove_port_forward,
+            commands::screen_record::start_screen_record,
+            commands::screen_record::stop_screen_record,
+            commands::screen_record::get_screen_record_status,
+            commands::bug_report::collect_quick_bug_report,
+            commands::bug_report::collect_full_bugreport,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

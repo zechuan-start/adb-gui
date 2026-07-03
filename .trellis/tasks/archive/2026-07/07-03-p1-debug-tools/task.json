@@ -1,0 +1,30 @@
+{
+  "id": "p1-debug-tools",
+  "name": "p1-debug-tools",
+  "title": "P1 调试工具：Bug收集/录屏/端口转发",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "qi",
+  "assignee": "qi",
+  "createdAt": "2026-07-03",
+  "completedAt": "2026-07-03",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-03-bug-report-collection",
+    "07-03-screen-recording",
+    "07-03-port-forwarding"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

@@ -9,3 +9,6 @@ pub mod packages;
 pub mod app_icon;
 pub mod wifi;
 pub mod deeplink;
+pub mod port_forward;
+pub mod screen_record;
+pub mod bug_report;

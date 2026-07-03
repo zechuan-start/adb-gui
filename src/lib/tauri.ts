@@ -24,6 +24,7 @@ export interface PackageInfo {
 }
 
 export interface LogcatLine {
+  serial: string;
   level: string;
   tag: string;
   pid: string;
@@ -52,6 +53,35 @@ export interface DeviceDetail {
   density: string;
   battery_level: string;
   battery_status: string;
+}
+
+export interface ForwardRule {
+  direction: "forward" | "reverse";
+  local_port: string;
+  remote_port: string;
+  raw: string;
+}
+
+export interface ScreenRecordStatus {
+  active: boolean;
+  serial: string | null;
+  elapsed_secs: number;
+  pending_pull: boolean;
+}
+
+export interface ScreenRecordResult {
+  path: string;
+  opened: boolean;
+}
+
+export interface QuickReportResult {
+  dir: string;
+  revealed: boolean;
+}
+
+export interface BugreportResult {
+  path: string;
+  revealed: boolean;
 }
 
 export type KeyAction =
@@ -171,6 +201,47 @@ export async function enableWifiDebugging(serial: string): Promise<string> {
 
 export async function openDeepLink(serial: string, url: string): Promise<string> {
   return invoke<string>("open_deep_link", { serial, url });
+}
+
+export async function listPortForwards(serial: string): Promise<ForwardRule[]> {
+  return invoke<ForwardRule[]>("list_port_forwards", { serial });
+}
+
+export async function addPortForward(
+  serial: string,
+  direction: ForwardRule["direction"],
+  localPort: string,
+  remotePort: string,
+): Promise<string> {
+  return invoke<string>("add_port_forward", { serial, direction, localPort, remotePort });
+}
+
+export async function removePortForward(
+  serial: string,
+  direction: ForwardRule["direction"],
+  port: string,
+): Promise<string> {
+  return invoke<string>("remove_port_forward", { serial, direction, port });
+}
+
+export async function startScreenRecord(serial: string): Promise<ScreenRecordStatus> {
+  return invoke<ScreenRecordStatus>("start_screen_record", { serial });
+}
+
+export async function stopScreenRecord(): Promise<ScreenRecordResult> {
+  return invoke<ScreenRecordResult>("stop_screen_record");
+}
+
+export async function getScreenRecordStatus(): Promise<ScreenRecordStatus> {
+  return invoke<ScreenRecordStatus>("get_screen_record_status");
+}
+
+export async function collectQuickBugReport(serial: string): Promise<QuickReportResult> {
+  return invoke<QuickReportResult>("collect_quick_bug_report", { serial });
+}
+
+export async function collectFullBugreport(serial: string): Promise<BugreportResult> {
+  return invoke<BugreportResult>("collect_full_bugreport", { serial });
 }
 
 export async function onLogcatLine(callback: (line: LogcatLine) => void): Promise<UnlistenFn> {

@@ -95,3 +95,29 @@ pub fn parse_current_activity(output: &str) -> Option<String> {
     re.captures(output)
         .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::parse_current_activity;
+
+    #[test]
+    fn parse_current_activity_from_resumed_activity_line() {
+        let output =
+            "ResumedActivity: ActivityRecord{ab08a9f u0 com.miui.home/.launcher.Launcher t2}";
+
+        assert_eq!(
+            parse_current_activity(output).as_deref(),
+            Some("com.miui.home/.launcher.Launcher")
+        );
+    }
+
+    #[test]
+    fn parse_current_activity_from_legacy_m_resumed_line() {
+        let output = "mResumedActivity: ActivityRecord{123 u0 cn.example/.MainActivity t42}";
+
+        assert_eq!(
+            parse_current_activity(output).as_deref(),
+            Some("cn.example/.MainActivity")
+        );
+    }
+}

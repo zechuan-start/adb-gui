@@ -23,3 +23,42 @@
 - UpdateChecker 配置真实 updater endpoint.
 - 真机冒烟测试.
 
+
+
+## Session 1: Complete P1 debug tools
+
+**Date**: 2026-07-03
+**Task**: Complete P1 debug tools
+**Branch**: `main`
+
+### Summary
+
+Implemented and verified port forwarding, screen recording, and bug report collection. Archived the P1 debug tools task group without committing.
+
+### Main Changes
+
+- Added port forwarding management for `adb forward` / `adb reverse`.
+- Added device screen recording with start/stop/status, local pull, and remote cleanup.
+- Added bug report collection with quick evidence directories and full bugreport zip generation.
+- Updated backend quality specs and archived the completed P1 debug tools task group.
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] `cargo check --manifest-path src-tauri/Cargo.toml`
+- [OK] `cargo test --manifest-path src-tauri/Cargo.toml`
+- [OK] `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings`
+- [OK] `npm run build`
+- [OK] `git diff --check`
+- [OK] True-device smoke on `z5rc4hobfelv9tvc` for port forwarding, screen recording, quick bug report, and full bugreport zip.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -9,10 +9,14 @@ use tokio::sync::Mutex;
 use super::device::run_adb_with_serial;
 use crate::adb;
 
-static LOGCAT_CHILD: LazyLock<Mutex<Option<tokio::process::Child>>> = LazyLock::new(|| Mutex::new(None));
+const INITIAL_LOGCAT_LINES: &str = "5000";
+
+static LOGCAT_CHILD: LazyLock<Mutex<Option<tokio::process::Child>>> =
+    LazyLock::new(|| Mutex::new(None));
 
 #[derive(serde::Serialize, Clone)]
 pub struct LogcatLine {
+    pub serial: String,
     pub level: String,
     pub tag: String,
     pub pid: String,
@@ -78,6 +82,8 @@ pub async fn start_logcat(app: AppHandle, serial: String) -> Result<(), String> 
         .arg("-s")
         .arg(&serial)
         .arg("logcat")
+        .arg("-T")
+        .arg(INITIAL_LOGCAT_LINES)
         .arg("-v")
         .arg("brief")
         .stdout(std::process::Stdio::piped())
@@ -85,7 +91,10 @@ pub async fn start_logcat(app: AppHandle, serial: String) -> Result<(), String> 
         .spawn()
         .map_err(|e| format!("Failed to start logcat: {e}"))?;
 
-    let stdout = child.stdout.take().ok_or("Failed to capture logcat stdout")?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("Failed to capture logcat stdout")?;
 
     {
         let mut lock = LOGCAT_CHILD.lock().await;
@@ -102,7 +111,7 @@ pub async fn start_logcat(app: AppHandle, serial: String) -> Result<(), String> 
         let mut lines = reader.lines();
 
         while let Ok(Some(line)) = lines.next_line().await {
-            let parsed = parse_logcat_line(&line);
+            let parsed = parse_logcat_line(&serial, &line);
             let _ = app_clone.emit("logcat-line", &parsed);
         }
     });
@@ -110,18 +119,32 @@ pub async fn start_logcat(app: AppHandle, serial: String) -> Result<(), String> 
     Ok(())
 }
 
-fn parse_logcat_line(raw: &str) -> LogcatLine {
+fn parse_logcat_line(serial: &str, raw: &str) -> LogcatLine {
     let re = regex::Regex::new(r"^([VDIWEF])/(.+?)\s*\(\s*(\d+)\): (.*)$").unwrap();
     if let Some(caps) = re.captures(raw) {
         LogcatLine {
-            level: caps.get(1).map(|m| m.as_str().to_string()).unwrap_or_default(),
-            tag: caps.get(2).map(|m| m.as_str().trim().to_string()).unwrap_or_default(),
-            pid: caps.get(3).map(|m| m.as_str().to_string()).unwrap_or_default(),
-            message: caps.get(4).map(|m| m.as_str().to_string()).unwrap_or_default(),
+            serial: serial.to_string(),
+            level: caps
+                .get(1)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default(),
+            tag: caps
+                .get(2)
+                .map(|m| m.as_str().trim().to_string())
+                .unwrap_or_default(),
+            pid: caps
+                .get(3)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default(),
+            message: caps
+                .get(4)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default(),
             raw: raw.to_string(),
         }
     } else {
         LogcatLine {
+            serial: serial.to_string(),
             level: "I".to_string(),
             tag: "".to_string(),
             pid: "".to_string(),
