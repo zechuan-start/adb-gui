@@ -5,6 +5,15 @@ mod commands;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
+#[cfg(target_os = "macos")]
+use tauri::Manager;
+
+#[cfg(target_os = "macos")]
+const HIDE_WINDOW_MENU_ID: &str = "hide-window";
+
+#[cfg(target_os = "macos")]
+const HIDE_WINDOW_FROM_WINDOW_MENU_ID: &str = "hide-window-from-window-menu";
+
 fn start_device_poll(app: &AppHandle) {
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -17,9 +26,139 @@ fn start_device_poll(app: &AppHandle) {
     });
 }
 
+#[cfg(target_os = "macos")]
+fn macos_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{
+        AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID,
+        WINDOW_SUBMENU_ID,
+    };
+
+    let package_info = app.package_info();
+    let config = app.config();
+    let about_metadata = AboutMetadata {
+        name: Some(package_info.name.clone()),
+        version: Some(package_info.version.to_string()),
+        copyright: config.bundle.copyright.clone(),
+        authors: config
+            .bundle
+            .publisher
+            .clone()
+            .map(|publisher| vec![publisher]),
+        ..Default::default()
+    };
+
+    let app_menu = Submenu::with_items(
+        app,
+        package_info.name.clone(),
+        true,
+        &[
+            &PredefinedMenuItem::about(app, None, Some(about_metadata))?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::services(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::hide(app, None)?,
+            &PredefinedMenuItem::hide_others(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::quit(app, None)?,
+        ],
+    )?;
+    let file_menu = Submenu::with_items(
+        app,
+        "File",
+        true,
+        &[&MenuItem::with_id(
+            app,
+            HIDE_WINDOW_MENU_ID,
+            "Close Window",
+            true,
+            Some("CmdOrCtrl+W"),
+        )?],
+    )?;
+    let edit_menu = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+        ],
+    )?;
+    let view_menu = Submenu::with_items(
+        app,
+        "View",
+        true,
+        &[&PredefinedMenuItem::fullscreen(app, None)?],
+    )?;
+    let window_menu = Submenu::with_id_and_items(
+        app,
+        WINDOW_SUBMENU_ID,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::maximize(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &MenuItem::with_id(
+                app,
+                HIDE_WINDOW_FROM_WINDOW_MENU_ID,
+                "Close Window",
+                true,
+                None::<&str>,
+            )?,
+        ],
+    )?;
+    let help_menu = Submenu::with_id_and_items(app, HELP_SUBMENU_ID, "Help", true, &[])?;
+
+    Menu::with_items(
+        app,
+        &[
+            &app_menu,
+            &file_menu,
+            &edit_menu,
+            &view_menu,
+            &window_menu,
+            &help_menu,
+        ],
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn with_primary_window(app: &AppHandle, action: impl FnOnce(tauri::WebviewWindow<tauri::Wry>)) {
+    if let Some(window) = app.webview_windows().into_values().next() {
+        action(window);
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn hide_primary_window(app: &AppHandle) {
+    with_primary_window(app, |window| {
+        if let Err(err) = window.hide() {
+            eprintln!("failed to hide window: {err}");
+        }
+    });
+}
+
+#[cfg(target_os = "macos")]
+fn show_primary_window(app: &AppHandle) {
+    with_primary_window(app, |window| {
+        if let Err(err) = window.show() {
+            eprintln!("failed to show window: {err}");
+            return;
+        }
+        if let Err(err) = window.set_focus() {
+            eprintln!("failed to focus window: {err}");
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -61,7 +200,30 @@ pub fn run() {
             commands::screen_record::get_screen_record_status,
             commands::bug_report::collect_quick_bug_report,
             commands::bug_report::collect_full_bugreport,
-        ])
-        .run(tauri::generate_context!())
+        ]);
+
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(macos_menu).on_menu_event(|app, event| {
+        if event.id() == HIDE_WINDOW_MENU_ID || event.id() == HIDE_WINDOW_FROM_WINDOW_MENU_ID {
+            hide_primary_window(app);
+        }
+    });
+
+    let app = builder
+        .build(tauri::generate_context!())
         .expect("error while running tauri application");
+
+    #[cfg(target_os = "macos")]
+    app.run(|app, event| {
+        if let tauri::RunEvent::Reopen {
+            has_visible_windows: false,
+            ..
+        } = event
+        {
+            show_primary_window(app);
+        }
+    });
+
+    #[cfg(not(target_os = "macos"))]
+    app.run(|_, _| {});
 }
