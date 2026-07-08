@@ -7,7 +7,7 @@ use crate::adb;
 pub fn get_app_icon(app: AppHandle, serial: String, pkg: String) -> Result<String, String> {
     let adb_path = adb::resolve_adb_path(&app)?;
 
-    let output = std::process::Command::new(&adb_path)
+    let output = adb::prepare_command(&app, &adb_path)
         .arg("-s")
         .arg(&serial)
         .arg("exec-out")

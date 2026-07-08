@@ -26,3 +26,6 @@ dist-ssr
 # Rust / Tauri
 src-tauri/target
 src-tauri/gen
+
+# Local secrets (signing keys)
+.local/

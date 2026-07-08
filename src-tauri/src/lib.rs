@@ -166,6 +166,9 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(adb::AppState::new())
         .setup(|app| {
+            #[cfg(desktop)]
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
             start_device_poll(app.handle());
             Ok(())
         })

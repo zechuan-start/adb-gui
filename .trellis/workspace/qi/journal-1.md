@@ -62,3 +62,22 @@ Implemented and verified port forwarding, screen recording, and bug report colle
 ### Next Steps
 
 - None - task complete
+
+## 2026-07-08 Session
+
+### 完成项
+
+1. **Updater 接入** — `lib.rs` 注册 `tauri_plugin_updater`，`capabilities/default.json` 添加 `updater:default`，更新 `tauri.conf.json` 公钥。
+2. **签名密钥** — 生成新 keypair，写入 GitHub Secrets（`zechuan-start/adb-gui`）。本地配置见 `.local/setup.md`（gitignored）。
+3. **内置 adb** — 打包 macOS / Linux / Windows platform-tools 到 `src-tauri/resources/`，新增 `scripts/fetch-platform-tools.sh` 刷新脚本。
+4. **Linux 运行时** — 内置 adb 自动设置 `LD_LIBRARY_PATH`；所有 adb 调用统一走 `prepare_command` / `prepare_async_command`。
+
+### 验证
+
+- [OK] `cargo test` / `cargo clippy -D warnings`
+- [OK] `pnpm tauri build`（带签名密钥，生成 `.tar.gz.sig`）
+
+### 待办
+
+- 发布 GitHub Release（当前 v0.1.0 仍为 Draft）
+

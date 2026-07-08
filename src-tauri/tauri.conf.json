@@ -33,9 +33,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "resources/*"
-    ],
+    "resources": {
+      "resources/": ""
+    },
     "createUpdaterArtifacts": true
   },
   "plugins": {
@@ -45,7 +45,7 @@
         "https://github.com/zechuan-start/adb-gui/releases/latest/download/latest.json"
       ],
       "dialog": true,
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhDMUJBNkE1MDIwOEI5Q0MKUldUTXVRZ0NwYVlialB4YUFZeTJraG0wU0JIV1ZxZ2k2NU5qemtKQ0t6T3lyNllwcUszemQrL1MK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ3QzVBNTEzRkJDOTJBQUMKUldTc0tzbjdFNlhGUnlUMlZIZjMwR2JFMUh5RnNHeVIzUTJ3TnJpaHRWUnZpSXI1QlhxOUZwaEYK"
     }
   }
 }

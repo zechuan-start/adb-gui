@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 
@@ -83,6 +84,43 @@ fn find_adb(app: &AppHandle) -> Result<String, String> {
     Err("adb not found. Install Android Platform Tools or set ANDROID_HOME.".into())
 }
 
+pub fn prepare_command(app: &AppHandle, adb_path: &str) -> Command {
+    let mut command = Command::new(adb_path);
+    if let Some(lib_dir) = embedded_linux_lib_dir(app, adb_path) {
+        command.env("LD_LIBRARY_PATH", lib_dir);
+    }
+    command
+}
+
+pub fn prepare_async_command(app: &AppHandle, adb_path: &str) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new(adb_path);
+    if let Some(lib_dir) = embedded_linux_lib_dir(app, adb_path) {
+        command.env("LD_LIBRARY_PATH", lib_dir);
+    }
+    command
+}
+
+fn embedded_linux_lib_dir(app: &AppHandle, adb_path: &str) -> Option<PathBuf> {
+    #[cfg(target_os = "linux")]
+    {
+        let resource_dir = app.path().resource_dir().ok()?;
+        if is_path_within(adb_path, &resource_dir) {
+            let lib_dir = resource_dir.join("linux").join("lib64");
+            if lib_dir.is_dir() {
+                return Some(lib_dir);
+            }
+        }
+    }
+
+    let _ = (app, adb_path);
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn is_path_within(path: &str, root: &PathBuf) -> bool {
+    PathBuf::from(path).starts_with(root)
+}
+
 #[cfg(unix)]
 fn which_adb() -> Result<String, String> {
     let output = std::process::Command::new("which")
@@ -113,10 +151,8 @@ fn which_adb() -> Result<String, String> {
     Err("adb not in PATH".into())
 }
 
-pub fn get_adb_version(adb_path: &str) -> String {
-    let output = std::process::Command::new(adb_path)
-        .arg("version")
-        .output();
+pub fn get_adb_version(app: &AppHandle, adb_path: &str) -> String {
+    let output = prepare_command(app, adb_path).arg("version").output();
     match output {
         Ok(o) => {
             let text = String::from_utf8_lossy(&o.stdout);

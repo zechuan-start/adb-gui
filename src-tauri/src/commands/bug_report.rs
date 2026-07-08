@@ -1,6 +1,5 @@
 use serde::Serialize;
 use std::path::PathBuf;
-use std::process::Command;
 use std::sync::{LazyLock, Mutex};
 use tauri::AppHandle;
 use tauri_plugin_opener::OpenerExt;
@@ -122,7 +121,7 @@ fn acquire_bugreport_slot() -> Result<BugreportBusyGuard, String> {
 
 fn write_screenshot(app: &AppHandle, serial: &str, path: &PathBuf) -> Result<(), String> {
     let adb_path = adb::resolve_adb_path(app)?;
-    let output = Command::new(&adb_path)
+    let output = adb::prepare_command(app, &adb_path)
         .arg("-s")
         .arg(serial)
         .arg("exec-out")

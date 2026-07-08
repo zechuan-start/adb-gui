@@ -3,7 +3,6 @@ use std::sync::LazyLock;
 use tauri::{AppHandle, Emitter};
 use tauri_plugin_opener::OpenerExt;
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
 use tokio::sync::Mutex;
 
 use super::device::run_adb_with_serial;
@@ -78,7 +77,7 @@ pub fn export_logcat(
 pub async fn start_logcat(app: AppHandle, serial: String) -> Result<(), String> {
     let adb_path = adb::resolve_adb_path(&app)?;
 
-    let mut child = Command::new(&adb_path)
+    let mut child = adb::prepare_async_command(&app, &adb_path)
         .arg("-s")
         .arg(&serial)
         .arg("logcat")

@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
@@ -55,7 +55,7 @@ pub fn start_screen_record(app: AppHandle, serial: String) -> Result<ScreenRecor
         };
     }
 
-    let child = Command::new(&adb_path)
+    let child = adb::prepare_command(&app, &adb_path)
         .arg("-s")
         .arg(&serial)
         .arg("shell")

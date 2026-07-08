@@ -16,7 +16,7 @@ pub struct ScreenshotResult {
 pub fn take_screenshot(app: AppHandle, serial: String) -> Result<ScreenshotResult, String> {
     let adb_path = adb::resolve_adb_path(&app)?;
 
-    let output = std::process::Command::new(&adb_path)
+    let output = adb::prepare_command(&app, &adb_path)
         .arg("-s")
         .arg(&serial)
         .arg("exec-out")

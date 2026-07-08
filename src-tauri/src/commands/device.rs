@@ -1,6 +1,5 @@
 
 use serde::Serialize;
-use std::process::Command;
 use tauri::AppHandle;
 
 use crate::adb;
@@ -15,7 +14,7 @@ pub struct DeviceInfo {
 
 pub fn run_adb(app: &AppHandle, args: &[&str]) -> Result<String, String> {
     let adb_path = adb::resolve_adb_path(app)?;
-    let output = Command::new(&adb_path)
+    let output = adb::prepare_command(app, &adb_path)
         .args(args)
         .output()
         .map_err(|e| format!("Failed to execute adb: {e}"))?;
@@ -36,7 +35,7 @@ pub fn run_adb_with_serial(app: &AppHandle, serial: &str, args: &[&str]) -> Resu
 #[tauri::command]
 pub fn get_adb_info(app: AppHandle) -> Result<serde_json::Value, String> {
     let path = adb::resolve_adb_path(&app)?;
-    let version = adb::get_adb_version(&path);
+    let version = adb::get_adb_version(&app, &path);
     let source = adb::adb_source(&path, &app);
     Ok(serde_json::json!({
         "path": path,
