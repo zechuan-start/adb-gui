@@ -79,5 +79,41 @@ Implemented and verified port forwarding, screen recording, and bug report colle
 
 ### 待办
 
-- 发布 GitHub Release（当前 v0.1.0 仍为 Draft）
+- ~~发布 GitHub Release（当前 v0.1.0 仍为 Draft）~~ → 已于 2026-07-08 发布 v0.1.0 正式版
 
+
+
+## Session 2: 新增 APK 推送到设备功能
+
+**Date**: 2026-07-20
+**Task**: 新增 APK 推送到设备功能
+**Branch**: `main`
+
+### Summary
+
+新增 APK 安装/推送模式, 支持将单个 APK 原样推送到当前设备下载目录且不触发安装.
+
+### Main Changes
+
+- APK 卡片新增安装/推送模式, 默认保持安装模式.
+- 新增设备作用域的 `push_apk` command, 固定推送至 `/sdcard/Download/<原文件名>`.
+- 完成前端构建、Rust 单测、Clippy、浏览器 UI 冒烟和真实设备推送验证.
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e26d32c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
