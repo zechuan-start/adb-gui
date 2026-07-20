@@ -117,3 +117,36 @@ Implemented and verified port forwarding, screen recording, and bug report colle
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: 新增二维码和条形码生成
+
+**Date**: 2026-07-20
+**Task**: 新增二维码和条形码生成
+**Branch**: `main`
+
+### Summary
+
+新增独立生码页签, 支持二维码和 Code 128 批量生成、自定义分隔符、虚拟滚动懒生成及键盘预览; 完成前后端测试、Tauri release 构建和扫码识别验证, 版本提升至 0.1.1.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1b15e60` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
