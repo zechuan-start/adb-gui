@@ -19,6 +19,7 @@
 | `useDeviceStore` | `store/device.ts` | 设备列表, 选中设备, 当前 Activity/Package |
 | `useFeedbackStore` | `store/feedback.ts` | Toast 通知 (kind + message) |
 | `useThemeStore` | `store/theme.ts` | 明/暗主题切换 |
+| `useCodeGeneratorStore` | `store/codeGenerator.ts` | 生码草稿、修订版本和最近一次生成快照 (无持久化) |
 
 ---
 
@@ -43,6 +44,7 @@ export const useSomeStore = create<SomeStore>((set) => ({
 ## 何时用全局 vs 局部
 
 - **全局 (Zustand)**: 多个组件共享的数据 (设备列表, 选中状态, toast).
+- **会话级 (Zustand, no persistence middleware)**: 顶层页签卸载后仍需保留, 但应用重启后应清空的数据.
 - **局部 (useState)**: 单组件 UI 状态 (loading/busy, 表单值, 展开/收起).
 
 ---
@@ -57,3 +59,4 @@ export const useSomeStore = create<SomeStore>((set) => ({
 
 - 不要在 store 中存放可以从其他 store 字段直接派生的数据, 除非有性能原因.
 - 使用 selector 订阅具体字段: `useDeviceStore((s) => s.selectedDevice)` 而非 `useDeviceStore()`.
+- 草稿驱动昂贵批处理时, 将可编辑草稿与已提交结果快照分开. Setter 只更新草稿和 revision, 显式 action 才替换结果快照.

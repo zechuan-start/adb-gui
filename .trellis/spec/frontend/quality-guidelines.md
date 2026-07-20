@@ -6,7 +6,7 @@
 
 ## Overview
 
-工具链: TypeScript strict, Vite (no ESLint configured yet). 验证: `tsc --noEmit`.
+工具链: TypeScript strict, Vitest, Vite (no ESLint configured yet). 类型检查由 `pnpm build` 中的 `tsc` 执行.
 
 ---
 
@@ -34,10 +34,13 @@
 
 ## Testing Requirements
 
-当前无前端测试. 验证方式:
-1. `tsc --noEmit` 类型检查通过
-2. `pnpm build` (Vite build) 成功
-3. `pnpm tauri dev` 手动验证 UI
+前端纯逻辑和 store 行为使用同目录 Vitest 单测. 验证顺序:
+
+1. `corepack pnpm test` — 运行 `src/**/*.test.ts` 单测
+2. `corepack pnpm build` — 执行严格 TypeScript 检查和 Vite production build
+3. UI 行为使用 Browser 工具验证; 桌面集成路径使用 Tauri debug 应用验证
+
+新增或修改解析、校验、状态转换时必须增加回归测试. Canvas、虚拟滚动、dialog 焦点和键盘交互等浏览器行为需要真实 UI 冒烟测试, 不能只以 build 通过替代.
 
 ---
 

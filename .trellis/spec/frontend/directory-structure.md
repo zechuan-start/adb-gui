@@ -25,13 +25,17 @@ src/
 │   ├── AppManager.tsx
 │   ├── LogcatViewer.tsx
 │   ├── ActivityMonitor.tsx
+│   ├── CodeGeneratorPage.tsx # QR / Code 128 batch workspace
+│   ├── GeneratedCodeCanvas.tsx # Local canvas encoder boundary
 │   ├── ToastBar.tsx
 │   └── UpdateChecker.tsx
 ├── lib/                  # 工具函数和 Tauri bridge
 │   ├── tauri.ts          # Tauri invoke/listen 封装 + 类型定义
 │   ├── device.ts         # 设备相关纯函数
+│   ├── codeGenerator.ts  # 生码输入解析契约和共享类型
 │   └── utils.ts          # 通用工具 (cn 等)
 └── store/                # Zustand stores
+    ├── codeGenerator.ts  # 生码草稿和最近一次结果快照 (仅会话内)
     ├── device.ts         # 设备状态 (devices, selectedDevice, activity)
     ├── feedback.ts       # Toast 通知状态
     └── theme.ts          # 主题状态
@@ -45,6 +49,7 @@ src/
 - **Tauri bridge**: 所有 `invoke()` 和 `listen()` 调用集中在 `lib/tauri.ts`, 组件不直接 import `@tauri-apps/api`.
 - **Store**: 按关注点分文件, 每个 store 一个文件.
 - **纯逻辑函数**: 放 `lib/` 下, 按领域命名.
+- **前端单测**: 与被测 `lib/` 或 `store/` 文件同目录, 使用 `*.test.ts` 命名.
 
 ---
 
