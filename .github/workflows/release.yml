@@ -10,8 +10,40 @@ permissions:
   contents: write
 
 jobs:
+  prepare-release:
+    name: Prepare release
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Ensure one draft release exists
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          release_count="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq '[.[] | select(.tag_name == env.GITHUB_REF_NAME)] | length')"
+
+          if [[ "${release_count}" -eq 0 ]]; then
+            gh release create "${GITHUB_REF_NAME}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --draft \
+              --title "ADB GUI ${GITHUB_REF_NAME}" \
+              --notes "See the assets below to download this version."
+          elif [[ "${release_count}" -gt 1 ]]; then
+            echo "Expected one release for ${GITHUB_REF_NAME}, found ${release_count}."
+            exit 1
+          else
+            release_draft="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              --jq '[.[] | select(.tag_name == env.GITHUB_REF_NAME)] | .[0].draft')"
+            if [[ "${release_draft}" != "true" ]]; then
+              echo "Release ${GITHUB_REF_NAME} is already published."
+              exit 1
+            fi
+          fi
+
   build:
     name: Package ${{ matrix.name }}
+    needs: prepare-release
     strategy:
       fail-fast: false
       matrix:
