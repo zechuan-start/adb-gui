@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FileUp, Upload } from "lucide-react";
+import { FileUp, Package, Upload } from "lucide-react";
 import { useDeviceStore } from "@/store/device";
 import { useFeedbackStore } from "@/store/feedback";
 import { getDeviceBySerial, isOnlineDevice } from "@/lib/device";
-import { installApk, onDragDrop, pickApkFile } from "@/lib/tauri";
+import { installApk, onDragDrop, pickApkFile, pushApk } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
 type DragState = "idle" | "valid" | "invalid";
+type ApkAction = "install" | "push";
 
 function isApkPath(path: string) {
   return path.toLowerCase().endsWith(".apk");
@@ -16,30 +17,31 @@ function installMessage(result: string) {
   return result.trim() === "Success" ? "APK 安装成功" : result.trim();
 }
 
-export function ApkInstallTool() {
+export function ApkTool() {
   const devices = useDeviceStore((s) => s.devices);
   const selectedDevice = useDeviceStore((s) => s.selectedDevice);
   const device = getDeviceBySerial(devices, selectedDevice);
   const showToast = useFeedbackStore((s) => s.showToast);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  const [action, setAction] = useState<ApkAction>("install");
   const [dragState, setDragState] = useState<DragState>("idle");
   const [currentFile, setCurrentFile] = useState("");
   const [status, setStatus] = useState<string>("");
 
   const fileName = useMemo(() => currentFile.split(/[\\/]/).pop() ?? "", [currentFile]);
   const dropHint = useMemo(() => {
-    if (busy) return "正在安装, 请稍候";
+    if (busy) return action === "install" ? "正在安装, 请稍候" : "正在推送, 请稍候";
     if (!device || !isOnlineDevice(device)) return "先选择在线设备";
-    if (dragState === "valid") return "释放以安装 APK";
+    if (dragState === "valid") return action === "install" ? "释放以安装 APK" : "释放以推送 APK";
     if (dragState === "invalid") return "仅支持 APK 文件";
     return "拖拽 APK 到此窗口";
-  }, [busy, device, dragState]);
+  }, [action, busy, device, dragState]);
 
-  const handleInstall = useCallback(
+  const handleApk = useCallback(
     async (path: string) => {
       if (busyRef.current) {
-        showToast("error", "正在安装 APK, 请稍候");
+        showToast("error", "正在处理 APK, 请稍候");
         return;
       }
 
@@ -60,14 +62,15 @@ export function ApkInstallTool() {
       busyRef.current = true;
       setBusy(true);
       setCurrentFile(path);
-      setStatus("安装中...");
+      setStatus(action === "install" ? "安装中..." : "正在推送到设备下载目录...");
       try {
-        const result = installMessage(await installApk(device.serial, path));
-        const message = result || "APK 安装成功";
+        const message = action === "install"
+          ? installMessage(await installApk(device.serial, path)) || "APK 安装成功"
+          : `已推送到 ${await pushApk(device.serial, path)}`;
         setStatus(message);
         showToast("success", message);
       } catch (error) {
-        const message = `安装失败: ${error}`;
+        const message = `${action === "install" ? "安装" : "推送"}失败: ${error}`;
         setStatus(message);
         showToast("error", message);
       } finally {
@@ -75,7 +78,7 @@ export function ApkInstallTool() {
         setBusy(false);
       }
     },
-    [device, showToast]
+    [action, device, showToast]
   );
 
   const handleDroppedPaths = useCallback(
@@ -90,16 +93,29 @@ export function ApkInstallTool() {
       }
 
       if (apkPaths.length > 1) {
-        const message = "一次只能安装一个 APK";
+        const message = "一次只能处理一个 APK";
         setStatus(message);
         showToast("error", message);
         return;
       }
 
-      void handleInstall(apkPaths[0]);
+      void handleApk(apkPaths[0]);
     },
-    [handleInstall, showToast]
+    [handleApk, showToast]
   );
+
+  const handlePick = useCallback(async () => {
+    try {
+      const selected = await pickApkFile();
+      if (selected) {
+        await handleApk(selected);
+      }
+    } catch (error) {
+      const message = `选择 APK 失败: ${error}`;
+      setStatus(message);
+      showToast("error", message);
+    }
+  }, [handleApk, showToast]);
 
   useEffect(() => {
     let disposed = false;
@@ -149,37 +165,71 @@ export function ApkInstallTool() {
     >
       <div className="flex items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
-          <Upload className="h-4 w-4" />
-          APK 安装
+          <Package className="h-4 w-4" />
+          APK
         </h2>
         <span className="text-xs text-muted-foreground">
           {device ? `→ ${device.model || device.serial}` : "请选择设备"}
         </span>
       </div>
 
-      <div className="mt-4 flex min-h-20 items-center justify-center rounded-md border border-dashed border-border bg-secondary/30 px-4 text-center text-sm text-muted-foreground">
+      <div
+        className="mt-3 grid grid-cols-2 rounded-md bg-secondary p-1"
+        role="group"
+        aria-label="APK 操作模式"
+      >
+        {(["install", "push"] as const).map((item) => (
+          <button
+            key={item}
+            type="button"
+            onClick={() => {
+              setAction(item);
+              setCurrentFile("");
+              setStatus("");
+            }}
+            disabled={busy}
+            aria-pressed={action === item}
+            className={cn(
+              "inline-flex h-7 items-center justify-center gap-1.5 rounded px-2 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+              action === item
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {item === "install" ? (
+              <Package className="h-3.5 w-3.5" />
+            ) : (
+              <Upload className="h-3.5 w-3.5" />
+            )}
+            {item === "install" ? "安装" : "推送"}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-3 flex min-h-20 items-center justify-center rounded-md border border-dashed border-border bg-secondary/30 px-4 text-center text-sm text-muted-foreground">
         <div className="space-y-2">
           <div>{dropHint}</div>
           <button
             type="button"
-            onClick={async () => {
-              const selected = await pickApkFile();
-              if (selected) {
-                await handleInstall(selected);
-              }
-            }}
+            onClick={() => void handlePick()}
             disabled={!device || !isOnlineDevice(device) || busy}
             className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <FileUp className="h-4 w-4" />
-            选择文件
+            {action === "install" ? "选择并安装" : "选择并推送"}
           </button>
         </div>
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
-        <span className="truncate">{status || "仅支持 APK 文件"}</span>
-        <span className="truncate font-mono">{fileName}</span>
+      <div className="mt-3 min-h-8 text-xs text-muted-foreground">
+        <div className="break-all" title={status || undefined}>
+          {status || (action === "install" ? "安装到当前设备" : "推送到 /sdcard/Download")}
+        </div>
+        {fileName && (
+          <div className="mt-1 truncate font-mono" title={fileName}>
+            {fileName}
+          </div>
+        )}
       </div>
     </section>
   );

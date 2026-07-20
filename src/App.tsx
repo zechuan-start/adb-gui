@@ -11,7 +11,7 @@ import {
 import { DeviceSelector } from "@/components/DeviceSelector";
 import { ScreenshotTool } from "@/components/Screenshot";
 import { ScreenRecordTool } from "@/components/ScreenRecordTool";
-import { ApkInstallTool } from "@/components/AppManager";
+import { ApkTool } from "@/components/AppManager";
 import { QuickKeysTool } from "@/components/LogcatViewer";
 import { LogcatPanel } from "@/components/Logcat";
 import { CurrentAppActionsTool } from "@/components/ActivityMonitor";
@@ -183,7 +183,7 @@ function App() {
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-4">
                 <ScreenshotTool />
                 <ScreenRecordTool />
-                <ApkInstallTool />
+                <ApkTool />
                 <DeepLinkTool />
               </div>
               <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(280px,1fr)_minmax(0,2fr)]">

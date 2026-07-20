@@ -10,7 +10,7 @@ A cross-platform desktop GUI for Android ADB, built with [Tauri](https://tauri.a
 - **Wi-Fi connect** — pair and connect to a device over `adb connect` without cables.
 - **Screenshot** — capture the current screen with one click and save it locally.
 - **Screen recording** — start/stop `screenrecord` sessions and pull the resulting video to your computer.
-- **APK install** — drag-and-drop or pick an APK file to install onto the selected device.
+- **APK install / push** — drag-and-drop or pick an APK file to install it, or push it to the selected device's Download directory without installing.
 - **App / package manager** — list installed packages, launch, force-stop, clear data, or uninstall apps.
 - **Deep link launcher** — open a custom deep link / URI on the device for quick testing.
 - **Port forwarding** — manage `adb forward` / `adb reverse` rules with a simple UI.
@@ -60,7 +60,7 @@ pnpm tauri dev
 - **无线连接(Wi-Fi Connect)** — 无需数据线,通过 `adb connect` 配对并连接设备。
 - **截图** — 一键截取设备当前屏幕并保存到本地。
 - **屏幕录制** — 启动/停止 `screenrecord` 录屏,并将视频文件拉取到电脑本地。
-- **APK 安装** — 拖拽或选择 APK 文件即可安装到当前选中设备。
+- **APK 安装 / 推送** — 拖拽或选择 APK 文件进行安装,或仅推送到当前设备的下载目录而不安装。
 - **应用 / 包管理** — 查看已安装应用列表,支持启动、强制停止、清除数据、卸载等操作。
 - **DeepLink 启动器** — 快速在设备上打开自定义 DeepLink / URI,方便调试跳转。
 - **端口转发(Port Forward)** — 图形化管理 `adb forward` / `adb reverse` 规则。

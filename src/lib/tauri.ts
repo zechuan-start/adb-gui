@@ -110,6 +110,10 @@ export async function installApk(serial: string, apkPath: string): Promise<strin
   return invoke<string>("install_apk", { serial, apkPath });
 }
 
+export async function pushApk(serial: string, apkPath: string): Promise<string> {
+  return invoke<string>("push_apk", { serial, apkPath });
+}
+
 export async function sendKey(serial: string, action: KeyAction): Promise<string> {
   return invoke<string>("send_key_event", { serial, action });
 }
