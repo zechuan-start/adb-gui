@@ -150,3 +150,37 @@ Implemented and verified port forwarding, screen recording, and bug report colle
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Logcat 时间戳与列布局优化
+
+**Date**: 2026-07-26
+**Task**: Logcat 时间戳与列布局优化
+**Branch**: `main`
+
+### Summary
+
+流式 logcat 从 -v brief 切换到 -v threadtime：新增设备端时间戳列（悬停看完整日期时间），LogcatLine 增加 time/tid 字段并同步 TS 接口；解析正则改为 LazyLock 一次编译，补 6 个解析回归单测；tag 列 56px 加宽到 160px，点击 tag 精确过滤（工具栏 chip 可清除，与等级/搜索/应用过滤叠加）；导出文件自动带时间戳。流式 logcat 格式契约已写入 backend/quality-guidelines.md。搜索增强、行展开复制、跟随 UX 三组改进未做。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9e11e8c` | (see git log) |
+| `576699a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
