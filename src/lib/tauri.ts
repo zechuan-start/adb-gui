@@ -25,9 +25,11 @@ export interface PackageInfo {
 
 export interface LogcatLine {
   serial: string;
+  time: string;
   level: string;
   tag: string;
   pid: string;
+  tid: string;
   message: string;
   raw: string;
 }

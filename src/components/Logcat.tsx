@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, ListFilter, Pause, Play, Search, Trash2 } from "lucide-react";
+import { Download, ListFilter, Pause, Play, Search, Trash2, X } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useDeviceStore } from "@/store/device";
 import { useFeedbackStore } from "@/store/feedback";
@@ -56,6 +56,7 @@ export function LogcatPanel() {
   const [paused, setPaused] = useState(false);
   const [filterLevel, setFilterLevel] = useState<Level | "">("");
   const [searchText, setSearchText] = useState("");
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [appFilter, setAppFilter] = useState<AppFilterValue>(APP_FILTER_OFF);
   const [packageOptions, setPackageOptions] = useState<string[]>([]);
   const [loadingPackages, setLoadingPackages] = useState(false);
@@ -102,16 +103,19 @@ export function LogcatPanel() {
           l.tag.toLowerCase().includes(lower)
       );
     }
+    if (tagFilter) {
+      result = result.filter((l) => l.tag === tagFilter);
+    }
     if (appFilterEnabled) {
       result = result.filter((l) => appPidSet.has(l.pid));
     }
     return result;
-  }, [appFilterEnabled, appPidSet, filterLevel, lines, searchText]);
+  }, [appFilterEnabled, appPidSet, filterLevel, lines, searchText, tagFilter]);
 
   const filterSignature = useMemo(
     () =>
-      [filterLevel, searchText, appFilter, appPids.join("\u0000")].join("\u0000"),
-    [appFilter, appPids, filterLevel, searchText]
+      [filterLevel, searchText, tagFilter ?? "", appFilter, appPids.join("\u0000")].join("\u0000"),
+    [appFilter, appPids, filterLevel, searchText, tagFilter]
   );
 
   const lastFilteredLineId = filtered[filtered.length - 1]?.id ?? 0;
@@ -217,6 +221,7 @@ export function LogcatPanel() {
     setPackagesLoadedFor(null);
     setAppPids([]);
     setPidStatus("");
+    setTagFilter(null);
     setLines([]);
     bufferRef.current = [];
     setPendingCount(0);
@@ -466,6 +471,22 @@ export function LogcatPanel() {
           />
         </div>
 
+        {tagFilter && (
+          <div className="flex h-7 items-center gap-1 rounded-md bg-secondary px-2 text-xs text-muted-foreground">
+            <span className="max-w-[10rem] truncate" title={tagFilter}>
+              tag: {tagFilter}
+            </span>
+            <button
+              type="button"
+              onClick={() => setTagFilter(null)}
+              className="inline-flex items-center justify-center rounded transition-colors hover:text-foreground"
+              title="清除 tag 过滤"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+
         <button
           type="button"
           onClick={handlePauseToggle}
@@ -546,15 +567,30 @@ export function LogcatPanel() {
                 }}
                 className="flex items-center gap-2 px-4 hover:bg-secondary/40"
               >
+                <span
+                  className="w-[5.5rem] shrink-0 select-none text-muted-foreground"
+                  title={line.time}
+                >
+                  {line.time.slice(6)}
+                </span>
                 <span className={cn("w-3 shrink-0 select-none text-center", levelColor)}>
                   {line.level}
                 </span>
-                <span
-                  className="w-14 shrink-0 select-none truncate text-muted-foreground"
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!line.tag) return;
+                    setTagFilter((prev) => (prev === line.tag ? null : line.tag));
+                  }}
+                  className={cn(
+                    "w-40 shrink-0 select-none truncate text-left text-muted-foreground",
+                    line.tag && "cursor-pointer hover:text-foreground"
+                  )}
                   title={line.tag}
+                  tabIndex={line.tag ? 0 : -1}
                 >
                   {line.tag}
-                </span>
+                </button>
                 <span
                   className="w-12 shrink-0 select-none text-muted-foreground"
                   title={line.pid}
