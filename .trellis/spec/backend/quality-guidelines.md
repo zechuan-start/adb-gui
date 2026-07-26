@@ -286,3 +286,40 @@ const remotePath = await invoke<string>("push_apk", { serial, apkPath });
 ```
 
 The backend owns filename validation and remote path construction so all callers use the same destination contract.
+
+## Scenario: Streaming Logcat Format and Parsing
+
+### 1. Scope / Trigger
+
+- Trigger: changing the streaming logcat command, the `LogcatLine` payload, or `parse_logcat_line` in `src-tauri/src/commands/logcat.rs`.
+- Does not apply to quick bug report collection, which intentionally uses a one-shot `-v brief` dump (see the bug report scenario above).
+
+### 2. Signatures
+
+- `start_logcat(app: AppHandle, serial: String) -> Result<(), String>` spawns `adb -s <serial> logcat -T 5000 -v threadtime` and emits `logcat-line` events.
+- `LogcatLine { serial, time, level, tag, pid, tid, message, raw }` — all lowercase single-word field names so serde output matches the TS interface byte-for-byte.
+
+### 3. Contracts
+
+- Streaming logcat must use `-v threadtime` so every line carries a device-side `MM-DD HH:MM:SS.mmm` timestamp; `raw` keeps the original line so exports include timestamps for free.
+- `LogcatLine` (Rust) and `LogcatLine` in `src/lib/tauri.ts` must stay field-for-field in sync; the event channel name is `logcat-line`.
+- Parse regexes must be file-level `static LazyLock<Regex>`, never compiled inside the per-line function.
+- Unparseable lines (e.g. `--------- beginning of main` separators) must fall back to level `I`, empty `time/tag/pid/tid`, and `message = raw` — never dropped.
+- Tag/message split happens at the first `: ` separator; tags containing colons are truncated at the first colon (accepted limitation).
+
+### 4. Validation & Error Matrix
+
+- Regex mismatch -> fallback `LogcatLine`, no error surfaced.
+- Empty message lines (with or without trailing separator space) must still parse.
+
+### 5. Good/Base/Bad Cases
+
+- Good: `07-26 14:23:45.123  1234  5678 E AndroidRuntime: FATAL EXCEPTION: main` keeps the colons inside `message`.
+- Base: stack-trace continuation lines keep their leading indentation in `message`.
+- Bad: switching the format or regex without updating the `#[cfg(test)]` regression tests in `logcat.rs`.
+- Bad: adding a `LogcatLine` field in Rust without mirroring it in `src/lib/tauri.ts`.
+
+### 6. Tests Required
+
+- Any change to `parse_logcat_line` or the format flag must extend the unit tests in `logcat.rs` (`cargo test --lib`).
+- Build checks: `cargo check`, `cargo clippy --all-targets -- -D warnings`, `pnpm build`.
