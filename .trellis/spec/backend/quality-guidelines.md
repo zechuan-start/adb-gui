@@ -221,33 +221,33 @@ Signal the device-side `screenrecord` process first so Android can finalize the 
 - Manual device smoke: quick collect, verify `screenshot.png`, `info.txt`, `logcat.txt`, required info fields, and around 50 logcat lines.
 - Manual device smoke: full bugreport, verify the zip exists and size is greater than zero.
 
-## Scenario: APK Push Commands
+## Scenario: Device File Push Commands
 
 ### 1. Scope / Trigger
 
-- Trigger: adding or changing Tauri commands that copy a local APK to a selected ADB device without installing it.
-- Applies to the APK tool's push mode and its frontend bridge contract.
+- Trigger: adding or changing Tauri commands that copy a local file to a selected ADB device without installing it.
+- Applies to the APK/file tool's push mode and its frontend bridge contract.
+- Install mode remains APK-only; this scenario covers push mode only.
 
 ### 2. Signatures
 
-- `push_apk(app: AppHandle, serial: String, apk_path: String) -> Result<String, String>`
-- `pushApk(serial: string, apkPath: string): Promise<string>`
+- `push_file(app: AppHandle, serial: String, file_path: String) -> Result<String, String>`
+- `pushFile(serial: string, filePath: string): Promise<string>`
 
 ### 3. Contracts
 
 - `serial` is the selected online device serial; every ADB call must use `run_adb_with_serial`.
-- `apk_path` is one local file whose extension is `.apk`, matched case-insensitively.
+- `file_path` is one local file of any extension; push mode must not reject non-APK files.
 - The remote directory is owned by the backend and fixed to `/sdcard/Download`.
 - The remote file keeps the local basename: `/sdcard/Download/<local-basename>`.
-- The command must run `adb -s <serial> shell mkdir -p /sdcard/Download` before `adb -s <serial> push <apk_path> <remote_path>`.
+- The command must run `adb -s <serial> shell mkdir -p /sdcard/Download` before `adb -s <serial> push <file_path> <remote_path>`.
 - A successful response is the complete remote path, not raw `adb push` progress output.
 - Pushing must not call `adb install`, package manager commands, or an Android package installer intent.
 - Run the blocking ADB operations through an async command plus `tauri::async_runtime::spawn_blocking`.
 
 ### 4. Validation & Error Matrix
 
-- Missing or non-APK extension -> `Err("仅支持 APK 文件")`.
-- Missing or unreadable UTF-8 basename -> `Err("无法读取 APK 文件名")`.
+- Missing or unreadable UTF-8 basename -> `Err("无法读取文件名")`.
 - Remote directory creation failure -> contextual `Err("创建设备下载目录失败: ...")`.
 - `adb push` failure -> propagate the ADB stderr returned by `run_adb_with_serial`.
 - Background task join failure -> contextual `Err("推送任务执行失败: ...")`.
@@ -255,26 +255,28 @@ Signal the device-side `screenrecord` process first so Android can finalize the 
 ### 5. Good/Base/Bad Cases
 
 - Good: `release build.APK` returns `/sdcard/Download/release build.APK` and preserves spaces and case.
+- Good: `notes.txt` and `archive.zip` are accepted and land under `/sdcard/Download/<basename>`.
 - Base: an existing remote file with the same basename is overwritten by normal `adb push` behavior.
 - Bad: accepting a frontend-provided remote path creates a second source of truth and allows the UI to drift from the backend contract.
 - Bad: running `adb install` after a successful push violates push mode's no-install guarantee.
+- Bad: keeping a backend APK-only check after the UI allows arbitrary files.
 
 ### 6. Tests Required
 
-- Unit test case-insensitive APK extension handling and exact remote path generation.
-- Unit test rejection of a non-APK extension.
+- Unit test remote path generation for APK and non-APK basenames.
+- Unit test rejection of paths without a usable basename.
 - Build checks: `cargo test`, `cargo clippy --all-targets -- -D warnings`, and `pnpm build`.
-- UI smoke: install mode remains the default; push mode updates the action label and `/sdcard/Download` hint.
-- Manual device smoke: push one APK, verify the returned path exists with `adb -s <serial> shell ls -l <remote_path>`, and confirm the package was not installed.
+- UI smoke: install mode remains APK-only and the default; push mode accepts any single file and shows the `/sdcard/Download` hint.
+- Manual device smoke: push one non-APK file, verify the returned path exists with `adb -s <serial> shell ls -l <remote_path>`.
 
 ### 7. Wrong vs Correct
 
 #### Wrong
 
 ```typescript
-await invoke("push_apk", {
+await invoke("push_file", {
   serial,
-  apkPath,
+  filePath,
   remotePath: `/sdcard/Download/${fileName}`,
 });
 ```
@@ -282,10 +284,10 @@ await invoke("push_apk", {
 #### Correct
 
 ```typescript
-const remotePath = await invoke<string>("push_apk", { serial, apkPath });
+const remotePath = await invoke<string>("push_file", { serial, filePath });
 ```
 
-The backend owns filename validation and remote path construction so all callers use the same destination contract.
+The backend owns basename extraction and remote path construction so all callers use the same destination contract.
 
 ## Scenario: Streaming Logcat Format and Parsing
 

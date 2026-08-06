@@ -112,8 +112,8 @@ export async function installApk(serial: string, apkPath: string): Promise<strin
   return invoke<string>("install_apk", { serial, apkPath });
 }
 
-export async function pushApk(serial: string, apkPath: string): Promise<string> {
-  return invoke<string>("push_apk", { serial, apkPath });
+export async function pushFile(serial: string, filePath: string): Promise<string> {
+  return invoke<string>("push_file", { serial, filePath });
 }
 
 export async function sendKey(serial: string, action: KeyAction): Promise<string> {
@@ -145,6 +145,14 @@ export async function pickApkFile(): Promise<string | null> {
     title: "Select APK",
     multiple: false,
     filters: [{ name: "APK", extensions: ["apk"] }],
+  });
+  return typeof selected === "string" ? selected : null;
+}
+
+export async function pickAnyFile(): Promise<string | null> {
+  const selected = await open({
+    title: "Select File",
+    multiple: false,
   });
   return typeof selected === "string" ? selected : null;
 }

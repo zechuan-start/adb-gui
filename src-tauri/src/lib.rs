@@ -177,7 +177,7 @@ pub fn run() {
             commands::device::list_devices,
             commands::device::get_current_activity,
             commands::app::install_apk,
-            commands::app::push_apk,
+            commands::app::push_file,
             commands::app::uninstall_app,
             commands::app::launch_app,
             commands::app::force_stop_app,

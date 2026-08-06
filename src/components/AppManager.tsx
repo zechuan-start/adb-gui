@@ -3,7 +3,7 @@ import { FileUp, Package, Upload } from "lucide-react";
 import { useDeviceStore } from "@/store/device";
 import { useFeedbackStore } from "@/store/feedback";
 import { getDeviceBySerial, isOnlineDevice } from "@/lib/device";
-import { installApk, onDragDrop, pickApkFile, pushApk } from "@/lib/tauri";
+import { installApk, onDragDrop, pickAnyFile, pickApkFile, pushFile } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
 type DragState = "idle" | "valid" | "invalid";
@@ -33,20 +33,22 @@ export function ApkTool() {
   const dropHint = useMemo(() => {
     if (busy) return action === "install" ? "正在安装, 请稍候" : "正在推送, 请稍候";
     if (!device || !isOnlineDevice(device)) return "先选择在线设备";
-    if (dragState === "valid") return action === "install" ? "释放以安装 APK" : "释放以推送 APK";
-    if (dragState === "invalid") return "仅支持 APK 文件";
-    return "拖拽 APK 到此窗口";
+    if (dragState === "valid") {
+      return action === "install" ? "释放以安装 APK" : "释放以推送文件";
+    }
+    if (dragState === "invalid") return "安装模式仅支持 APK 文件";
+    return action === "install" ? "拖拽 APK 到此窗口" : "拖拽任意文件到此窗口";
   }, [action, busy, device, dragState]);
 
-  const handleApk = useCallback(
+  const handleFile = useCallback(
     async (path: string) => {
       if (busyRef.current) {
-        showToast("error", "正在处理 APK, 请稍候");
+        showToast("error", action === "install" ? "正在处理 APK, 请稍候" : "正在推送文件, 请稍候");
         return;
       }
 
-      if (!isApkPath(path)) {
-        const message = "仅支持 APK 文件";
+      if (action === "install" && !isApkPath(path)) {
+        const message = "安装模式仅支持 APK 文件";
         setStatus(message);
         showToast("error", message);
         return;
@@ -66,7 +68,7 @@ export function ApkTool() {
       try {
         const message = action === "install"
           ? installMessage(await installApk(device.serial, path)) || "APK 安装成功"
-          : `已推送到 ${await pushApk(device.serial, path)}`;
+          : `已推送到 ${await pushFile(device.serial, path)}`;
         setStatus(message);
         showToast("success", message);
       } catch (error) {
@@ -83,39 +85,55 @@ export function ApkTool() {
 
   const handleDroppedPaths = useCallback(
     (paths: string[]) => {
-      const apkPaths = paths.filter(isApkPath);
+      if (paths.length === 0) {
+        return;
+      }
 
-      if (apkPaths.length === 0) {
-        const message = "仅支持 APK 文件";
+      if (action === "install") {
+        const apkPaths = paths.filter(isApkPath);
+
+        if (apkPaths.length === 0) {
+          const message = "安装模式仅支持 APK 文件";
+          setStatus(message);
+          showToast("error", message);
+          return;
+        }
+
+        if (apkPaths.length > 1) {
+          const message = "一次只能处理一个 APK";
+          setStatus(message);
+          showToast("error", message);
+          return;
+        }
+
+        void handleFile(apkPaths[0]);
+        return;
+      }
+
+      if (paths.length > 1) {
+        const message = "一次只能推送一个文件";
         setStatus(message);
         showToast("error", message);
         return;
       }
 
-      if (apkPaths.length > 1) {
-        const message = "一次只能处理一个 APK";
-        setStatus(message);
-        showToast("error", message);
-        return;
-      }
-
-      void handleApk(apkPaths[0]);
+      void handleFile(paths[0]);
     },
-    [handleApk, showToast]
+    [action, handleFile, showToast]
   );
 
   const handlePick = useCallback(async () => {
     try {
-      const selected = await pickApkFile();
+      const selected = action === "install" ? await pickApkFile() : await pickAnyFile();
       if (selected) {
-        await handleApk(selected);
+        await handleFile(selected);
       }
     } catch (error) {
-      const message = `选择 APK 失败: ${error}`;
+      const message = `选择${action === "install" ? " APK" : "文件"}失败: ${error}`;
       setStatus(message);
       showToast("error", message);
     }
-  }, [handleApk, showToast]);
+  }, [action, handleFile, showToast]);
 
   useEffect(() => {
     let disposed = false;
@@ -123,7 +141,11 @@ export function ApkTool() {
 
     onDragDrop((event) => {
       if (event.type === "enter") {
-        setDragState(event.paths.some(isApkPath) ? "valid" : "invalid");
+        if (action === "install") {
+          setDragState(event.paths.some(isApkPath) ? "valid" : "invalid");
+        } else {
+          setDragState(event.paths.length > 0 ? "valid" : "invalid");
+        }
         return;
       }
 
@@ -152,7 +174,7 @@ export function ApkTool() {
       disposed = true;
       unlisten?.();
     };
-  }, [handleDroppedPaths, showToast]);
+  }, [action, handleDroppedPaths, showToast]);
 
   return (
     <section
@@ -166,7 +188,7 @@ export function ApkTool() {
       <div className="flex items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <Package className="h-4 w-4" />
-          APK
+          APK / 文件
         </h2>
         <span className="text-xs text-muted-foreground">
           {device ? `→ ${device.model || device.serial}` : "请选择设备"}
@@ -176,7 +198,7 @@ export function ApkTool() {
       <div
         className="mt-3 grid grid-cols-2 rounded-md bg-secondary p-1"
         role="group"
-        aria-label="APK 操作模式"
+        aria-label="安装与推送操作模式"
       >
         {(["install", "push"] as const).map((item) => (
           <button

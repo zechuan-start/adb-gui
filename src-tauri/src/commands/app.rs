@@ -17,8 +17,8 @@ pub fn install_apk(app: AppHandle, serial: String, apk_path: String) -> Result<S
 }
 
 #[tauri::command]
-pub async fn push_apk(app: AppHandle, serial: String, apk_path: String) -> Result<String, String> {
-    let remote_path = apk_remote_path(&apk_path)?;
+pub async fn push_file(app: AppHandle, serial: String, file_path: String) -> Result<String, String> {
+    let remote_path = file_remote_path(&file_path)?;
 
     tauri::async_runtime::spawn_blocking(move || {
         run_adb_with_serial(
@@ -27,7 +27,7 @@ pub async fn push_apk(app: AppHandle, serial: String, apk_path: String) -> Resul
             &["shell", "mkdir", "-p", DEVICE_DOWNLOAD_DIR],
         )
         .map_err(|error| format!("创建设备下载目录失败: {error}"))?;
-        run_adb_with_serial(&app, &serial, &["push", &apk_path, &remote_path])?;
+        run_adb_with_serial(&app, &serial, &["push", &file_path, &remote_path])?;
         Ok(remote_path)
     })
     .await
@@ -119,42 +119,47 @@ fn parse_component(output: &str) -> Option<String> {
         .map(ToString::to_string)
 }
 
-fn apk_remote_path(apk_path: &str) -> Result<String, String> {
-    let path = Path::new(apk_path);
-    let is_apk = path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("apk"));
-    if !is_apk {
-        return Err("仅支持 APK 文件".to_string());
-    }
+fn file_remote_path(file_path: &str) -> Result<String, String> {
+    let path = Path::new(file_path);
 
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty())
-        .ok_or_else(|| "无法读取 APK 文件名".to_string())?;
+        .ok_or_else(|| "无法读取文件名".to_string())?;
 
     Ok(format!("{DEVICE_DOWNLOAD_DIR}/{file_name}"))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::apk_remote_path;
+    use super::file_remote_path;
 
     #[test]
-    fn builds_download_path_from_apk_file_name() {
+    fn builds_download_path_from_file_name() {
         assert_eq!(
-            apk_remote_path("release build.APK").as_deref(),
+            file_remote_path("release build.APK").as_deref(),
             Ok("/sdcard/Download/release build.APK")
+        );
+        assert_eq!(
+            file_remote_path("notes.txt").as_deref(),
+            Ok("/sdcard/Download/notes.txt")
+        );
+        assert_eq!(
+            file_remote_path("/tmp/archive.zip").as_deref(),
+            Ok("/sdcard/Download/archive.zip")
         );
     }
 
     #[test]
-    fn rejects_non_apk_files() {
+    fn rejects_paths_without_file_name() {
         assert_eq!(
-            apk_remote_path("release.zip"),
-            Err("仅支持 APK 文件".to_string())
+            file_remote_path(""),
+            Err("无法读取文件名".to_string())
+        );
+        assert_eq!(
+            file_remote_path("/"),
+            Err("无法读取文件名".to_string())
         );
     }
 }
