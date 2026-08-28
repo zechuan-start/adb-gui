@@ -1,5 +1,5 @@
-
 use serde::Serialize;
+use std::process::Output;
 use tauri::AppHandle;
 
 use crate::adb;
@@ -12,17 +12,20 @@ pub struct DeviceInfo {
     pub transport: String,
 }
 
-pub fn run_adb(app: &AppHandle, args: &[&str]) -> Result<String, String> {
+pub fn run_adb_output(app: &AppHandle, args: &[&str]) -> Result<Output, String> {
     let adb_path = adb::resolve_adb_path(app)?;
-    let output = adb::prepare_command(app, &adb_path)
+    adb::prepare_command(app, &adb_path)
         .args(args)
         .output()
-        .map_err(|e| format!("Failed to execute adb: {e}"))?;
+        .map_err(|e| format!("Failed to execute adb: {e}"))
+}
+
+pub fn run_adb(app: &AppHandle, args: &[&str]) -> Result<String, String> {
+    let output = run_adb_output(app, args)?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        Err(stderr.trim().to_string())
+        Err(adb_output_error(&output))
     }
 }
 
@@ -30,6 +33,38 @@ pub fn run_adb_with_serial(app: &AppHandle, serial: &str, args: &[&str]) -> Resu
     let mut full_args = vec!["-s", serial];
     full_args.extend_from_slice(args);
     run_adb(app, &full_args)
+}
+
+pub fn run_adb_output_with_serial(
+    app: &AppHandle,
+    serial: &str,
+    args: &[&str],
+) -> Result<Output, String> {
+    let mut full_args = vec!["-s", serial];
+    full_args.extend_from_slice(args);
+    run_adb_output(app, &full_args)
+}
+
+pub fn run_adb_bytes_with_serial(
+    app: &AppHandle,
+    serial: &str,
+    args: &[&str],
+) -> Result<Vec<u8>, String> {
+    let output = run_adb_output_with_serial(app, serial, args)?;
+    if output.status.success() {
+        Ok(output.stdout)
+    } else {
+        Err(adb_output_error(&output))
+    }
+}
+
+fn adb_output_error(output: &Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if stderr.is_empty() {
+        format!("adb exited with status {}", output.status)
+    } else {
+        stderr
+    }
 }
 
 #[tauri::command]
@@ -81,7 +116,11 @@ pub fn list_devices(app: AppHandle) -> Result<Vec<DeviceInfo>, String> {
 
 #[tauri::command]
 pub fn get_current_activity(app: AppHandle, serial: String) -> Result<String, String> {
-    let output = run_adb_with_serial(&app, &serial, &["shell", "dumpsys", "activity", "activities"])?;
+    let output = run_adb_with_serial(
+        &app,
+        &serial,
+        &["shell", "dumpsys", "activity", "activities"],
+    )?;
     if let Some(activity) = parse_current_activity(&output) {
         Ok(activity)
     } else {
@@ -90,7 +129,10 @@ pub fn get_current_activity(app: AppHandle, serial: String) -> Result<String, St
 }
 
 pub fn parse_current_activity(output: &str) -> Option<String> {
-    let re = regex::Regex::new(r"(?:mResumedActivity|ResumedActivity).*?([A-Za-z0-9_$.]+/[A-Za-z0-9_$.]+)").unwrap();
+    let re = regex::Regex::new(
+        r"(?:mResumedActivity|ResumedActivity).*?([A-Za-z0-9_$.]+/[A-Za-z0-9_$.]+)",
+    )
+    .unwrap();
     re.captures(output)
         .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()))
 }

@@ -25,6 +25,7 @@ src/
 │   ├── AppManager.tsx
 │   ├── LogcatViewer.tsx
 │   ├── ActivityMonitor.tsx
+│   ├── DeviceFileManager.tsx # Device directory, transfer, and image preview workspace
 │   ├── CodeGeneratorPage.tsx # QR / Code 128 batch workspace
 │   ├── GeneratedCodeCanvas.tsx # Local canvas encoder boundary
 │   ├── ToastBar.tsx
@@ -32,6 +33,7 @@ src/
 ├── lib/                  # 工具函数和 Tauri bridge
 │   ├── tauri.ts          # Tauri invoke/listen 封装 + 类型定义
 │   ├── device.ts         # 设备相关纯函数
+│   ├── deviceFiles.ts    # 文件工作台 reducer, operation context, and display helpers
 │   ├── codeGenerator.ts  # 生码输入解析契约和共享类型
 │   └── utils.ts          # 通用工具 (cn 等)
 └── store/                # Zustand stores

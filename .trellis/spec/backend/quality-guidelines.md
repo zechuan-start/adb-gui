@@ -30,10 +30,12 @@
 
 ## Testing Requirements
 
-当前无单元测试. 验证方式:
-1. `cargo clippy --all-targets` 无 warning
-2. `cargo build` 成功
-3. `pnpm tauri dev` 手动验证功能
+Rust commands and pure helpers use colocated `#[cfg(test)]` unit tests. Verification order:
+
+1. `perl -e 'alarm shift; exec @ARGV' 60 cargo test --manifest-path src-tauri/Cargo.toml`
+2. `cargo fmt --manifest-path src-tauri/Cargo.toml --check`
+3. `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings`
+4. Run the scenario-specific real-device smoke checks below when behavior crosses the ADB boundary.
 
 ---
 
@@ -221,73 +223,104 @@ Signal the device-side `screenrecord` process first so Android can finalize the 
 - Manual device smoke: quick collect, verify `screenshot.png`, `info.txt`, `logcat.txt`, required info fields, and around 50 logcat lines.
 - Manual device smoke: full bugreport, verify the zip exists and size is greater than zero.
 
-## Scenario: Device File Push Commands
+## Scenario: Device File Workspace Commands
 
 ### 1. Scope / Trigger
 
-- Trigger: adding or changing Tauri commands that copy a local file to a selected ADB device without installing it.
-- Applies to the APK/file tool's push mode and its frontend bridge contract.
-- Install mode remains APK-only; this scenario covers push mode only.
+- Trigger: adding or changing device directory browsing, folder creation, upload, download, or image preview commands.
+- Applies to `commands/device_files.rs`, the Tauri bridge payloads, and the top-level file workspace.
+- APK installation remains in `commands/app.rs`; general file upload must not be added back to the APK tool.
 
 ### 2. Signatures
 
-- `push_file(app: AppHandle, serial: String, file_path: String) -> Result<String, String>`
-- `pushFile(serial: string, filePath: string): Promise<string>`
+- `list_device_directory(app, serial, path: Option<String>) -> Result<DeviceDirectoryListing, String>`
+- `create_device_directory(app, serial, parent_path, name) -> Result<DeviceFileEntry, String>`
+- `upload_device_file(app, serial, local_path, remote_dir) -> Result<DeviceTransferResult, String>`
+- `download_device_file(app, serial, remote_path, local_path) -> Result<DeviceTransferResult, String>`
+- `preview_device_image(app, serial, remote_path) -> Result<DeviceImagePreview, String>`
+- `DeviceFileEntry { name, path, kind, size, modified_at, previewable }`
+- `DeviceDirectoryListing { path, parent, entries }`
+- `DeviceTransferResult { name, remote_path, local_path }`
+- `DeviceImagePreview { data_url, mime_type, size }`
 
 ### 3. Contracts
 
-- `serial` is the selected online device serial; every ADB call must use `run_adb_with_serial`.
-- `file_path` is one local file of any extension; push mode must not reject non-APK files.
-- The remote directory is owned by the backend and fixed to `/sdcard/Download`.
-- The remote file keeps the local basename: `/sdcard/Download/<local-basename>`.
-- The command must run `adb -s <serial> shell mkdir -p /sdcard/Download` before `adb -s <serial> push <file_path> <remote_path>`.
-- A successful response is the complete remote path, not raw `adb push` progress output.
-- Pushing must not call `adb install`, package manager commands, or an Android package installer intent.
-- Run the blocking ADB operations through an async command plus `tauri::async_runtime::spawn_blocking`.
+- Every ADB call is scoped with `-s <serial>` through the shared device command helpers.
+- `path = None` means the backend-owned default `/sdcard/Download`; the frontend must not define another default-path constant.
+- Remote paths are absolute, reject NUL, collapse repeated separators and `.`, and reject `..` that crosses root.
+- Shell-bound paths use the shared POSIX single-quote encoder. Frontend strings never become raw shell fragments.
+- Directory enumeration uses `adb exec-out` with a controlled device shell script and NUL-delimited `kind, size, modified_at, absolute_path` records. The parser may remove only trailing CR/LF after the binary payload; do not parse `ls` columns or route the protocol through `adb shell`.
+- Listing order is stable: directories first, then non-directories; each group is sorted case-insensitively by name.
+- `previewable` is a backend hint based on file kind and extension. Preview validity still depends on backend magic-byte verification.
+- Upload accepts one local ordinary file per command. The frontend serializes multi-file batches and preserves per-item results.
+- Frontend device operations capture an immutable `{ serial, revision }` context. Device changes and file-workspace unmounts increment `revision`; serial equality alone is not a freshness check because A -> B -> A reuses the same serial.
+- Device changes clear operation and folder busy flags before paint. Every async `finally` may clear those flags only while its captured `{ serial, revision }` remains current, so an old ADB completion cannot unlock a newer device operation.
+- Sequential uploads revalidate the captured operation context before and after every command. Once stale, they do not start another item, refresh the old directory, or emit completion feedback.
+- Upload validates the target with `[ -d ]` and `[ -x ]`; it must not enumerate and discard the full directory listing. It never intentionally overwrites an existing device path and checks `name.ext`, `name (1).ext`, and so on immediately before `adb push`.
+- Download writes to a sibling temporary file, verifies the byte count against device `stat`, then replaces the user-confirmed target. An existing target is backed up and restored if replacement fails.
+- Preview supports PNG, JPEG, WEBP, and GIF magic bytes. After the size pre-check, device-side `head -c 20971521` caps stdout at `20 MiB + 1`; the extra byte detects concurrent growth without allowing unbounded host memory use.
+- The file list shows loading while the selected online serial and reducer serial differ or before the first path succeeds. It shows an empty directory only when the current context matches and `state.path` is non-empty.
+- A finished transfer with any failed items displays the success/failure counts; `status != "running"` is not equivalent to success.
+- Blocking ADB and local file IO run through async commands plus `tauri::async_runtime::spawn_blocking`.
 
 ### 4. Validation & Error Matrix
 
-- Missing or unreadable UTF-8 basename -> `Err("无法读取文件名")`.
-- Remote directory creation failure -> contextual `Err("创建设备下载目录失败: ...")`.
-- `adb push` failure -> propagate the ADB stderr returned by `run_adb_with_serial`.
-- Background task join failure -> contextual `Err("推送任务执行失败: ...")`.
+- Relative, empty, NUL-containing, or above-root remote path -> contextual `Err` before ADB execution.
+- New directory name is empty, `.`, `..`, contains `/`, or already exists -> `Err`; never switch to `mkdir -p`.
+- Device directory does not exist, lacks permission, returns malformed records, or lacks required `stat -c` -> explicit listing error; no `ls` fallback.
+- Upload local path is missing or not a regular file -> `Err("只支持上传普通文件, 不支持目录")` or contextual local IO error.
+- No free upload name within the bounded attempts -> explicit auto-rename error; never overwrite as fallback.
+- Download remote path is not a file -> explicit device file size/type error.
+- Download target is relative, has no filename, has a missing parent directory, or is a directory -> explicit local target error.
+- Pull failure or byte-count mismatch -> remove only the new temporary file and preserve the old target.
+- Replacement failure -> restore the backup; if restore also fails, return the backup path in the error.
+- Preview over 20 MiB, incomplete read, or unsupported magic bytes -> explicit preview error and no data URL.
+- Background join failure -> operation-specific task error.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: `release build.APK` returns `/sdcard/Download/release build.APK` and preserves spaces and case.
-- Good: `notes.txt` and `archive.zip` are accepted and land under `/sdcard/Download/<basename>`.
-- Base: an existing remote file with the same basename is overwritten by normal `adb push` behavior.
-- Bad: accepting a frontend-provided remote path creates a second source of truth and allows the UI to drift from the backend contract.
-- Bad: running `adb install` after a successful push violates push mode's no-install guarantee.
-- Bad: keeping a backend APK-only check after the UI allows arbitrary files.
+- Good: listing `/sdcard/Download` returns hidden files, Chinese names, spaces, metadata, normalized paths, and stable ordering.
+- Good: uploading `photo.jpg` twice creates `photo.jpg` then `photo (1).jpg` without changing the first file.
+- Good: downloading over an existing local target replaces it only after the complete temporary pull succeeds.
+- Good: selecting a renamed PNG still fails preview if the bytes are not a supported image.
+- Base: a non-root device returns permission denied for `/data`; surface that error and keep the previous directory visible.
+- Bad: concatenating `remoteDir + "/" + name` in React or passing an unescaped path to `adb shell` creates a second path authority and shell-injection risk.
+- Bad: parsing `ls -l` with whitespace splitting corrupts names containing spaces and varies across Android versions.
+- Bad: using `adb shell` for NUL-delimited records can append terminal line endings; accepting arbitrary trailing bytes hides protocol corruption.
+- Bad: reading `adb exec-out cat` to completion and checking the vector length afterward does not enforce the 20 MiB memory limit.
+- Bad: pulling directly into the final local target can destroy an existing file when ADB fails partway.
+- Bad: restoring `push_file` in `commands/app.rs` recreates a competing upload entry point.
 
 ### 6. Tests Required
 
-- Unit test remote path generation for APK and non-APK basenames.
-- Unit test rejection of paths without a usable basename.
-- Build checks: `cargo test`, `cargo clippy --all-targets -- -D warnings`, and `pnpm build`.
-- UI smoke: install mode remains APK-only and the default; push mode accepts any single file and shows the `/sdcard/Download` hint.
-- Manual device smoke: push one non-APK file, verify the returned path exists with `adb -s <serial> shell ls -l <remote_path>`.
+- Rust unit tests assert path normalization/root rejection, shell quoting, directory record integrity including trailing CR/LF, stable sorting, and hidden/UTF-8 names.
+- Rust unit tests assert numbering before extensions, preview magic-byte recognition, and device-side `20 MiB + 1` output capping.
+- Frontend reducer/helper tests assert device reset, current-context loading versus loaded empty state, latest-request wins for listings, stale-preview rejection, mixed transfer results, and failure-count summaries.
+- Frontend operation-context tests assert stale snapshots are rejected after A -> B -> A and file-workspace unmount invalidation.
+- Build checks: 60-second `cargo test`, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `pnpm test`, and `pnpm build`.
+- Browser smoke: file tab, no-device state, 1200x800 and 900x600 layout, light/dark themes, and no overlap.
+- Real-device smoke: default listing, absolute path navigation, hidden/UTF-8 names, folder collision, auto-renamed multi-upload, save-dialog download, preview formats/limit, permission failure, and device switching.
 
 ### 7. Wrong vs Correct
 
 #### Wrong
 
 ```typescript
-await invoke("push_file", {
+await invoke("upload_device_file", {
   serial,
-  filePath,
-  remotePath: `/sdcard/Download/${fileName}`,
+  localPath,
+  remotePath: `${currentPath}/${localFileName}`,
 });
 ```
 
 #### Correct
 
 ```typescript
-const remotePath = await invoke<string>("push_file", { serial, filePath });
+const result = await uploadDeviceFile(serial, localPath, currentDirectory.path);
+// Use result.remote_path: the backend selected and validated the final name.
 ```
 
-The backend owns basename extraction and remote path construction so all callers use the same destination contract.
+The backend owns normalized device paths, shell quoting, collision checks, final names, and preview validation. The frontend owns selection, rendering, sequential batch orchestration, and stale-response rejection.
 
 ## Scenario: Streaming Logcat Format and Parsing
 

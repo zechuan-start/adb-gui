@@ -1,7 +1,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+import { basename, downloadDir, join } from "@tauri-apps/api/path";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { getCurrentWebview, type DragDropEvent } from "@tauri-apps/api/webview";
 
@@ -86,6 +87,35 @@ export interface BugreportResult {
   revealed: boolean;
 }
 
+export type DeviceFileKind = "directory" | "file" | "symlink" | "other";
+
+export interface DeviceFileEntry {
+  name: string;
+  path: string;
+  kind: DeviceFileKind;
+  size: number;
+  modified_at: number;
+  previewable: boolean;
+}
+
+export interface DeviceDirectoryListing {
+  path: string;
+  parent: string | null;
+  entries: DeviceFileEntry[];
+}
+
+export interface DeviceTransferResult {
+  name: string;
+  remote_path: string;
+  local_path: string | null;
+}
+
+export interface DeviceImagePreview {
+  data_url: string;
+  mime_type: string;
+  size: number;
+}
+
 export type KeyAction =
   | "back"
   | "home"
@@ -112,8 +142,42 @@ export async function installApk(serial: string, apkPath: string): Promise<strin
   return invoke<string>("install_apk", { serial, apkPath });
 }
 
-export async function pushFile(serial: string, filePath: string): Promise<string> {
-  return invoke<string>("push_file", { serial, filePath });
+export async function listDeviceDirectory(
+  serial: string,
+  path: string | null = null,
+): Promise<DeviceDirectoryListing> {
+  return invoke<DeviceDirectoryListing>("list_device_directory", { serial, path });
+}
+
+export async function createDeviceDirectory(
+  serial: string,
+  parentPath: string,
+  name: string,
+): Promise<DeviceFileEntry> {
+  return invoke<DeviceFileEntry>("create_device_directory", { serial, parentPath, name });
+}
+
+export async function uploadDeviceFile(
+  serial: string,
+  localPath: string,
+  remoteDir: string,
+): Promise<DeviceTransferResult> {
+  return invoke<DeviceTransferResult>("upload_device_file", { serial, localPath, remoteDir });
+}
+
+export async function downloadDeviceFile(
+  serial: string,
+  remotePath: string,
+  localPath: string,
+): Promise<DeviceTransferResult> {
+  return invoke<DeviceTransferResult>("download_device_file", { serial, remotePath, localPath });
+}
+
+export async function previewDeviceImage(
+  serial: string,
+  remotePath: string,
+): Promise<DeviceImagePreview> {
+  return invoke<DeviceImagePreview>("preview_device_image", { serial, remotePath });
 }
 
 export async function sendKey(serial: string, action: KeyAction): Promise<string> {
@@ -149,12 +213,28 @@ export async function pickApkFile(): Promise<string | null> {
   return typeof selected === "string" ? selected : null;
 }
 
-export async function pickAnyFile(): Promise<string | null> {
+export async function pickDeviceUploadFiles(): Promise<string[]> {
   const selected = await open({
-    title: "Select File",
-    multiple: false,
+    title: "选择要上传到设备的文件",
+    multiple: true,
+    directory: false,
   });
-  return typeof selected === "string" ? selected : null;
+  if (Array.isArray(selected)) {
+    return selected;
+  }
+  return typeof selected === "string" ? [selected] : [];
+}
+
+export async function pickDeviceDownloadPath(fileName: string): Promise<string | null> {
+  const defaultName = await basename(fileName);
+  if (!defaultName || defaultName === "." || defaultName === "..") {
+    throw new Error("无法生成本地保存文件名");
+  }
+  const defaultPath = await join(await downloadDir(), defaultName);
+  return save({
+    title: "保存设备文件",
+    defaultPath,
+  });
 }
 
 export async function openFile(path: string): Promise<void> {

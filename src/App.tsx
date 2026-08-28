@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ClipboardList, LayoutList, Moon, QrCode, RefreshCw, Sun, TabletSmartphone } from "lucide-react";
+import {
+  ClipboardList,
+  FolderTree,
+  LayoutList,
+  Moon,
+  QrCode,
+  RefreshCw,
+  Sun,
+  TabletSmartphone,
+} from "lucide-react";
 import { useDeviceStore } from "@/store/device";
 import { useThemeStore } from "@/store/theme";
 import {
@@ -24,14 +33,16 @@ import { PackageManagerPanel } from "@/components/PackageManager";
 import { ToastBar } from "@/components/ToastBar";
 import { WifiConnectButton } from "@/components/WifiConnect";
 import { CodeGeneratorPage } from "@/components/CodeGeneratorPage";
+import { DeviceFileManager } from "@/components/DeviceFileManager";
 import { cn } from "@/lib/utils";
 
-type TabId = "tools" | "logcat" | "apps" | "code";
+type TabId = "tools" | "logcat" | "apps" | "files" | "code";
 
 const TABS: { id: TabId; label: string; icon: typeof TabletSmartphone; badge?: string }[] = [
   { id: "tools", label: "工具", icon: TabletSmartphone },
   { id: "logcat", label: "日志", icon: ClipboardList },
   { id: "apps", label: "应用", icon: LayoutList },
+  { id: "files", label: "文件", icon: FolderTree },
   { id: "code", label: "生码", icon: QrCode },
 ];
 
@@ -200,6 +211,7 @@ function App() {
           )}
           {activeTab === "logcat" && <LogcatPanel />}
           {activeTab === "apps" && <PackageManagerPanel />}
+          {activeTab === "files" && <DeviceFileManager />}
           {activeTab === "code" && <CodeGeneratorPage />}
         </div>
       </main>

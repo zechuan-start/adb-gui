@@ -1,4 +1,3 @@
-
 mod adb;
 mod commands;
 
@@ -176,8 +175,12 @@ pub fn run() {
             commands::device::get_adb_info,
             commands::device::list_devices,
             commands::device::get_current_activity,
+            commands::device_files::list_device_directory,
+            commands::device_files::create_device_directory,
+            commands::device_files::upload_device_file,
+            commands::device_files::download_device_file,
+            commands::device_files::preview_device_image,
             commands::app::install_apk,
-            commands::app::push_file,
             commands::app::uninstall_app,
             commands::app::launch_app,
             commands::app::force_stop_app,
