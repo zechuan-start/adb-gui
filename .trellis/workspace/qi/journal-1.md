@@ -184,3 +184,37 @@ Implemented and verified port forwarding, screen recording, and bug report colle
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: 完成设备文件双向传递并发布 0.1.2
+
+**Date**: 2026-08-29
+**Task**: 完成设备文件双向传递并发布 0.1.2
+**Branch**: `main`
+
+### Summary
+
+完成设备文件工作台、六项缺陷修复和真机/模拟器验收, 版本升级至 0.1.2.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8897f8c` | (see git log) |
+| `a31a866` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
