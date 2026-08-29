@@ -3,6 +3,12 @@ use std::process::Command;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 pub struct AppState {
     pub adb_path: Mutex<String>,
 }
@@ -65,7 +71,11 @@ fn find_adb(app: &AppHandle) -> Result<String, String> {
     } else {
         "linux"
     };
-    let adb_name = if cfg!(target_os = "windows") { "adb.exe" } else { "adb" };
+    let adb_name = if cfg!(target_os = "windows") {
+        "adb.exe"
+    } else {
+        "adb"
+    };
     let embedded = resource_dir.join(platform_dir).join(adb_name);
     if embedded.exists() {
         if cfg!(target_family = "unix") {
@@ -85,7 +95,7 @@ fn find_adb(app: &AppHandle) -> Result<String, String> {
 }
 
 pub fn prepare_command(app: &AppHandle, adb_path: &str) -> Command {
-    let mut command = Command::new(adb_path);
+    let mut command = new_command(adb_path);
     if let Some(lib_dir) = embedded_linux_lib_dir(app, adb_path) {
         command.env("LD_LIBRARY_PATH", lib_dir);
     }
@@ -94,9 +104,18 @@ pub fn prepare_command(app: &AppHandle, adb_path: &str) -> Command {
 
 pub fn prepare_async_command(app: &AppHandle, adb_path: &str) -> tokio::process::Command {
     let mut command = tokio::process::Command::new(adb_path);
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
     if let Some(lib_dir) = embedded_linux_lib_dir(app, adb_path) {
         command.env("LD_LIBRARY_PATH", lib_dir);
     }
+    command
+}
+
+fn new_command(program: &str) -> Command {
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
     command
 }
 
@@ -123,7 +142,7 @@ fn is_path_within(path: &str, root: &PathBuf) -> bool {
 
 #[cfg(unix)]
 fn which_adb() -> Result<String, String> {
-    let output = std::process::Command::new("which")
+    let output = new_command("which")
         .arg("adb")
         .output()
         .map_err(|e| format!("which failed: {e}"))?;
@@ -138,12 +157,17 @@ fn which_adb() -> Result<String, String> {
 
 #[cfg(windows)]
 fn which_adb() -> Result<String, String> {
-    let output = std::process::Command::new("where")
+    let output = new_command("where")
         .arg("adb")
         .output()
         .map_err(|e| format!("where failed: {e}"))?;
     if output.status.success() {
-        let p = String::from_utf8_lossy(&output.stdout).lines().next().unwrap_or("").trim().to_string();
+        let p = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
         if !p.is_empty() {
             return Ok(p);
         }
@@ -167,11 +191,19 @@ pub fn get_adb_version(app: &AppHandle, adb_path: &str) -> String {
 }
 
 pub fn adb_source(adb_path: &str, app: &AppHandle) -> String {
-    let resource_dir = app.path().resource_dir().map(|d| d.to_string_lossy().to_string()).unwrap_or_default();
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map(|d| d.to_string_lossy().to_string())
+        .unwrap_or_default();
     if adb_path.starts_with(&resource_dir) {
         "embedded".to_string()
-    } else if std::env::var("ANDROID_HOME").map(|h| adb_path.contains(&h)).unwrap_or(false)
-        || std::env::var("ANDROID_SDK_ROOT").map(|h| adb_path.contains(&h)).unwrap_or(false)
+    } else if std::env::var("ANDROID_HOME")
+        .map(|h| adb_path.contains(&h))
+        .unwrap_or(false)
+        || std::env::var("ANDROID_SDK_ROOT")
+            .map(|h| adb_path.contains(&h))
+            .unwrap_or(false)
     {
         "sdk".to_string()
     } else {

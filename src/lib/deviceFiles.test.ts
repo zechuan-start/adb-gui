@@ -3,6 +3,7 @@ import type { DeviceDirectoryListing, DeviceFileEntry } from "@/lib/tauri";
 import {
   buildDeviceBreadcrumbs,
   createDeviceFileManagerState,
+  deviceDownloadDefaultName,
   deviceFileManagerReducer,
   deviceTransferSummary,
   deviceFileTypeLabel,
@@ -46,6 +47,22 @@ describe("device file helpers", () => {
     expect(deviceFileTypeLabel(imageEntry)).toBe("PNG");
     expect(deviceFileTypeLabel({ ...imageEntry, kind: "directory" })).toBe("文件夹");
     expect(localFileName("C:\\Users\\qi\\photo.png")).toBe("photo.png");
+  });
+
+  it("creates Windows-safe default names for device downloads", () => {
+    expect(deviceDownloadDefaultName("a\\b.txt", "\\")).toBe("a_b.txt");
+    expect(deviceDownloadDefaultName("a:b.txt", "\\")).toBe("a_b.txt");
+    expect(deviceDownloadDefaultName("CON.txt", "\\")).toBe("_CON.txt");
+    expect(deviceDownloadDefaultName("report. ", "\\")).toBe("report__");
+    expect(deviceDownloadDefaultName("line\u0000break.txt", "\\")).toBe(
+      "line_break.txt",
+    );
+    expect(deviceDownloadDefaultName("..", "\\")).toBe("device-file");
+  });
+
+  it("preserves valid device names on POSIX hosts", () => {
+    const fileName = "设备 文件's.txt";
+    expect(deviceDownloadDefaultName(fileName, "/")).toBe(fileName);
   });
 
   it("invalidates operation snapshots across device ABA changes and unmounts", () => {

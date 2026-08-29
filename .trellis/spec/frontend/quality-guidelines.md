@@ -51,3 +51,57 @@
 - 是否有未处理的 Promise (需 catch 或 void)
 - 响应式布局: 是否在窄屏下可用
 - 暗色/亮色模式: 是否使用语义 token (不硬编码颜色)
+
+## Scenario: Device Download Default Filenames
+
+### 1. Scope / Trigger
+
+- Trigger: adding or changing a system save dialog whose suggested filename comes from an Android device.
+- Applies to device-file downloads through the Tauri bridge on Windows, macOS, and Linux.
+
+### 2. Signatures
+
+- `deviceDownloadDefaultName(fileName: string, pathSeparator: string) -> string`
+- `pickDeviceDownloadPath(fileName: string) -> Promise<string | null>`
+
+### 3. Contracts
+
+- `fileName` is already the basename returned by the device-file backend. Do not parse it again with a host-native `basename` API because Android permits characters that have path semantics on Windows.
+- Use Tauri `sep()` only to select the host filename rules, then pass the result to the pure helper.
+- On Windows, replace `< > : " / \ | ? *` and control characters with `_`, replace trailing dots/spaces with `_`, and prefix reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1-9`, `LPT1-9`, including extensions) with `_`.
+- On macOS and Linux, preserve the original UTF-8 device filename, including Chinese characters, spaces, single quotes, colons, and backslashes.
+- Empty, `.` and `..` names fall back to `device-file` on every platform.
+
+### 4. Validation & Error Matrix
+
+- Windows-invalid character -> replace that character with `_` before calling `join()` or opening the save dialog.
+- Windows reserved basename with or without an extension -> prefix the complete name with `_`.
+- Empty, `.` or `..` -> use `device-file`; never pass a non-file name to the dialog.
+- User cancels the save dialog -> return `null` without displaying an error.
+
+### 5. Good/Base/Bad Cases
+
+- Good: Windows maps `a\\b.txt` to `a_b.txt`, `CON.txt` to `_CON.txt`, and `report. ` to `report__`.
+- Base: POSIX hosts preserve `设备 文件's.txt` byte-for-byte.
+- Bad: `basename(fileName)` on Windows treats an Android backslash as a host separator and silently changes the suggested filename.
+
+### 6. Tests Required
+
+- Unit-test Windows backslashes, colons, control characters, reserved names with extensions, and trailing dots/spaces.
+- Unit-test the empty/`.`/`..` fallback.
+- Unit-test POSIX preservation with Chinese characters, spaces, and single quotes.
+- Run `pnpm test` and `pnpm build` after changing the helper or dialog bridge.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+const defaultName = await basename(fileName);
+```
+
+#### Correct
+
+```typescript
+const defaultName = deviceDownloadDefaultName(fileName, sep());
+```

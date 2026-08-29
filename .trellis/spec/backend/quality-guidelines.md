@@ -46,6 +46,63 @@ Rust commands and pure helpers use colocated `#[cfg(test)]` unit tests. Verifica
 - 跨平台: Windows/macOS/Linux 路径和进程处理是否兼容
 - 新增依赖是否必要, 是否指定了版本
 
+## Scenario: Hidden ADB Child Processes on Windows
+
+### 1. Scope / Trigger
+
+- Trigger: adding or changing any synchronous or asynchronous host process used for ADB discovery, polling, streaming, or device operations.
+- Applies to release builds that use the Windows GUI subsystem and therefore have no parent console for child console applications to inherit.
+
+### 2. Signatures
+
+- `new_command(program: &str) -> std::process::Command`
+- `prepare_command(app: &AppHandle, adb_path: &str) -> std::process::Command`
+- `prepare_async_command(app: &AppHandle, adb_path: &str) -> tokio::process::Command`
+- `which_adb() -> Result<String, String>` must create `where` / `which` through the shared synchronous constructor.
+
+### 3. Contracts
+
+- On Windows, every host console process created by the ADB infrastructure uses `CREATE_NO_WINDOW` (`0x08000000`).
+- Both `std::process::Command` and `tokio::process::Command` paths have the same hidden-window behavior.
+- On macOS and Linux, command creation remains unchanged.
+- Process arguments, exit status, stdout, stderr, and existing `Result<T, String>` behavior are unchanged.
+
+### 4. Validation & Error Matrix
+
+- Windows GUI release + missing `CREATE_NO_WINDOW` -> each short ADB poll can flash a console window.
+- Windows async ADB stream + missing `CREATE_NO_WINDOW` -> a console window can remain visible for the stream lifetime.
+- Non-Windows build -> do not import `std::os::windows::process::CommandExt` or apply Windows creation flags.
+- Hidden child exits with an error -> preserve stderr and status handling; hiding the window must not hide the error from the caller.
+
+### 5. Good/Base/Bad Cases
+
+- Good: the three-second `adb devices -l` poll runs repeatedly in a Windows release build without creating a visible console window.
+- Base: `where adb` and `adb version` run once during startup through the same hidden synchronous constructor.
+- Good: logcat uses the hidden async constructor and still exposes piped stdout.
+- Bad: calling `Command::new("adb")` directly from a command module bypasses the Windows flag and can reintroduce flashing windows.
+
+### 6. Tests Required
+
+- Windows compile check: `cargo check --manifest-path src-tauri/Cargo.toml` must compile both creation-flag call sites.
+- Regression suite: `cargo test --manifest-path src-tauri/Cargo.toml` and Clippy must pass.
+- Release smoke: build with `pnpm tauri build --no-bundle`, connect an ADB device or emulator, run for at least two device-poll intervals, and assert that device/activity updates continue with no Console, Command Prompt, or Terminal window appearing.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```rust
+let command = Command::new(adb_path);
+```
+
+#### Correct
+
+```rust
+let mut command = Command::new(program);
+#[cfg(windows)]
+command.creation_flags(CREATE_NO_WINDOW);
+```
+
 ## Scenario: ADB Port Forward Commands
 
 ### 1. Scope / Trigger
