@@ -113,9 +113,13 @@ pub fn prepare_async_command(app: &AppHandle, adb_path: &str) -> tokio::process:
 }
 
 fn new_command(program: &str) -> Command {
-    let mut command = Command::new(program);
+    let command = Command::new(program);
     #[cfg(windows)]
-    command.creation_flags(CREATE_NO_WINDOW);
+    let command = {
+        let mut command = command;
+        command.creation_flags(CREATE_NO_WINDOW);
+        command
+    };
     command
 }
 
