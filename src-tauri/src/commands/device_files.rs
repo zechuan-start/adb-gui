@@ -293,7 +293,9 @@ fn parse_directory_records(output: &[u8], directory: &str) -> Result<Vec<DeviceF
     }
 
     let mut entries = Vec::with_capacity(fields.len() / 4);
-    for record in fields.chunks_exact(4) {
+    let (records, remainder) = fields.as_chunks::<4>();
+    debug_assert!(remainder.is_empty());
+    for record in records {
         let kind = match utf8_field(record[0], "类型")? {
             "directory" => DeviceFileKind::Directory,
             "file" => DeviceFileKind::File,

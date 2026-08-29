@@ -1,10 +1,11 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { basename, downloadDir, join } from "@tauri-apps/api/path";
+import { downloadDir, join, sep } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { getCurrentWebview, type DragDropEvent } from "@tauri-apps/api/webview";
+import { deviceDownloadDefaultName } from "@/lib/deviceFiles";
 
 export interface DeviceInfo {
   serial: string;
@@ -226,10 +227,7 @@ export async function pickDeviceUploadFiles(): Promise<string[]> {
 }
 
 export async function pickDeviceDownloadPath(fileName: string): Promise<string | null> {
-  const defaultName = await basename(fileName);
-  if (!defaultName || defaultName === "." || defaultName === "..") {
-    throw new Error("无法生成本地保存文件名");
-  }
+  const defaultName = deviceDownloadDefaultName(fileName, sep());
   const defaultPath = await join(await downloadDir(), defaultName);
   return save({
     title: "保存设备文件",

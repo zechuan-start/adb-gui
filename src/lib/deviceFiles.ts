@@ -350,6 +350,32 @@ export function localFileName(path: string): string {
   return path.split(/[\\/]/).pop() || path;
 }
 
+export function deviceDownloadDefaultName(
+  fileName: string,
+  pathSeparator: string,
+): string {
+  if (!fileName || fileName === "." || fileName === "..") {
+    return "device-file";
+  }
+  if (pathSeparator !== "\\") {
+    return fileName;
+  }
+
+  let safeName = fileName.replace(
+    /[\u0000-\u001f\u007f-\u009f<>:"\/\\|?*]/g,
+    "_",
+  );
+  safeName = safeName.replace(/[. ]+$/g, (suffix) => "_".repeat(suffix.length));
+
+  if (!safeName || safeName === "." || safeName === "..") {
+    return "device-file";
+  }
+  if (/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(safeName)) {
+    return `_${safeName}`;
+  }
+  return safeName;
+}
+
 export function isDeviceTransferBusy(transfer: DeviceTransferBatch | null): boolean {
   return transfer?.status === "running";
 }
