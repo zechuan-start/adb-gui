@@ -1,0 +1,9 @@
+{"file": ".trellis/tasks/08-29-logcat-refactor/design.md", "reason": "父任务架构总纲: 原则 3 (现场属于用户) 与原则 4 (状态必须正交) 是本任务的直接依据; 第三节目标文件结构规定了本任务要建立的组件与 hook 布局; 4.4 节 store 分层规定本任务只能新增视口组字段"}
+{"file": ".trellis/tasks/08-29-logcat-refactor/research/android-studio-logcat-model.md", "reason": "第 1 节滚动与跟随模型是本任务的行为规范来源: AS 上滚不停数据, 三个独立控件 Pause/ScrollToEnd/Restart, 视图内点击也停止跟随并锚定该行; 第 5 节列出与现状的差异"}
+{"file": ".trellis/tasks/08-29-logcat-refactor/prd.md", "reason": "父任务需求澄清结论解释了为什么本任务的核心是控件解耦而非改变数据流行为; 子任务地图界定本任务与 C/D 的边界"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "现有目录约定 (组件扁平, 不按 feature 分文件夹) 会被本任务突破, 需要按新结构改写; 含命名约定与 @/ 别名要求"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "组件结构顺序 (store hooks -> local state -> handlers -> JSX), props 约定, cn() 条件 class, 语义 token, button type 必填; 本任务拆分四个组件必须遵循"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "自定义 hook 命名与事件监听模式; 本任务新增 useFollowScroll 并要改写此文件中'当前项目无自定义 hooks 文件'的表述"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "会话级 zustand (顶层页签卸载后仍需保留, 重启后清空) 正是本任务'切 tab 不丢现场'的依据; 派生状态与 selector 约定"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "前端质量红线, 特别是禁止 document.querySelector 直接操作 DOM (本任务判定点击落在哪一行必须用 data-seq + 事件目标遍历); 虚拟滚动与键盘交互需真实 UI 冒烟不能只靠 build"}
+{"file": ".trellis/spec/guides/product-planning-style-guide.md", "reason": "工具型 app 规则: 高频动作放首屏, 破坏性动作要视觉区分并要求确认; 本任务要分离清屏与清设备缓冲并复用内联二次确认"}

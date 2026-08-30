@@ -1,0 +1,8 @@
+{"file": ".trellis/tasks/08-29-logcat-refactor/design.md", "reason": "父任务架构总纲: 五条设计原则, 明确拒绝的方向, 共享数据契约 (事件协议/行结构/缓冲索引/store 分层). 本任务负责建立其中的第 4.1-4.4 节, 实现前必读"}
+{"file": ".trellis/tasks/08-29-logcat-refactor/prd.md", "reason": "父任务源需求与子任务地图, 说明本任务是地基以及 B/C/D 依赖它什么, 避免越界实现"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "必读 Scenario: Streaming Logcat Format and Parsing (本任务要改写的现有契约) 与 Scenario: Hidden ADB Child Processes on Windows (子进程必须走 prepare_async_command 的硬约束); 另含 command 返回 Result, LazyLock 正则, generate_handler 注册等红线"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "zustand v5 store 模式与 selector 约定; 本任务新增 useLogcatStore 并要在此文件补充可变数据+revision 驱动的新模式"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "前端质量红线: 禁 any, 禁组件内直接 import Tauri API, 监听与定时器必须 cleanup, 未处理 Promise 需 catch 或 void; 含前端验证命令顺序"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Tauri bridge 类型必须与 Rust struct 一一对应; 本任务改动 LogcatLine 并新增三个载荷类型, 需遵守该组织约定"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "Tauri 事件监听的 useEffect + unlisten 模式; 本任务新建 hooks/ 目录与 useLogcatStream"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "本任务改动跨 Rust 事件载荷, TS bridge, store, 组件四层, 且新增事件类型与 payload 字段, 正是该指南的触发条件"}

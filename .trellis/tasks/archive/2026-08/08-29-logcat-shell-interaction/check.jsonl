@@ -1,0 +1,7 @@
+{"file": ".trellis/tasks/08-29-logcat-refactor/design.md", "reason": "校验原则 4 状态正交是否真正落地 (Pause 图标不得依赖 followMode), 以及是否违反第二节拒绝方向 (条件渲染承载日志页, 清屏触发 adb, 暂停与回到底部合并)"}
+{"file": ".trellis/tasks/08-29-logcat-refactor/research/android-studio-logcat-model.md", "reason": "校验四种 streamMode x followMode 组合的行为是否与 AS 模型一致, 三个控件职责是否正确分离"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "校验拆分后的组件是否遵循结构顺序, props 约定, button type, cn() 与语义 token; 行组件是否只吃 props 以保证 memo 生效"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "校验新目录结构与命名是否自洽, 且 spec 中的目录树与 feature 目录约定是否已同步改写"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "校验 useFollowScroll 命名与职责单一性, cleanup 完整性, 以及 spec 是否已补 hooks 约定与两条模式"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "校验无 querySelector 直接操作 DOM, 响应式与暗色模式, 以及虚拟滚动/键盘交互是否做了真实 UI 冒烟; 含验证命令顺序"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "本任务复用既有内联二次确认模式而非新建 dialog, 需检查是否真的复用而非重复实现; 拆分组件时容易产生重复的行渲染或状态判断逻辑"}

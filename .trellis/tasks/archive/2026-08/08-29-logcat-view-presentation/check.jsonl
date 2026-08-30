@@ -1,0 +1,8 @@
+{"file": ".trellis/tasks/08-29-logcat-refactor/design.md", "reason": "校验 soft-wrap 关闭时是否真的走固定行高快路径且不挂测量 ref; 校验第五节两个风险的处置是否落地; 本任务是最后一个子任务, 需按父任务第七节 spec 更新总清单逐条核对全部四个子任务的 spec 一致性"}
+{"file": ".trellis/tasks/08-29-logcat-refactor/prd.md", "reason": "本任务完成后触发父任务集成评审: 需逐条执行跨子任务验收标准, 并确认无临时兼容代码残留 (LogcatFilter, 旧过滤控件, logcat-line 通道, 旧组件文件, packagePids 状态)"}
+{"file": ".trellis/tasks/08-29-logcat-refactor/research/android-studio-logcat-model.md", "reason": "校验 soft-wrap 默认关闭与 Standard/Compact 字段裁剪是否符合 AS 行为"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "校验 list_device_processes 的 Result 返回, helper 使用, generate_handler 注册, 无 shell 注入, 以及 ps -o 与 ps -A 回退解析的单测覆盖; 校验 spec 是否已补映射契约与缓存失效规则"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "校验行组件 memo 未被破坏 (未订阅 store), 崩溃高亮只用语义 token 且不导致列错位, 以及 spec 两条新约定是否已补"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "校验 soft-wrap 动态测量是否做了真实 UI 冒烟 (跟随抖动/detached 漂移/淘汰补偿/反复开关/切 tab 恢复), 而非仅 build 通过; 含验证命令顺序"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "校验 ProcessEntry 与 Rust struct 字段同步, 视图类型无 any"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "校验 PID 映射跨五层的数据流一致性, 特别是映射刷新与行入库时机错位的处理 (入库写入 + 渲染兜底, 不回填历史行)"}

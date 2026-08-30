@@ -1,0 +1,9 @@
+{"file": ".trellis/tasks/08-29-logcat-refactor/prd.md", "reason": "集成评审的依据: 跨子任务验收标准 (端到端行为, 一致性, 无临时兼容代码残留) 只有四个子任务全部完成后才能验证"}
+{"file": ".trellis/tasks/08-29-logcat-refactor/design.md", "reason": "第七节 spec 更新总清单需逐条核对; 第一节五条设计原则用于检查是否有子任务为了自身验收而违反全局原则"}
+{"file": ".trellis/tasks/08-29-logcat-refactor/research/android-studio-logcat-model.md", "reason": "第 5 节与现状的关键差异清单可作为集成验收的对照表, 确认每一项都被某个子任务覆盖"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "核对 A 与 D 累积的后端 spec 改动 (流式协议重写, PID 映射契约) 是否与最终代码一致"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "核对 C 与 D 累积的查询语言场景是否与最终代码一致; 验证命令顺序用于集成后的全量验证"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "核对 A 补充的可变数据+revision 模式与 store 清单是否与最终 useLogcatStore 一致"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "核对 B 与 D 累积的目录树改动是否与最终文件布局一致, 且旧文件 (Logcat.tsx, LogcatViewer.tsx) 已从 spec 与代码中消失"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "核对 B 补充的 hooks 约定与两条模式是否与最终 useLogcatStream/useFollowScroll 一致"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "核对 D 补充的两条约定 (行组件 memo 只吃 props, 动态行高需显式 measure 时机) 是否与最终实现一致"}

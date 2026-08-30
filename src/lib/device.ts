@@ -13,7 +13,7 @@ export function isOnlineDevice(device: DeviceInfo | null): boolean {
 }
 
 export function isNetworkDevice(device: DeviceInfo): boolean {
-  return device.serial.includes(":") || device.serial.includes("._adb-tls-connect._tcp");
+  return device.is_network;
 }
 
 export function isSelectableDevice(device: DeviceInfo): boolean {
@@ -41,18 +41,27 @@ export function getDeviceDisplayLabel(device: DeviceInfo): string {
   return label === device.serial ? label : `${label} - ${device.serial}`;
 }
 
-export function getPreferredSelectedDeviceSerial(devices: DeviceInfo[], selectedSerial: string | null): string | null {
+export function getPreferredSelectedDeviceSerial(
+  devices: DeviceInfo[],
+  selectedSerial: string | null,
+  previousDevices: DeviceInfo[] = devices,
+): string | null {
   const selectableDevices = getSelectableDevices(devices);
   const selected = getDeviceBySerial(devices, selectedSerial);
   if (selected?.state === "device") {
     return selected.serial;
   }
 
-  if (selected && isNetworkDevice(selected)) {
-    const onlineNetwork = devices.find(isConnectedNetworkDevice);
-    if (onlineNetwork) {
-      return onlineNetwork.serial;
-    }
+  const previousSelected = getDeviceBySerial(previousDevices, selectedSerial);
+  const aliasIdentity =
+    selected?.alias_identity ?? previousSelected?.alias_identity;
+  const onlineAlias = aliasIdentity
+    ? selectableDevices.find(
+        (device) => device.alias_identity === aliasIdentity && isOnlineDevice(device),
+      )
+    : null;
+  if (onlineAlias) {
+    return onlineAlias.serial;
   }
 
   const online = selectableDevices.find(isOnlineDevice);

@@ -1,0 +1,31 @@
+{
+  "id": "logcat-refactor",
+  "name": "logcat-refactor",
+  "title": "Logcat 日志功能重构",
+  "description": "重构 Logcat: 后端批量 emit 与 per-serial 进程管理, 前端 store 化拆分与切 tab 不丢日志",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "qi",
+  "assignee": "qi",
+  "createdAt": "2026-08-29",
+  "completedAt": "2026-08-30",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "08-29-logcat-stream-pipeline",
+    "08-29-logcat-shell-interaction",
+    "08-29-logcat-query-language",
+    "08-29-logcat-view-presentation"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

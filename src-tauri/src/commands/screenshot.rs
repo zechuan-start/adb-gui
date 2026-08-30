@@ -1,4 +1,3 @@
-
 use std::path::PathBuf;
 use tauri::AppHandle;
 use tauri_plugin_opener::OpenerExt;
@@ -54,7 +53,11 @@ pub fn take_screenshot(app: AppHandle, serial: String) -> Result<ScreenshotResul
         revealed = true;
     }
 
-    Ok(ScreenshotResult { path: path_str, opened, revealed })
+    Ok(ScreenshotResult {
+        path: path_str,
+        opened,
+        revealed,
+    })
 }
 
 fn screenshot_dir() -> PathBuf {

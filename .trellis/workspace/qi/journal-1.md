@@ -218,3 +218,34 @@ Implemented and verified port forwarding, screen recording, and bug report colle
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Logcat 日志功能重构
+
+**Date**: 2026-08-30
+**Task**: Logcat 日志功能重构
+**Branch**: `main`
+
+### Summary
+
+完成批量 Logcat 通道、AS 式交互、查询语言、视图呈现、mDNS serial 去重与真机 Restart 修复; 全量门禁和 release 真机/模拟器冒烟通过, D 与父任务已归档.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

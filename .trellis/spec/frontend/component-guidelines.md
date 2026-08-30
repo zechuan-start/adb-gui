@@ -91,6 +91,27 @@ export function SomeComponent({ serial, onDone }: Props) { ... }
 
 ---
 
+## Virtualized Streaming Lists
+
+- Virtualized row components must be wrapped in `memo` and receive only row-local props. A row must not subscribe to stream-wide counters such as `pausedBacklog`, `totalCount`, or `revision`, because those values would repaint every visible row during high-frequency input.
+- Keep row identity stable with the domain sequence key, not the current array index. Parent callbacks and column objects passed to memoized rows must remain referentially stable unless their behavior actually changes.
+- Dynamic measurement must have an explicit feature gate. For Logcat, `softWrap=false` is the fixed 20 px fast path: do not attach `measureElement`, call `measure()`, or schedule measurement compensation.
+- When dynamic measurement is enabled, provide the virtualizer's required `data-index`, measure after mount/layout, and batch scroll compensation through one animation frame. Re-measure after a hidden persistent panel becomes visible, because `display: none` invalidates layout measurements.
+
+```tsx
+const LogcatRow = memo(LogcatRowView);
+
+<div
+  ref={softWrap ? virtualizer.measureElement : undefined}
+  data-index={virtualItem.index}
+  style={{ height: softWrap ? undefined : `${LOGCAT_ROW_HEIGHT}px` }}
+/>
+```
+
+The fixed and measured paths must stay visibly separate. Adding a measurement fallback to the fixed path reintroduces layout work and scroll instability even when wrapping is disabled.
+
+---
+
 ## Common Mistakes
 
 - 不要在组件中直接 `import { invoke } from "@tauri-apps/api/core"`, 通过 `lib/tauri.ts` 调用.

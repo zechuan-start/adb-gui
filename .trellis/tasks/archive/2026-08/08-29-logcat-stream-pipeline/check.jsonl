@@ -1,0 +1,6 @@
+{"file": ".trellis/tasks/08-29-logcat-refactor/design.md", "reason": "校验共享契约是否被正确建立: 事件协议 4.1, 行结构 4.2, 缓冲与索引 4.3, store 分层 4.4; 并核对是否违反第二节明确拒绝的方向 (每行一次 setState, 不可变数组缓冲)"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "校验 command 返回 Result 无 panic, 正则为文件级 LazyLock, generate_handler 已注册, 子进程仍走 prepare_async_command; 含后端验证命令顺序 (cargo test/fmt/clippy)"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "校验禁 any, 桥接层封装, cleanup 完整, 测试要求 (解析/校验/状态转换的改动必须有回归测试); 含前端验证命令顺序"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "校验 store 是否按约定组织, selector 是否按字段订阅, 以及 spec 是否已补充可变数据+revision 模式"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "校验 LogcatLine 移除 serial 后 Rust struct 与 TS interface 三处 (结构体/接口/单测) 是否同步"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "本任务修改了 MAX_LINES/容量等常量并新建工具模块, 需按 Pre-Modification Rule 检查是否有遗漏的引用点"}

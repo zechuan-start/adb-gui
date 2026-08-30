@@ -6,7 +6,7 @@
 
 ## Overview
 
-当前项目无自定义 hooks 文件. 共享状态通过 Zustand store hooks (`useDeviceStore`, `useFeedbackStore`) 实现. 组件内逻辑直接用 React 内置 hooks.
+Custom hooks live in `src/hooks/` when they own a reusable external lifecycle. Shared application state remains in Zustand stores; hooks orchestrate effects and do not become a second state owner.
 
 ---
 
@@ -29,13 +29,51 @@ useEffect(() => {
 }, []);
 ```
 
+## Streaming Lifecycles
+
+`useLogcatStream` connects React device selection to the pure `logcatStreamController`. Keep event listeners, start/stop commands, animation-frame scheduling, and stale-session rejection in the controller so they can be tested in the Node Vitest environment without rendering React.
+
+- Register `logcat-batch` and `logcat-exit` listeners before calling `startLogcat`; the initial `-T 5000` burst can otherwise be lost.
+- Event callbacks only enqueue bounded data and request a frame. They must not call Zustand actions directly.
+- Buffer events that arrive before `startLogcat` returns, then filter them by the returned `session_id`.
+- Cleanup is idempotent. If cleanup occurs while start is pending, precisely stop the late `{ serial, session_id }` when it returns.
+- Use a logical queue head plus occasional compaction for bounded hot-path queues; repeated `Array.shift()` is O(window).
+- Inject listener, command, and frame functions into the pure controller and unit-test early events, disposal, A -> B -> A, capacity, and same-frame exit behavior.
+
+## Animation-Driven UI Lifecycles
+
+`useFollowScroll` keeps React refs and event adapters thin while `followScrollController` owns scroll intent, anchoring, and frame cancellation. Use this split when lifecycle behavior has timing races that can be tested without a browser renderer.
+
+- Buffer high-frequency events and mutable DOM measurements in refs, then coalesce writes into `requestAnimationFrame`; do not write Zustand state for every event.
+- When a detached view retains an `anchoredSeq`, compensate an index change synchronously from `useLayoutEffect` by calling `measureNow()`. A passive effect plus a later animation frame allows the FIFO-updated DOM to paint once at the stale `scrollTop`, which makes old and new rows flash on every batch.
+- Keep the layout and animation-frame paths mutually exclusive: detached views with an anchor use the layout path; follow mode and detached views without an anchor keep the coalesced animation-frame path.
+- Inject `requestFrame`, `cancelFrame`, and element access into the pure controller so frame ordering and stale callbacks are deterministic in Vitest.
+- A controller created during render and retained in `useRef` must have repeatable cleanup. React StrictMode can run effect cleanup and setup again with the same controller, so cleanup cancels outstanding work but must not permanently disable later scheduling.
+- Cancel every outstanding frame lease during cleanup, including delayed programmatic-scroll guards and user-intent windows. Hidden tabs can otherwise replay stale scroll writes when shown again.
+- A FIFO anchor regression must assert both layers: the controller immediately shifts `scrollTop` after a 10,000-row head eviction, and the hook routes anchored revisions through the layout effect without scheduling the passive animation frame. Calling `measureNow()` directly in a controller-only test does not cover the paint-timing bug.
+
 事件监听 (Tauri events):
 
 ```tsx
 useEffect(() => {
+  let disposed = false;
   let unlisten: (() => void) | null = null;
-  onSomeEvent((data) => setState(data)).then((fn) => { unlisten = fn; });
-  return () => { unlisten?.(); };
+  void onSomeEvent((data) => setState(data))
+    .then((nextUnlisten) => {
+      if (disposed) {
+        nextUnlisten();
+        return;
+      }
+      unlisten = nextUnlisten;
+    })
+    .catch((error) => {
+      if (!disposed) reportListenerError(error);
+    });
+  return () => {
+    disposed = true;
+    unlisten?.();
+    unlisten = null;
+  };
 }, []);
 ```
 
@@ -44,7 +82,7 @@ useEffect(() => {
 ## Naming Conventions
 
 - Zustand store hooks: `use<Domain>Store`
-- 如果未来抽取自定义 hook: `use<Feature>` (如 `usePolling`, `useDeviceActivity`)
+- Custom lifecycle hooks: `use<Feature>` (如 `useLogcatStream`, `useFollowScroll`)
 
 ---
 
@@ -53,3 +91,4 @@ useEffect(() => {
 - `useEffect` 中 async 函数需要包装: `void asyncFn()` 或 IIFE.
 - 忘记在 useEffect 中返回 cleanup (尤其是 `listen` 和 `setInterval`).
 - Zustand selector 应使用 `(s) => s.field` 而非 destructure 整个 store (避免不必要 re-render).
+- Do not let a custom lifecycle hook keep another copy of domain state already owned by a store.

@@ -1,0 +1,10 @@
+{"file": ".trellis/tasks/08-29-logcat-refactor/research/android-studio-logcat-model.md", "reason": "第 3 节是本任务的呈现层规范来源: AS 默认不换行 soft-wrap 为主动开关, Standard/Compact 视图与 Modify Views 字段裁剪, 工具栏能力清单及哪些与本项目无关; 第 4 节给出 soft-wrap 与虚拟滚动固定行高冲突的可复刻性评估"}
+{"file": ".trellis/tasks/08-29-logcat-refactor/design.md", "reason": "父任务架构总纲: 第二节明确拒绝 soft-wrap 默认开启; 第五节列出本任务的两个关键风险 (动态行高抖动, PID 映射缓存失效) 及处置要求; 4.2 节规定派生值入库算一次的例外处理"}
+{"file": ".trellis/tasks/08-29-logcat-refactor/prd.md", "reason": "子任务地图说明本任务承接 process: 键与 package: 升级的原因; 不做范围界定了 Up/Down Stack Trace, 多 tab, 视图持久化"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "新增 list_device_processes command 需遵循: 返回 Result, 走 run_adb_with_serial, 注册 generate_handler, 不拼接用户输入进 shell; 参考 Device File Workspace 场景中受控设备端命令与解析的既有做法"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "行组件必须 memo 且只吃 props (新增 columns/softWrap 走 props 而非订阅 store); 语义 token 用于崩溃高亮; 本任务要在此文件补两条约定"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "虚拟滚动等浏览器行为必须真实 UI 冒烟不能只靠 build 通过 (本任务 soft-wrap 动态测量是最高风险项); 含验证命令顺序; 本任务要更新查询语言场景中的 package: 说明"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "ProcessEntry 需与 Rust struct 一一对应; ViewSettings 与 LogcatColumn 类型设计需严格"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "纯逻辑放 lib/ 同目录单测; 本任务新增 lib/logcatView.ts 与 components/logcat/LogcatViewMenu.tsx, 并要同步目录树"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "PID -> 进程名映射跨 Rust command, TS bridge, store 缓存, 查询求值, 行渲染五层, 且映射刷新时机与行入库时机不一致, 正是该指南的触发条件"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "本任务用 splitTimestamp 取代硬编码 slice(6), 需按 Pre-Modification Rule 搜索全部时间格式化点; package: 求值实现替换需确认无旧路径残留"}

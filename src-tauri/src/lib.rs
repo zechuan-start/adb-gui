@@ -189,6 +189,7 @@ pub fn run() {
             commands::screenshot::take_screenshot,
             commands::logcat::clear_logcat,
             commands::logcat::get_package_pids,
+            commands::logcat::list_device_processes,
             commands::logcat::export_logcat,
             commands::logcat::start_logcat,
             commands::logcat::stop_logcat,
@@ -220,17 +221,19 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
 
-    #[cfg(target_os = "macos")]
-    app.run(|app, event| {
-        if let tauri::RunEvent::Reopen {
+    app.run(|app, event| match event {
+        tauri::RunEvent::Exit => {
+            if let Err(error) =
+                tauri::async_runtime::block_on(commands::logcat::shutdown_logcat_sessions())
+            {
+                eprintln!("failed to stop Logcat sessions during application exit: {error}");
+            }
+        }
+        #[cfg(target_os = "macos")]
+        tauri::RunEvent::Reopen {
             has_visible_windows: false,
             ..
-        } = event
-        {
-            show_primary_window(app);
-        }
+        } => show_primary_window(app),
+        _ => {}
     });
-
-    #[cfg(not(target_os = "macos"))]
-    app.run(|_, _| {});
 }

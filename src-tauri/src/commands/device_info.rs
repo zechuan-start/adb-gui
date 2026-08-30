@@ -68,8 +68,8 @@ fn get_density(app: &AppHandle, serial: &str) -> String {
 }
 
 fn get_battery(app: &AppHandle, serial: &str) -> (String, String) {
-    let output = run_adb_with_serial(app, serial, &["shell", "dumpsys", "battery"])
-        .unwrap_or_default();
+    let output =
+        run_adb_with_serial(app, serial, &["shell", "dumpsys", "battery"]).unwrap_or_default();
 
     let mut level = String::new();
     let mut status = String::new();
@@ -77,7 +77,11 @@ fn get_battery(app: &AppHandle, serial: &str) -> (String, String) {
     for line in output.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with("level:") {
-            level = trimmed.strip_prefix("level:").unwrap_or("").trim().to_string();
+            level = trimmed
+                .strip_prefix("level:")
+                .unwrap_or("")
+                .trim()
+                .to_string();
         } else if trimmed.starts_with("status:") {
             let code = trimmed.strip_prefix("status:").unwrap_or("").trim();
             status = match code {

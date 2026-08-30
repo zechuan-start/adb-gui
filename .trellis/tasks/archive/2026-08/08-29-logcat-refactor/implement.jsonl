@@ -1,0 +1,1 @@
+{"file": ".trellis/tasks/08-29-logcat-refactor/design.md", "reason": "父任务无直接实现工作, 不要对本任务执行 task.py start. 实现发生在四个子任务 (stream-pipeline -> shell-interaction -> query-language -> view-presentation), 各自有独立的 prd/design/implement 与 jsonl 清单. 本文档是它们共享的架构总纲"}

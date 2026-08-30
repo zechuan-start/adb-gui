@@ -1,0 +1,7 @@
+{"file": ".trellis/tasks/08-29-logcat-refactor/research/android-studio-logcat-model.md", "reason": "逐条校验语法实现与 AS 官方定义一致: 运算符优先级, 修饰符语义, level 阈值与名称映射, package:mine, is: 两个值; 官方给出的两个优先级对比示例必须有对应单测"}
+{"file": ".trellis/tasks/08-29-logcat-refactor/design.md", "reason": "校验原则 1 (求值路径零正则构造零 toLowerCase, crashKind 入库算一次) 与原则 5 (无两套过滤并存); 4.5 节要求索引维护机制被复用而非重写"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "校验测试覆盖是否满足'新增解析逻辑必须有回归测试'; 校验新增的 Scenario: Logcat Query Language 是否按既有模板写全七个小节; 含验证命令顺序"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "校验 AST 与 Matcher 类型是否严格, 无 any, 无不必要断言"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "校验查询组字段的组织与 selector 订阅; 校验 A 阶段过渡字段是否已彻底删除"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "校验 lib/logcatQuery.ts 与 lib/logcatCrash.ts 是否为纯逻辑模块 (不 import React 或 Tauri, 可在 Node 下单测), 单测同目录命名是否正确"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "校验旧过滤实现无残留引用, 且 tokenizer/parser 内部没有重复的字符处理逻辑"}

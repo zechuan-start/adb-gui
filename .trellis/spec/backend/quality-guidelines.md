@@ -383,35 +383,379 @@ The backend owns normalized device paths, shell quoting, collision checks, final
 
 ### 1. Scope / Trigger
 
-- Trigger: changing the streaming logcat command, the `LogcatLine` payload, or `parse_logcat_line` in `src-tauri/src/commands/logcat.rs`.
+- Trigger: changing the streaming Logcat command, batching, session lifecycle, event payloads, or `parse_logcat_line` in `src-tauri/src/commands/logcat.rs`.
 - Does not apply to quick bug report collection, which intentionally uses a one-shot `-v brief` dump (see the bug report scenario above).
 
 ### 2. Signatures
 
-- `start_logcat(app: AppHandle, serial: String) -> Result<(), String>` spawns `adb -s <serial> logcat -T 5000 -v threadtime` and emits `logcat-line` events.
-- `LogcatLine { serial, time, level, tag, pid, tid, message, raw }` — all lowercase single-word field names so serde output matches the TS interface byte-for-byte.
+- `start_logcat(app: AppHandle, serial: String) -> Result<LogcatSessionInfo, String>`
+- `stop_logcat(serial: String, session_id: u64) -> Result<(), String>`
+- `shutdown_logcat_sessions() -> Result<(), String>`
+- `decode_logcat_record(bytes: &[u8]) -> String`
+- `read_logcat_record(reader, record_bytes) -> Result<Option<String>, std::io::Error>`
+- `LogcatSessionInfo { serial, session_id }`
+- `LogcatBatch { serial, session_id, lines: Vec<LogcatLine> }`
+- `LogcatExit { serial, session_id, reason, detail }`
+- `LogcatLine { time, level, tag, pid, tid, message, raw }`
 
 ### 3. Contracts
 
-- Streaming logcat must use `-v threadtime` so every line carries a device-side `MM-DD HH:MM:SS.mmm` timestamp; `raw` keeps the original line so exports include timestamps for free.
-- `LogcatLine` (Rust) and `LogcatLine` in `src/lib/tauri.ts` must stay field-for-field in sync; the event channel name is `logcat-line`.
+- Spawn through `adb::prepare_async_command` with `adb -s <serial> logcat -T 5000 -v threadtime`; never construct a parallel ADB process path.
+- Keep one `LogcatSession` per serial. Allocate globally increasing `session_id` values, and serialize starts with a per-serial lock so different devices remain independent.
+- A same-serial replacement must remove and fully stop/wait the registered child before spawning its successor. Wireless mDNS transports can tear down a just-opened stream when the older client exits, so overlapping old/new `adb logcat` clients are forbidden.
+- If the previous child cannot be confirmed stopped, return that error and do not spawn a replacement.
+- `stop_logcat` removes and kills a process only when both serial and `session_id` match. A serial-only stop is unsafe because A -> B -> A reuses the same serial.
+- Never hold `LOGCAT_SESSIONS` across `child.kill().await` or another process wait.
+- Spawn every streaming child with `kill_on_drop(true)` as abnormal-path protection. Normal application exit must set a shutdown gate, atomically drain every registered session under the mutex, release the mutex, then attempt `start_kill + wait` for every drained child while aggregating failures.
+- Wire shutdown only to Tauri `RunEvent::Exit` and synchronously await it before the process exits. Do not use `ExitRequested`, because macOS close/hide and `Reopen` must keep the application lifecycle intact.
+- Emit `logcat-batch` after 200 lines or 50 ms from the first buffered line, whichever occurs first. Do not reset the deadline after each line and do not emit empty batches.
+- Emit `logcat-exit` for stdout EOF or read failure. Preserve an UTF-8-safe stderr tail of about 2 KiB, and provide a non-empty `detail` even when EOF has no stderr.
+- Treat stdout as a byte stream. Frame records with `read_until(b'\n')`, remove only the final LF and optional preceding CR, then decode that record with `String::from_utf8_lossy`. Invalid byte sequences become U+FFFD in that record and must not terminate the stream.
+- A 50 ms batch timeout may cancel an in-progress `read_until`; retain the same partial byte buffer for the next read so cancellation cannot drop the beginning of a record.
+- Rust and TypeScript payloads must stay field-for-field aligned. `serial` belongs to `LogcatBatch` and `LogcatExit`, not to every `LogcatLine`.
+- Streaming Logcat uses `-v threadtime`; `raw` keeps the complete device line so exports retain device timestamps.
 - Parse regexes must be file-level `static LazyLock<Regex>`, never compiled inside the per-line function.
-- Unparseable lines (e.g. `--------- beginning of main` separators) must fall back to level `I`, empty `time/tag/pid/tid`, and `message = raw` — never dropped.
+- Unparseable lines such as `--------- beginning of main` fall back to level `I`, empty `time/tag/pid/tid`, and `message = raw`; never drop them.
 - Tag/message split happens at the first `: ` separator; tags containing colons are truncated at the first colon (accepted limitation).
 
 ### 4. Validation & Error Matrix
 
-- Regex mismatch -> fallback `LogcatLine`, no error surfaced.
+- ADB resolution, spawn, or pipe capture failure -> return contextual `Err`; kill a partially started child before returning.
+- Concurrent same-serial starts -> serialize them; each replacement stops the currently registered child before spawning and registering its successor.
+- Previous same-serial child stop/wait failure -> return `Err` without spawning a new child.
+- Start races with application shutdown -> reject the candidate after spawn, kill and wait for it, and never insert it into the session map.
+- Stop or reader cleanup has a non-matching `session_id` -> no-op for the map entry; never affect the current process.
+- Application exit -> close the registration gate, drain the map without awaiting under the mutex, and attempt to stop every drained child. One failure must not skip later sessions; return one aggregated error after all attempts.
+- Stdout EOF -> flush the final non-empty batch, remove only the matching session, and emit exit reason `eof` with non-empty detail.
+- Stdout read failure -> flush the final non-empty batch and include both the read error and stderr tail when available.
+- Invalid UTF-8 inside one stdout record -> replace only the invalid sequence with U+FFFD, emit the decoded record, and continue reading subsequent records without a disconnect event.
+- Regex mismatch -> fallback `LogcatLine`, no command error.
 - Empty message lines (with or without trailing separator space) must still parse.
+- Event emission failure -> report with `eprintln!` while still completing process cleanup.
 
 ### 5. Good/Base/Bad Cases
 
+- Good: a continuous stream of 40 ms-spaced lines flushes 50 ms after the first line rather than extending the batch window for seconds.
+- Good: concurrent same-serial starts share one serial-scoped lock; the successor is spawned only after the registered predecessor has exited.
+- Good: starts for two different serials use different locks and do not wait on each other.
+- Good: a late `stop_logcat(serial, 10)` cannot kill active session 11.
+- Good: `first <0xff> record\nsecond record\n` emits two records; only the invalid byte in the first becomes U+FFFD.
 - Good: `07-26 14:23:45.123  1234  5678 E AndroidRuntime: FATAL EXCEPTION: main` keeps the colons inside `message`.
-- Base: stack-trace continuation lines keep their leading indentation in `message`.
-- Bad: switching the format or regex without updating the `#[cfg(test)]` regression tests in `logcat.rs`.
-- Bad: adding a `LogcatLine` field in Rust without mirroring it in `src/lib/tauri.ts`.
+- Base: CRLF is removed while stack-trace indentation and trailing message spaces remain byte-for-byte after decoding.
+- Bad: using a timeout around each `next_line()` call turns the 50 ms batch window into an idle timeout.
+- Bad: `AsyncBufReadExt::lines()` treats one invalid UTF-8 byte as a fatal stream error and disconnects Logcat.
+- Bad: awaiting `kill()` while holding the session mutex serializes unrelated devices and risks lock contention.
+- Bad: adding or moving a payload field without updating `src/lib/tauri.ts` and frontend lifecycle tests.
 
 ### 6. Tests Required
 
-- Any change to `parse_logcat_line` or the format flag must extend the unit tests in `logcat.rs` (`cargo test --lib`).
-- Build checks: `cargo check`, `cargo clippy --all-targets -- -D warnings`, `pnpm build`.
+- Unit-test the 200-line limit, fixed 50 ms trigger, exact session matching, per-serial start-lock identity, stop-before-start ordering, stop-failure spawn prevention, session-map drain, all-session stop error isolation, and all exit-detail combinations.
+- Unit-test invalid UTF-8 followed by another valid record, CRLF removal, leading/trailing whitespace preservation, and continuation from a partially buffered record.
+- Preserve parsing regressions for standard lines, message colons, tag colons, separators, empty messages, and stack-trace indentation.
+- Run the 60-second Rust test gate, `cargo fmt --check`, and `cargo clippy --all-targets -- -D warnings`.
+- Run frontend tests and build to verify the Rust/TypeScript payload contract.
+- Device smoke must cover initial dump, low/high traffic, A -> B -> A switching, stream interruption, non-empty disconnect detail, and continued streaming on a device that previously produced invalid UTF-8.
+- Wireless-device smoke must perform at least two consecutive same-serial Restarts and assert that each fresh session resumes nonzero rows; emulator-only Restart coverage cannot prove the mDNS ordering contract.
+- Exit smoke must record the active application's direct `adb logcat` PID, send normal Cmd+Q, and assert that both the application and that exact child PID disappear without the child becoming PPID 1.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```rust
+let mut sessions = LOGCAT_SESSIONS.lock().await;
+if let Some(mut session) = sessions.remove(&serial) {
+    session.child.kill().await?;
+}
+```
+
+#### Correct
+
+```rust
+let session = {
+    let mut sessions = LOGCAT_SESSIONS.lock().await;
+    session_matches(sessions.get(&serial).map(|item| item.session_id), session_id)
+        .then(|| sessions.remove(&serial))
+        .flatten()
+};
+if let Some(mut session) = session {
+    let _ = session.child.kill().await;
+}
+```
+
+Resolve exact ownership while locked, then release the mutex before awaiting process termination.
+
+For same-serial replacement, never overlap the old and new adb clients:
+
+```rust
+// Wrong: closing `previous` can tear down the newly opened mDNS stream.
+let child = adb::prepare_async_command(&app, &adb_path)
+    .arg("-s")
+    .arg(&serial)
+    .arg("logcat")
+    .spawn()?;
+let previous = {
+    let mut sessions = LOGCAT_SESSIONS.lock().await;
+    sessions.insert(serial.clone(), LogcatSession { child, session_id })
+};
+if let Some(previous) = previous {
+    stop_logcat_session(previous).await?;
+}
+
+// Correct: serialize by serial and confirm the predecessor exited first.
+let start_lock = logcat_start_lock(&serial).await;
+let _guard = start_lock.lock().await;
+let previous = {
+    let mut sessions = LOGCAT_SESSIONS.lock().await;
+    sessions.remove(&serial)
+};
+let child = start_after_stopping(previous, stop_logcat_session, || {
+    adb::prepare_async_command(&app, &adb_path)
+        .arg("-s")
+        .arg(&serial)
+        .arg("logcat")
+        .spawn()
+        .map_err(|error| error.to_string())
+})
+.await?;
+```
+
+For stdout framing, do not use `lines()`:
+
+```rust
+// Wrong: one invalid byte terminates the complete stream.
+let mut lines = BufReader::new(stdout).lines();
+let line = lines.next_line().await?;
+
+// Correct: preserve partial bytes across batch timeouts and decode per record.
+let mut record_bytes = Vec::new();
+let bytes_read = reader.read_until(b'\n', &mut record_bytes).await?;
+let line = decode_logcat_record(&record_bytes);
+record_bytes.clear();
+```
+
+## Scenario: Logcat Package PID Resolution
+
+### 1. Scope / Trigger
+
+- Trigger: changing `get_package_pids`, its ADB output handling, or a caller that still explicitly uses this compatibility command.
+- Applies to the distinction between a package with no running process and an ADB/device failure.
+
+### 2. Signatures
+
+- `get_package_pids(app: AppHandle, serial: String, pkg: String) -> Result<Vec<String>, String>`
+- `is_pidof_no_process(status_code: Option<i32>, stdout: &[u8], stderr: &[u8]) -> bool`
+- Frontend bridge: `getPackagePids(serial: string, pkg: string) -> Promise<string[]>`
+
+### 3. Contracts
+
+- Execute `adb -s <serial> shell pidof <pkg>` through `run_adb_output_with_serial` so status, stdout, and stderr remain available.
+- Exit success returns every whitespace-separated PID from stdout.
+- Only exit code 1 with whitespace-only stdout and stderr means the package has no running process and returns `Ok([])`.
+- Every other non-success result uses `adb_output_error` and returns `Err`; disconnected, offline, permission, transport, signal, and diagnostic failures are not empty PID sets.
+- Callers must keep a command error distinguishable from a successful empty result.
+
+### 4. Validation & Error Matrix
+
+- Status 0 with PID text -> `Ok([pid...])`.
+- Status 0 with empty output -> `Ok([])`.
+- Status 1 with empty/whitespace-only stdout and stderr -> `Ok([])`.
+- Status 1 with any stderr or stdout diagnostic -> `Err(adb_output_error(...))`.
+- Missing exit code, another nonzero code, ADB spawn failure, or device transport failure -> `Err`; never map to no process.
+
+### 5. Good/Base/Bad Cases
+
+- Good: `pidof com.example.app` prints `123 456` and a compatibility caller receives both values.
+- Base: a stopped package makes `pidof` exit 1 silently and resolves to an empty set.
+- Bad: `unwrap_or_default()` converts `device offline` into an empty set and prevents the caller from distinguishing transport failure from a stopped package.
+
+### 6. Tests Required
+
+- Unit-test silent exit 1, whitespace-only output, exit 0 empty output, exit 1 with stderr, missing status code, and other nonzero statuses.
+- Run the 60-second Rust test gate and Clippy after changing the command or helper.
+- Emulator smoke must cover a running package, a stopped package, and a disconnected/offline error; assert that only the stopped package is reported as a successful empty result.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```rust
+run_adb_with_serial(&app, &serial, &["shell", "pidof", &pkg])
+    .map(|stdout| stdout.split_whitespace().map(str::to_owned).collect())
+    .or_else(|_| Ok(Vec::new()))
+```
+
+#### Correct
+
+```rust
+let output = run_adb_output_with_serial(&app, &serial, &["shell", "pidof", &pkg])?;
+if output.status.success() {
+    return Ok(String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .map(ToString::to_string)
+        .collect());
+}
+if is_pidof_no_process(output.status.code(), &output.stdout, &output.stderr) {
+    return Ok(Vec::new());
+}
+Err(adb_output_error(&output))
+```
+
+An empty process set is domain data; an ADB failure is an error and must remain one.
+
+## Scenario: Logcat Device Process Snapshot
+
+### 1. Scope / Trigger
+
+- Trigger: changing `list_device_processes`, Android `ps` compatibility, the frontend process-map lifecycle, or Logcat process/package attribution.
+- Applies across `src-tauri/src/commands/logcat.rs`, the Tauri bridge, the shared Activity polling controller, and `useLogcatStore`.
+
+### 2. Signatures
+
+- `list_device_processes(app: AppHandle, serial: String) -> Result<Vec<ProcessEntry>, String>`
+- `ProcessEntry { pid: String, name: String }`
+- `parse_process_table(output: &str) -> Result<Vec<ProcessEntry>, String>`
+- `next_process_ps_attempt(attempt, status_code, stdout, stderr) -> Option<ProcessPsAttempt>`
+- Frontend bridge: `listDeviceProcesses(serial: string) -> Promise<ProcessEntry[]>`
+- Frontend row identity: `LogcatEntry { processName: string | null, packageName: string | null, ... }`
+
+### 3. Contracts
+
+- Every attempt executes through `run_adb_output_with_serial`, so the selected serial is passed as one `adb -s <serial>` argument and no device value is interpolated into a shell string.
+- Try `shell ps -A -o PID,NAME` first. An explicit unsupported `-o` falls back to `shell ps -A`; an explicit unsupported `-A` from either the formatted or second attempt falls back directly to plain `shell ps`.
+- Offline, unauthorized, missing-device, transport, protocol, and ambiguous-serial diagnostics are connection failures. Return them unchanged; never convert them into an option fallback.
+- Parse PID and process name by locating `PID` plus `NAME`, `CMD`, or `COMMAND` in the table header. Accept only decimal non-empty PIDs, skip malformed rows, and fail the complete snapshot when no supported header exists.
+- A successful frontend refresh replaces the complete PID map and timestamps it at completion. It must not merge with the previous map because Android can reuse a PID after process exit.
+- The snapshot is trusted for new Logcat rows for at most the shared 5-second polling period. Refresh failure may retain the old map for diagnostics but must not renew its timestamp.
+- Freeze `processName` and the validated application-style `packageName` when each row arrives, including rows queued while paused. Missing or expired identities remain `null` forever; a future snapshot must not backfill or reinterpret historical rows.
+- Process loading shares the existing Activity poll. Activity and process results publish independently, while device changes and Restart create a new generation that rejects A -> B -> A late completions.
+- The command must remain registered in Tauri `generate_handler!`, and Rust/TypeScript `ProcessEntry` fields must stay aligned.
+
+### 4. Validation & Error Matrix
+
+- Formatted command succeeds with a supported header -> parse and return the complete snapshot.
+- Formatted command reports unsupported `-o` -> try `ps -A`.
+- Formatted or `ps -A` command reports unsupported `-A` -> try plain `ps`.
+- Any attempt reports a connection/transport/authorization/ambiguous-device failure -> return `Err(adb_output_error(...))` immediately.
+- Successful output has no `PID` plus name header -> return a contextual parse error; do not guess columns.
+- A row has missing columns, a non-decimal PID, or an empty name -> skip only that row.
+- Frontend refresh fails before the prior timestamp expires -> prior map remains temporarily eligible until its original expiry; after expiry, new rows freeze identity as unknown.
+- Device or Restart generation changes while a request is in flight -> ignore the late success and late failure.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a table with `PID NAME` returns `123, com.example.app` and `124, com.example.app:remote`; both rows later derive package `com.example.app`.
+- Base: an older table with `USER PID ... NAME` is parsed by header positions rather than fixed column numbers.
+- Base: `[kworker/0:1]`, `system_server`, and native executable names remain valid process names but produce no application package.
+- Bad: merging snapshots leaves an exited process in the map and can assign its reused PID to the wrong historical application.
+- Bad: falling back after `more than one device with serial` hides the selected-device identity defect and repeats the same invalid transport.
+- Bad: resolving a row against the current map during render changes old query results after PID reuse.
+
+### 6. Tests Required
+
+- Unit-test formatted, `ps -A`, and plain `ps` headers; reordered columns; blank/malformed rows; and missing supported headers.
+- Unit-test fallback transitions for explicit unsupported `-o` and `-A`, plus no fallback for offline, unauthorized, transport, and ambiguous-serial diagnostics.
+- Frontend store tests must cover complete-map replacement, 5-second expiry, failure without timestamp renewal, PID reuse, unknown historical rows, and paused-row identity freezing.
+- Controller tests must cover one non-overlapping shared poll, independent Activity/process publication, queued refresh, disposal, and A -> B -> A generation rejection.
+- Run the 60-second Rust test gate, `cargo fmt --check`, Clippy with warnings denied, frontend tests/build, and a real device or emulator smoke with a main process plus a `:remote` process.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```rust
+let output = run_adb_output_with_serial(&app, &serial, &["shell", "ps", "-A", "-o", "PID,NAME"])?;
+if !output.status.success() {
+    return run_adb_with_serial(&app, &serial, &["shell", "ps"]);
+}
+```
+
+#### Correct
+
+```rust
+if let Some(next_attempt) = next_process_ps_attempt(
+    attempt,
+    output.status.code(),
+    &output.stdout,
+    &output.stderr,
+) {
+    attempt = next_attempt;
+    continue;
+}
+return Err(adb_output_error(&output));
+```
+
+Compatibility fallback is valid only for a proven unsupported option. Device and transport failures must remain explicit errors.
+
+## Scenario: ADB mDNS Device Alias Deduplication
+
+### 1. Scope / Trigger
+
+- Trigger: changing `list_devices`, parsing `adb devices -l`, or adding a device-selection entry point.
+- Applies when ADB reports the same connectable mDNS service both as a bare DNS-SD serial and as a `:port` alias.
+
+### 2. Signatures
+
+- `list_devices(app: AppHandle) -> Result<Vec<DeviceInfo>, String>`
+- `parse_devices_output(output: &str) -> Vec<DeviceInfo>`
+- `mdns_port_alias_base(serial: &str) -> Option<&str>`
+- `DeviceInfo { serial, state, model, transport, is_network, alias_identity }`
+
+### 3. Contracts
+
+- Parse every valid `adb devices -l` row before deduplication so matching is independent of row order.
+- Rust parsing is the only owner of network classification and alias identity. Serialize `is_network` and `alias_identity` with every `DeviceInfo`; frontend code must consume those fields and must not parse serial strings again.
+- Recognize only connect services ending in `._adb-tls-connect._tcp` or `._adb._tcp`. Do not fold `._adb-tls-pairing._tcp` or arbitrary serials.
+- Parse a possible alias from the final `:<port>` segment. The port must be a decimal value in `1..=65535`, and the complete base before that segment must end with a supported connect-service suffix.
+- When an alias base exactly equals another reported serial, remove only that bare serial. Keep every alias and every unrelated device in their original relative order.
+- Device state does not change alias detection. If the bare row is online but its port alias is offline, the bare value is still unusable with `adb -s` because ADB prefix matching is ambiguous; preserve the offline alias so the frontend shows the real unusable state.
+- Background device updates and explicit frontend refreshes must both consume the same filtered `list_devices` result.
+- When a refresh replaces a selected bare serial or old port alias, the frontend may migrate only to an online device with the same backend-provided `alias_identity`. If that identity is absent, use the normal online-device selection order; never jump to an unrelated network device.
+
+### 4. Validation & Error Matrix
+
+- Supported bare service plus valid port alias -> omit the bare row and keep the alias.
+- Supported bare service without an alias -> keep the bare row.
+- Port `0`, overflow above `65535`, or a nonnumeric suffix -> do not treat the row as an alias.
+- Pairing service or arbitrary serial with a port -> keep both rows.
+- Multiple valid port aliases for one base -> remove the bare row and preserve every alias in input order.
+- Selected bare/old alias plus a same-identity online alias -> migrate selection to that alias and clear stale foreground-activity state.
+- Selected network device disappears with only an unrelated network alias remaining -> do not identity-migrate to the unrelated alias.
+- `adb devices -l` execution failure -> return the existing contextual `Err`; do not publish a fabricated empty list.
+
+### 5. Good/Base/Bad Cases
+
+- Good: `phone._adb-tls-connect._tcp` plus `phone._adb-tls-connect._tcp:5555` returns only the `:5555` row, which is uniquely selectable with `adb -s`.
+- Base: `phone._adb-tls-connect._tcp` without a port alias remains visible.
+- Bad: keeping both rows lets the UI select the bare value and every scoped ADB command fail with `more than one device with serial`.
+- Bad: matching any `._tcp:<port>` suffix can hide pairing or unrelated DNS-SD records.
+- Bad: parsing `._adb-tls-connect._tcp` in TypeScript creates a second identity contract that can drift from backend deduplication.
+
+### 6. Tests Required
+
+- Unit-test TLS connect and legacy connect services, alias-before-bare ordering, multiple aliases, isolated bare services, and unchanged unrelated-device order.
+- Unit-test ports `0`, `65535`, `65536`, and nonnumeric suffixes.
+- Unit-test pairing exclusion, service-like text inside an instance name, and online-bare/offline-alias behavior.
+- Unit-test serialized `is_network` / `alias_identity`, frontend bare-to-alias and old-alias-to-new-alias migration, offline bare rejection, and unrelated-network non-migration.
+- Run the 60-second Rust test gate, target-file rustfmt, and Clippy.
+- Real-device smoke must prove the raw bare serial fails with ADB ambiguity, the retained `:port` alias returns a foreground Activity, and the Tauri device selector contains no duplicate bare option.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```rust
+let marker = serial.find("._adb-tls-connect._tcp")?;
+Some(&serial[..marker + "._adb-tls-connect._tcp".len()])
+```
+
+#### Correct
+
+```rust
+let (base, port) = serial.rsplit_once(':')?;
+let port = port.parse::<u16>().ok()?;
+(port != 0 && MDNS_CONNECT_SERVICE_SUFFIXES.iter().any(|suffix| base.ends_with(suffix)))
+    .then_some(base)
+```
+
+Split from the end and validate the complete base so service-like text inside an instance name cannot change the identity.

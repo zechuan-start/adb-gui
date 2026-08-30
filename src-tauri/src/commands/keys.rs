@@ -1,4 +1,3 @@
-
 use tauri::AppHandle;
 
 use super::device::run_adb_with_serial;

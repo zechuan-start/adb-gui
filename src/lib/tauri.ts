@@ -6,12 +6,15 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { getCurrentWebview, type DragDropEvent } from "@tauri-apps/api/webview";
 import { deviceDownloadDefaultName } from "@/lib/deviceFiles";
+import type { LogLevel } from "@/lib/logcat";
 
 export interface DeviceInfo {
   serial: string;
   state: string;
   model: string;
   transport: string;
+  is_network: boolean;
+  alias_identity: string | null;
 }
 
 export interface AdbInfo {
@@ -26,14 +29,36 @@ export interface PackageInfo {
 }
 
 export interface LogcatLine {
-  serial: string;
   time: string;
-  level: string;
+  level: LogLevel;
   tag: string;
   pid: string;
   tid: string;
   message: string;
   raw: string;
+}
+
+export interface ProcessEntry {
+  pid: string;
+  name: string;
+}
+
+export interface LogcatSessionInfo {
+  serial: string;
+  session_id: number;
+}
+
+export interface LogcatBatch {
+  serial: string;
+  session_id: number;
+  lines: LogcatLine[];
+}
+
+export interface LogcatExit {
+  serial: string;
+  session_id: number;
+  reason: "eof" | "error";
+  detail: string;
 }
 
 export interface ScreenshotResult {
@@ -259,12 +284,12 @@ export async function getAppIcon(serial: string, pkg: string): Promise<string> {
   return invoke<string>("get_app_icon", { serial, pkg });
 }
 
-export async function startLogcat(serial: string): Promise<void> {
-  return invoke<void>("start_logcat", { serial });
+export async function startLogcat(serial: string): Promise<LogcatSessionInfo> {
+  return invoke<LogcatSessionInfo>("start_logcat", { serial });
 }
 
-export async function stopLogcat(): Promise<void> {
-  return invoke<void>("stop_logcat");
+export async function stopLogcat(serial: string, sessionId: number): Promise<void> {
+  return invoke<void>("stop_logcat", { serial, sessionId });
 }
 
 export async function clearLogcat(serial: string): Promise<void> {
@@ -273,6 +298,10 @@ export async function clearLogcat(serial: string): Promise<void> {
 
 export async function getPackagePids(serial: string, pkg: string): Promise<string[]> {
   return invoke<string[]>("get_package_pids", { serial, pkg });
+}
+
+export async function listDeviceProcesses(serial: string): Promise<ProcessEntry[]> {
+  return invoke<ProcessEntry[]>("list_device_processes", { serial });
 }
 
 export async function exportLogcat(serial: string, content: string): Promise<ExportLogcatResult> {
@@ -336,8 +365,12 @@ export async function collectFullBugreport(serial: string): Promise<BugreportRes
   return invoke<BugreportResult>("collect_full_bugreport", { serial });
 }
 
-export async function onLogcatLine(callback: (line: LogcatLine) => void): Promise<UnlistenFn> {
-  return listen<LogcatLine>("logcat-line", (e) => callback(e.payload));
+export async function onLogcatBatch(callback: (batch: LogcatBatch) => void): Promise<UnlistenFn> {
+  return listen<LogcatBatch>("logcat-batch", (e) => callback(e.payload));
+}
+
+export async function onLogcatExit(callback: (exit: LogcatExit) => void): Promise<UnlistenFn> {
+  return listen<LogcatExit>("logcat-exit", (e) => callback(e.payload));
 }
 
 export async function onDragDrop(callback: (event: DragDropEvent) => void): Promise<UnlistenFn> {

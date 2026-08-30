@@ -1,0 +1,9 @@
+{"file": ".trellis/tasks/08-29-logcat-refactor/research/android-studio-logcat-model.md", "reason": "第 2 节是本任务的语法规范来源: 五个键的匹配对象, ~ 与 = 修饰符, - 否定, & 优先级高于 |, level 阈值语义与 ASSERT->F 错位, package:mine 的语义差异, is:crash/is:stacktrace 定义. 实现前必须逐条核对, 不得凭记忆"}
+{"file": ".trellis/tasks/08-29-logcat-refactor/design.md", "reason": "父任务架构总纲: 原则 1 (热路径不做 O(窗口) 工作) 决定编译期前移策略, 原则 5 (查询是唯一过滤入口) 要求删除旧控件; 4.2 节规定派生值入库算一次 (crashKind); 4.5 节规定谓词演进路径 (只换谓词不改索引机制)"}
+{"file": ".trellis/tasks/08-29-logcat-refactor/prd.md", "reason": "子任务地图明确 process: 归 D 而非 C 及其原因 (pidof 反向 vs 正向映射), 以及 age:/查询历史收藏属于不做范围"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "前端质量红线与测试要求 (新增解析/校验/状态转换必须有回归测试); 本任务要在此文件新增 Scenario: Logcat Query Language, 需先熟悉既有场景的写法模板"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "严格 TS 与类型组织约定; 查询 AST 是本任务的核心类型设计, 且禁止 any"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "store 扩展约定与 selector 使用; 本任务新增查询组字段并删除 A 阶段的过渡过滤字段"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "查询框与补全面板需遵循组件结构, props 约定, button type, 语义 token; 补全面板要求纯键盘可操作"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "纯逻辑放 lib/ 且同目录 *.test.ts 命名; 本任务新增 lib/logcatQuery.ts 与 lib/logcatCrash.ts 及其单测"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "本任务删除旧过滤实现并替换谓词调用点, 需按 Pre-Modification Rule 搜索全部引用, 确保 LogcatFilter/matchesFilter 无残留"}

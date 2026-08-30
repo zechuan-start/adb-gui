@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ClipboardList,
   FolderTree,
@@ -10,10 +10,16 @@ import {
   TabletSmartphone,
 } from "lucide-react";
 import { useDeviceStore } from "@/store/device";
+import { useFeedbackStore } from "@/store/feedback";
 import { useThemeStore } from "@/store/theme";
+import {
+  createActivityPollingController,
+  type ActivityPollingController,
+} from "@/hooks/activityPollingController";
 import {
   getAdbInfo,
   getCurrentActivity,
+  listDeviceProcesses,
   listDevices,
   onDevicesUpdated,
 } from "@/lib/tauri";
@@ -21,8 +27,8 @@ import { DeviceSelector } from "@/components/DeviceSelector";
 import { ScreenshotTool } from "@/components/Screenshot";
 import { ScreenRecordTool } from "@/components/ScreenRecordTool";
 import { ApkTool } from "@/components/AppManager";
-import { QuickKeysTool } from "@/components/LogcatViewer";
-import { LogcatPanel } from "@/components/Logcat";
+import { QuickKeysTool } from "@/components/QuickKeys";
+import { LogcatPanel } from "@/components/logcat/LogcatPanel";
 import { CurrentAppActionsTool } from "@/components/ActivityMonitor";
 import { UpdateChecker } from "@/components/UpdateChecker";
 import { DeviceInfoButton } from "@/components/DeviceInfoPanel";
@@ -35,6 +41,7 @@ import { WifiConnectButton } from "@/components/WifiConnect";
 import { CodeGeneratorPage } from "@/components/CodeGeneratorPage";
 import { DeviceFileManager } from "@/components/DeviceFileManager";
 import { cn } from "@/lib/utils";
+import { useLogcatStore } from "@/store/logcat";
 
 type TabId = "tools" | "logcat" | "apps" | "files" | "code";
 
@@ -48,6 +55,11 @@ const TABS: { id: TabId; label: string; icon: typeof TabletSmartphone; badge?: s
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabId>("tools");
+  const [logcatMounted, setLogcatMounted] = useState(false);
+  const activityControllerRef = useRef<ActivityPollingController | null>(null);
+  const processGenerationRef = useRef(0);
+  const logcatVisible = activeTab === "logcat";
+  const logcatRestartNonce = useLogcatStore((state) => state.restartNonce);
   const {
     adbInfo,
     setAdbInfo,
@@ -56,52 +68,115 @@ function App() {
     setCurrentActivity,
     currentActivity,
   } = useDeviceStore();
+  const showToast = useFeedbackStore((state) => state.showToast);
   const { theme, setTheme } = useThemeStore();
+
+  useEffect(() => {
+    if (logcatVisible) {
+      setLogcatMounted(true);
+    }
+  }, [logcatVisible]);
 
   useEffect(() => {
     getAdbInfo().then(setAdbInfo).catch(console.error);
     listDevices().then(setDevices).catch(console.error);
 
+    let disposed = false;
     let unlistenDevices: (() => void) | null = null;
-
-    onDevicesUpdated((devices) => setDevices(devices)).then((fn) => {
-      unlistenDevices = fn;
-    });
+    void onDevicesUpdated((devices) => setDevices(devices))
+      .then((nextUnlisten) => {
+        if (disposed) {
+          nextUnlisten();
+          return;
+        }
+        unlistenDevices = nextUnlisten;
+      })
+      .catch((error) => {
+        if (!disposed) {
+          showToast("error", `监听设备更新失败: ${String(error)}`);
+        }
+      });
 
     return () => {
+      disposed = true;
       unlistenDevices?.();
+      unlistenDevices = null;
     };
-  }, [setAdbInfo, setDevices, setCurrentActivity]);
+  }, [setAdbInfo, setDevices, showToast]);
 
-  const refreshCurrentActivity = useCallback(async () => {
-    if (!selectedDevice) {
-      setCurrentActivity("");
-      return "";
-    }
-    try {
-      const activity = await getCurrentActivity(selectedDevice);
-      setCurrentActivity(activity);
-      return activity;
-    } catch (error) {
-      console.error("Failed to refresh current activity:", error);
-      setCurrentActivity("");
-      return "";
-    }
-  }, [selectedDevice, setCurrentActivity]);
+  const refreshCurrentActivity = useCallback(() => {
+    activityControllerRef.current?.refresh();
+  }, []);
 
   useEffect(() => {
-    void refreshCurrentActivity();
-
     if (!selectedDevice) {
+      activityControllerRef.current = null;
+      setCurrentActivity("");
+      useLogcatStore.getState().clearProcessMap();
       return;
     }
-
-    const timer = window.setInterval(() => {
-      void refreshCurrentActivity();
-    }, 5000);
-
-    return () => window.clearInterval(timer);
-  }, [refreshCurrentActivity, selectedDevice]);
+    let lastError = "";
+    let lastProcessError = "";
+    let processMapKey: string | null = null;
+    if (logcatMounted) {
+      processGenerationRef.current += 1;
+      processMapKey = `${selectedDevice}:${logcatRestartNonce}:${processGenerationRef.current}`;
+      useLogcatStore.getState().beginProcessMapSession(processMapKey);
+    }
+    const controller = createActivityPollingController(selectedDevice, {
+      loadActivity: getCurrentActivity,
+      loadProcesses: processMapKey === null ? undefined : listDeviceProcesses,
+      schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
+      cancelSchedule: (handle) => window.clearTimeout(handle),
+      now: () => Date.now(),
+      onActivity: (activity) => {
+        lastError = "";
+        setCurrentActivity(activity);
+      },
+      onError: (error) => {
+        const message = `刷新前台 Activity 失败: ${String(error)}`;
+        if (lastError !== message) {
+          lastError = message;
+          showToast("error", message);
+        }
+      },
+      onProcessRefreshing: () => {
+        if (processMapKey !== null) {
+          useLogcatStore.getState().beginProcessMapRefresh(processMapKey);
+        }
+      },
+      onProcesses: (entries, updatedAt) => {
+        if (processMapKey === null) {
+          return;
+        }
+        lastProcessError = "";
+        useLogcatStore.getState().completeProcessMapRefresh(
+          processMapKey,
+          entries,
+          updatedAt,
+        );
+      },
+      onProcessError: (error) => {
+        if (processMapKey === null) {
+          return;
+        }
+        const message = `读取设备进程表失败: ${String(error)}`;
+        useLogcatStore.getState().failProcessMapRefresh(processMapKey, message);
+        if (lastProcessError !== message) {
+          lastProcessError = message;
+          showToast("error", message);
+        }
+      },
+    });
+    activityControllerRef.current = controller;
+    controller.run();
+    return () => {
+      controller.dispose();
+      if (activityControllerRef.current === controller) {
+        activityControllerRef.current = null;
+      }
+    };
+  }, [logcatMounted, logcatRestartNonce, selectedDevice, setCurrentActivity, showToast]);
 
   const adbLabel = useMemo(() => {
     if (!adbInfo) {
@@ -209,7 +284,11 @@ function App() {
               </div>
             </section>
           )}
-          {activeTab === "logcat" && <LogcatPanel />}
+          {(logcatMounted || logcatVisible) && (
+            <div className={cn("h-full min-h-0", !logcatVisible && "hidden")}>
+              <LogcatPanel visible={logcatVisible} />
+            </div>
+          )}
           {activeTab === "apps" && <PackageManagerPanel />}
           {activeTab === "files" && <DeviceFileManager />}
           {activeTab === "code" && <CodeGeneratorPage />}

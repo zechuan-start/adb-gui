@@ -23,16 +23,35 @@ export const useDeviceStore = create<DeviceStore>((set) => ({
   setAdbInfo: (info) => set({ adbInfo: info }),
   setDevices: (devices) => {
     set((state) => {
+      const selectedDevice = getPreferredSelectedDeviceSerial(
+        devices,
+        state.selectedDevice,
+        state.devices,
+      );
       return {
         devices,
-        selectedDevice: getPreferredSelectedDeviceSerial(devices, state.selectedDevice),
+        selectedDevice,
+        ...(selectedDevice === state.selectedDevice
+          ? {}
+          : { currentActivity: "", currentPackage: "" }),
       };
     });
   },
-  setSelectedDevice: (serial) =>
-    set((state) => ({
-      selectedDevice: serial ? getPreferredSelectedDeviceSerial(state.devices, serial) : null,
-    })),
+  setSelectedDevice: (serial) => {
+    set((state) => {
+      const selectedDevice = serial
+        ? getPreferredSelectedDeviceSerial(state.devices, serial)
+        : null;
+      if (selectedDevice === state.selectedDevice) {
+        return state;
+      }
+      return {
+        selectedDevice,
+        currentActivity: "",
+        currentPackage: "",
+      };
+    });
+  },
   setCurrentActivity: (activity) => {
     const currentPackage = parsePackageFromActivity(activity);
     set({ currentActivity: activity, currentPackage });
