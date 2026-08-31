@@ -316,3 +316,36 @@ Implemented and verified port forwarding, screen recording, and bug report colle
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: 修正 Release 更新日志
+
+**Date**: 2026-08-31
+**Task**: 修正 Release 更新日志
+**Branch**: `main`
+
+### Summary
+
+将 v0.1.4-ci.2 更新为面向用户的中文发布日志, 并让后续 tag 从最近正式版本提取用户可读提交, 禁止生成 Full Changelog 占位链接.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bddf57d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

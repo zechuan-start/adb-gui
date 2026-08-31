@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 8
+- **Total Sessions**: 9
 - **Last Active**: 2026-08-31
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~318 | Active |
+| `journal-1.md` | ~351 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 9 | 2026-08-31 | 修正 Release 更新日志 | `bddf57d` | `main` |
 | 8 | 2026-08-31 | 发布 v0.1.4-ci.2 | `4aa843d`, `20fde1b` | `main` |
 | 7 | 2026-08-31 | 完成条码二维码解析 | `0f08cb9` | `main` |
 | 6 | 2026-08-30 | Logcat 日志功能重构 | - | `main` |
