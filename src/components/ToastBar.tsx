@@ -30,20 +30,20 @@ export function ToastBar() {
         className={cn(
           "mx-auto flex max-w-4xl items-center gap-3 rounded-lg border px-4 py-2 shadow-lg",
           toast.kind === "success"
-            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-100"
-            : "border-red-500/40 bg-red-500/10 text-red-800 dark:text-red-100"
+            ? "border-success/50 bg-success-surface text-foreground"
+            : "border-destructive/50 bg-destructive-surface text-foreground"
         )}
       >
         {toast.kind === "success" ? (
-          <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+          <CheckCircle2 className="h-4 w-4 text-success" />
         ) : (
-          <AlertCircle className="h-4 w-4 text-red-400" />
+          <AlertCircle className="h-4 w-4 text-destructive" />
         )}
         <span className="min-w-0 flex-1 truncate text-sm">{toast.message}</span>
         <button
           type="button"
           onClick={clearToast}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
           title="关闭"
         >
           <X className="h-4 w-4" />
