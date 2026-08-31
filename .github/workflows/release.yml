@@ -14,6 +14,12 @@ jobs:
     name: Prepare release
     runs-on: ubuntu-22.04
     steps:
+      - name: Checkout release history
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Ensure one draft release exists
         if: startsWith(github.ref, 'refs/tags/')
         env:
@@ -24,11 +30,36 @@ jobs:
             --jq '[.[] | select(.tag_name == env.GITHUB_REF_NAME)] | length')"
 
           if [[ "${release_count}" -eq 0 ]]; then
+            previous_tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              --jq '[.[] | select(.draft == false and .prerelease == false)][0].tag_name // empty')"
+            release_range="${GITHUB_REF_NAME}"
+            if [[ -n "${previous_tag}" ]]; then
+              release_range="${previous_tag}..${GITHUB_REF_NAME}"
+            fi
+
+            notes_file="${RUNNER_TEMP}/release-notes.md"
+            if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+              printf '> CI 预览版本, 用于提前验证新功能.\n\n' > "${notes_file}"
+            else
+              : > "${notes_file}"
+            fi
+            printf '## 更新内容\n\n' >> "${notes_file}"
+
+            release_entries="$(
+              git log --reverse --format='%s' "${release_range}" |
+                sed -E -n 's/^(feat|fix|perf|refactor)(\([^)]*\))?!?:[[:space:]]+/- /p'
+            )"
+            if [[ -z "${release_entries}" ]]; then
+              echo "No user-facing feat/fix/perf/refactor commits found in ${release_range}."
+              exit 1
+            fi
+            printf '%s\n' "${release_entries}" >> "${notes_file}"
+
             gh release create "${GITHUB_REF_NAME}" \
               --repo "${GITHUB_REPOSITORY}" \
               --draft \
               --title "ADB GUI ${GITHUB_REF_NAME}" \
-              --generate-notes
+              --notes-file "${notes_file}"
           elif [[ "${release_count}" -gt 1 ]]; then
             echo "Expected one release for ${GITHUB_REF_NAME}, found ${release_count}."
             exit 1
