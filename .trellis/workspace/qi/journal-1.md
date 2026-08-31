@@ -282,3 +282,37 @@ Implemented and verified port forwarding, screen recording, and bug report colle
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: 发布 v0.1.4-ci.2
+
+**Date**: 2026-08-31
+**Task**: 发布 v0.1.4-ci.2
+**Branch**: `main`
+
+### Summary
+
+发布非 Draft 的 v0.1.4-ci.2, 修复 Windows 预发布 MSI 兼容问题并确保 CI 版本标记为 GitHub prerelease.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4aa843d` | (see git log) |
+| `20fde1b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

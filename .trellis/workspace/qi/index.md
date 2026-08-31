@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 7
+- **Total Sessions**: 8
 - **Last Active**: 2026-08-31
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~284 | Active |
+| `journal-1.md` | ~318 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 8 | 2026-08-31 | 发布 v0.1.4-ci.2 | `4aa843d`, `20fde1b` | `main` |
 | 7 | 2026-08-31 | 完成条码二维码解析 | `0f08cb9` | `main` |
 | 6 | 2026-08-30 | Logcat 日志功能重构 | - | `main` |
 | 5 | 2026-08-29 | 完成设备文件双向传递并发布 0.1.2 | `8897f8c`, `a31a866` | `main` |
