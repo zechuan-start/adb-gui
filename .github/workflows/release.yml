@@ -148,4 +148,5 @@ jobs:
           set -euo pipefail
           gh release edit "${GITHUB_REF_NAME}" \
             --repo "${GITHUB_REPOSITORY}" \
-            --draft=false
+            --draft=false \
+            --prerelease=${{ contains(github.ref_name, '-') }}
