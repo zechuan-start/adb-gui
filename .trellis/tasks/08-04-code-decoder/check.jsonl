@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "对照前端红线与禁用模式检查实现与测试"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "严格 TS 与 interface / type 约定检查, 新增契约类型要合规"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "store 形态, 竞态处理与选择器用法是否符合既有约定"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Rust / Clippy 红线, 检查 read_image_file 的边界校验与错误信息"}
+{"file": ".trellis/tasks/08-04-code-decoder/research/zxing-wasm-reader-api.md", "reason": "核对 zxing API 用法, locateFile 离线覆盖与解码选项是否与调研结论一致"}

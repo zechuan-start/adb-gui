@@ -2,9 +2,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { downloadDir, join, sep } from "@tauri-apps/api/path";
+import { readImage } from "@tauri-apps/plugin-clipboard-manager";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { getCurrentWebview, type DragDropEvent } from "@tauri-apps/api/webview";
+import { SUPPORTED_IMAGE_EXTENSIONS } from "@/lib/codeDecoder";
 import { deviceDownloadDefaultName } from "@/lib/deviceFiles";
 import type { LogLevel } from "@/lib/logcat";
 
@@ -249,6 +251,62 @@ export async function pickDeviceUploadFiles(): Promise<string[]> {
     return selected;
   }
   return typeof selected === "string" ? [selected] : [];
+}
+
+export async function readImageFile(path: string): Promise<Uint8Array> {
+  return new Uint8Array(await invoke<ArrayBuffer>("read_image_file", { path }));
+}
+
+export async function pickImageFiles(): Promise<string[]> {
+  const selected = await open({
+    title: "选择要解码的图片",
+    multiple: true,
+    directory: false,
+    filters: [
+      {
+        name: "图片",
+        extensions: [...SUPPORTED_IMAGE_EXTENSIONS],
+      },
+    ],
+  });
+  if (Array.isArray(selected)) {
+    return selected;
+  }
+  return typeof selected === "string" ? [selected] : [];
+}
+
+export async function readClipboardImage(): Promise<ImageData | null> {
+  let image: Awaited<ReturnType<typeof readImage>>;
+  try {
+    image = await readImage();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (
+      message
+        .toLowerCase()
+        .includes("clipboard contents were not available in the requested format")
+    ) {
+      return null;
+    }
+    throw error;
+  }
+
+  try {
+    const [rgba, { width, height }] = await Promise.all([image.rgba(), image.size()]);
+    const expectedLength = width * height * 4;
+    if (!Number.isSafeInteger(expectedLength) || rgba.length !== expectedLength) {
+      throw new Error(
+        `剪贴板图片像素数据长度不匹配: 期望 ${expectedLength}, 实际 ${rgba.length}`,
+      );
+    }
+    return new ImageData(new Uint8ClampedArray(rgba), width, height);
+  } finally {
+    await image.close();
+  }
+}
+
+export async function openUrlExternal(url: string): Promise<void> {
+  await openUrl(url);
 }
 
 export async function pickDeviceDownloadPath(fileName: string): Promise<string | null> {

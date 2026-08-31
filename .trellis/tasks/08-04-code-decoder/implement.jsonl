@@ -1,0 +1,8 @@
+{"file": ".trellis/tasks/08-04-code-decoder/research/zxing-wasm-reader-api.md", "reason": "解码库唯一事实源: readBarcodes 签名与 ReaderOptions 语义, locateFile 离线覆盖写法, stb_image 无 WebP 缺口与 ImageData 统一管线的依据"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "新增 lib / store / components 文件的落位与 *.test.ts 同目录约定"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "zustand v5 store 既有形态; codeDecoder store 需与 codeGenerator 的 batch / revision 思路同构"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "页面组件, Tailwind, lucide 图标与 toast 反馈的既有约定"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "effect 中事件监听注册与清理范式, 拖拽和 Cmd/Ctrl+V 监听必须遵守"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "实现期就要守住的前端红线与禁用模式"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "read_image_file 命令的 Result<T, String> 错误传播模式"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "commands/ 模块声明与 invoke_handler 注册方式"}

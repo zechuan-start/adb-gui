@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
@@ -6,9 +6,26 @@ import { fileURLToPath, URL } from "node:url";
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
+function removeZxingCdnFallback(): Plugin {
+  // zxing-wasm bundles its unused CDN default even when locateFile is overridden.
+  const zxingShareModule = "/zxing-wasm/dist/es/share.js";
+  const cdnOrigin = "https://fastly.jsdelivr.net";
+
+  return {
+    name: "remove-zxing-cdn-fallback",
+    enforce: "pre",
+    transform(code, id) {
+      if (!id.includes(zxingShareModule) || !code.includes(cdnOrigin)) {
+        return null;
+      }
+      return code.replaceAll(cdnOrigin, "");
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), removeZxingCdnFallback()],
 
   resolve: {
     alias: {

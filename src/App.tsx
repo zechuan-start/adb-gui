@@ -6,6 +6,7 @@ import {
   Moon,
   QrCode,
   RefreshCw,
+  ScanLine,
   Sun,
   TabletSmartphone,
 } from "lucide-react";
@@ -39,11 +40,12 @@ import { PackageManagerPanel } from "@/components/PackageManager";
 import { ToastBar } from "@/components/ToastBar";
 import { WifiConnectButton } from "@/components/WifiConnect";
 import { CodeGeneratorPage } from "@/components/CodeGeneratorPage";
+import { CodeDecoderPage } from "@/components/CodeDecoderPage";
 import { DeviceFileManager } from "@/components/DeviceFileManager";
 import { cn } from "@/lib/utils";
 import { useLogcatStore } from "@/store/logcat";
 
-type TabId = "tools" | "logcat" | "apps" | "files" | "code";
+type TabId = "tools" | "logcat" | "apps" | "files" | "code" | "decoder";
 
 const TABS: { id: TabId; label: string; icon: typeof TabletSmartphone; badge?: string }[] = [
   { id: "tools", label: "工具", icon: TabletSmartphone },
@@ -51,6 +53,7 @@ const TABS: { id: TabId; label: string; icon: typeof TabletSmartphone; badge?: s
   { id: "apps", label: "应用", icon: LayoutList },
   { id: "files", label: "文件", icon: FolderTree },
   { id: "code", label: "生码", icon: QrCode },
+  { id: "decoder", label: "解码", icon: ScanLine },
 ];
 
 function App() {
@@ -292,6 +295,7 @@ function App() {
           {activeTab === "apps" && <PackageManagerPanel />}
           {activeTab === "files" && <DeviceFileManager />}
           {activeTab === "code" && <CodeGeneratorPage />}
+          {activeTab === "decoder" && <CodeDecoderPage />}
         </div>
       </main>
       <ToastBar />

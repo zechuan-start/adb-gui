@@ -160,6 +160,7 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
@@ -180,6 +181,7 @@ pub fn run() {
             commands::device_files::upload_device_file,
             commands::device_files::download_device_file,
             commands::device_files::preview_device_image,
+            commands::image_file::read_image_file,
             commands::app::install_apk,
             commands::app::uninstall_app,
             commands::app::launch_app,
