@@ -1,7 +1,7 @@
 {
   "name": "adb-gui",
   "private": true,
-  "version": "0.1.3",
+  "version": "0.1.4-ci.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
