@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 9
-- **Last Active**: 2026-08-31
+- **Total Sessions**: 10
+- **Last Active**: 2026-09-01
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~351 | Active |
+| `journal-1.md` | ~386 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 10 | 2026-09-01 | 发布 v0.1.4 正式版 | `bfbfaa7`, `d301aa0`, `107d5fb` | `main` |
 | 9 | 2026-08-31 | 修正 Release 更新日志 | `bddf57d` | `main` |
 | 8 | 2026-08-31 | 发布 v0.1.4-ci.2 | `4aa843d`, `20fde1b` | `main` |
 | 7 | 2026-08-31 | 完成条码二维码解析 | `0f08cb9` | `main` |

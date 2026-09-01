@@ -349,3 +349,38 @@ Implemented and verified port forwarding, screen recording, and bug report colle
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: 发布 v0.1.4 正式版
+
+**Date**: 2026-09-01
+**Task**: 发布 v0.1.4 正式版
+**Branch**: `main`
+
+### Summary
+
+将版本从 0.1.4-ci.2 发布为正式版 0.1.4, 四平台构建和公开发布成功; 同时将 GitHub Actions 构建版本及相关 action runtime 升级到 Node.js 24 并完成四平台验证.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bfbfaa7` | (see git log) |
+| `d301aa0` | (see git log) |
+| `107d5fb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
