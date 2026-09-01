@@ -223,7 +223,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
 
-    app.run(|app, event| match event {
+    app.run(|_app, event| match event {
         tauri::RunEvent::Exit => {
             if let Err(error) =
                 tauri::async_runtime::block_on(commands::logcat::shutdown_logcat_sessions())
@@ -235,7 +235,7 @@ pub fn run() {
         tauri::RunEvent::Reopen {
             has_visible_windows: false,
             ..
-        } => show_primary_window(app),
+        } => show_primary_window(_app),
         _ => {}
     });
 }
