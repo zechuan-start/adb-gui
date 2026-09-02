@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"约束外壳、store 和组件目录归属."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"约束 React 组件、Tailwind 和 lucide 使用方式."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"约束 theme、device 和新增 ui store 的状态所有权."}
+{"file":".trellis/tasks/09-01-blueprint-quiet-ui-refresh/research/prototype-audit.md","reason":"提供外壳尺寸、主题表现和响应式基线."}

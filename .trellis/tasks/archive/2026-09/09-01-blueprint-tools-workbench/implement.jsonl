@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"约束工具模块组件拆分和 lucide/Tailwind 用法."}
+{"file":".trellis/spec/frontend/hook-guidelines.md","reason":"约束共享设备详情加载和陈旧响应处理."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"避免八个工具重复模块壳、禁用规则和状态映射."}
+{"file":".trellis/tasks/09-01-blueprint-quiet-ui-refresh/research/prototype-audit.md","reason":"提供工具页网格、设备状态和窄窗基线."}

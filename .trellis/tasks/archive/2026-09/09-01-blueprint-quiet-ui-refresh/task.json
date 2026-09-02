@@ -1,0 +1,30 @@
+{
+  "id": "blueprint-quiet-ui-refresh",
+  "name": "blueprint-quiet-ui-refresh",
+  "title": "Blueprint Quiet UI 翻新",
+  "description": "采用 Blueprint Quiet 完整应用外壳和主题语言, 分阶段翻新工具工作台与持久 Logcat 面板, 保留现有功能与多行文本选择.",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "frontend",
+  "package": null,
+  "priority": "P1",
+  "creator": "qi",
+  "assignee": "qi",
+  "createdAt": "2026-09-01",
+  "completedAt": "2026-09-02",
+  "branch": "codex/blueprint-quiet-ui-refresh",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "09-01-blueprint-shell-theme",
+    "09-01-blueprint-tools-workbench",
+    "09-01-log-view-readability"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
