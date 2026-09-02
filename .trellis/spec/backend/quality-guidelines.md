@@ -103,6 +103,80 @@ let mut command = Command::new(program);
 command.creation_flags(CREATE_NO_WINDOW);
 ```
 
+## Scenario: Batch Android Application Metadata Helper
+
+### 1. Scope / Trigger
+
+- Trigger: changing the `app_process` dex helper, `get_installed_apps`, its Tauri payload, or the application-manager fallback.
+- Applies across `scripts/build-app-info-dex/`, `src-tauri/src/commands/app_info.rs`, `src/lib/tauri.ts`, and `PackageManager.tsx`.
+
+### 2. Signatures
+
+- Java entry point: `com.adbgui.appinfo.Main.main(String[] args)`.
+- Rust command: `get_installed_apps(app: AppHandle, serial: String) -> Result<Vec<AppInfo>, String>`.
+- Frontend bridge: `getInstalledApps(serial: string) -> Promise<AppInfo[]>`.
+- `AppInfo { packageName, appName, versionName, versionCode, icon, firstInstallTime, lastUpdateTime, apkSize }`.
+
+### 3. Contracts
+
+- `scripts/build-app-info-dex/build.sh` accepts `ANDROID_HOME` or `ANDROID_SDK_ROOT`, requires an API 29+ `android.jar`, `javac`, and `d8`, then writes `src-tauri/resources/app-info.dex`.
+- The build script must run with macOS Bash 3.2; avoid Bash 4-only helpers such as `mapfile` and GNU-only `find`/`sort` flags.
+- `ActivityThread` is absent from the public SDK stubs. Compile against a normal `android.jar` by resolving `systemMain()` and `getSystemContext()` through reflection; do not add a host or device `framework.jar` dependency.
+- Tauri maps `src-tauri/resources/` to the resource root, so Rust resolves `resource_dir().join("app-info.dex")`.
+- Every request pushes the dex to `/data/local/tmp/adb-gui-app-info.dex`, then runs it through the shared hidden-window async ADB constructor with a 15-second timeout and kill-on-drop cancellation.
+- The helper outputs only one UTF-8 JSON array on stdout. Diagnostics use stderr. Rust rejects empty, non-array, invalid, timed-out, or nonzero output as one command error.
+- Return only non-system applications. Icons are 96 x 96 PNG data URIs; APK size is the base APK only. A single field failure produces an empty/zero fallback for that field, while a helper/process/protocol failure rejects the complete command.
+- `PackageManagerPanel` tries the batch command first. A command error falls back to unchanged `list_packages` plus lazy `get_app_icon`, and the UI must display a visible degraded-mode notice.
+
+### 4. Validation & Error Matrix
+
+- Missing SDK root, API 29+ platform, `javac`, or `d8` -> the build script exits nonzero with the missing requirement named.
+- Missing bundled dex or failed `adb push` -> contextual `Err`; do not start `app_process`.
+- `app_process` exceeds 15 seconds -> kill the child on drop and return a timeout error.
+- Nonzero process status -> preserve stderr through the normal ADB output error path.
+- Empty or invalid JSON stdout -> `Err`; never return a partial Rust vector.
+- One app label, icon, package-info, or file-size read fails -> keep that app with the field fallback and continue the array.
+- Batch command error plus successful legacy list -> show package-only rows and degraded notice.
+- Both batch and legacy list fail -> show the existing application-list error feedback.
+
+### 5. Good/Base/Bad Cases
+
+- Good: one helper invocation returns localized labels, versions, icons, install times, and APK sizes for the same third-party scope as `pm list packages -3`.
+- Base: an app whose icon cannot be drawn has an empty `icon`, but other apps and fields remain available.
+- Good: an Android version/vendor incompatibility rejects the batch command and automatically renders the legacy list with a visible warning.
+- Bad: importing `android.app.ActivityThread` directly makes compilation fail against the standard SDK `android.jar`.
+- Bad: writing helper diagnostics to stdout corrupts the JSON protocol and forces an unnecessary complete fallback.
+- Bad: replacing or changing `list_packages` breaks the Logcat package-resolution consumer.
+
+### 6. Tests Required
+
+- Rust unit tests parse a complete sample JSON array and reject empty, object-shaped, and invalid stdout.
+- Frontend helper tests cover complete fallback-object construction, display-name ordering, and app-name/package-name search.
+- Run `bash -n scripts/build-app-info-dex/build.sh`, Rust test/fmt/Clippy gates, frontend tests, and `pnpm build`.
+- On a JDK + Android SDK host, run the build script and assert a non-empty `src-tauri/resources/app-info.dex`.
+- Real-device smoke on Android 10+ must compare count with `pm list packages -3`, inspect localized labels and 96 x 96 icons, and verify version/time/size values.
+- Compatibility smoke must force or encounter a helper failure and assert the legacy rows, lazy icons, and degraded notice remain usable.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```java
+import android.app.ActivityThread;
+
+Context context = ActivityThread.systemMain().getSystemContext();
+```
+
+#### Correct
+
+```java
+Class<?> type = Class.forName("android.app.ActivityThread");
+Object thread = type.getDeclaredMethod("systemMain").invoke(null);
+Context context = (Context) type.getDeclaredMethod("getSystemContext").invoke(thread);
+```
+
+Keep hidden bootstrap APIs behind reflection so the checked-in source builds with the public Android SDK while runtime incompatibility remains covered by the legacy fallback.
+
 ## Scenario: ADB Port Forward Commands
 
 ### 1. Scope / Trigger

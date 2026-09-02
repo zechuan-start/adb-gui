@@ -3,7 +3,7 @@
   "name": "app-info-dex-binder",
   "title": "adb推送dex/jar批量获取应用信息与图标",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

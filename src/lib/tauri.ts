@@ -30,6 +30,17 @@ export interface PackageInfo {
   label: string | null;
 }
 
+export interface AppInfo {
+  packageName: string;
+  appName: string;
+  versionName: string;
+  versionCode: number;
+  icon: string;
+  firstInstallTime: number;
+  lastUpdateTime: number;
+  apkSize: number;
+}
+
 export interface LogcatLine {
   time: string;
   level: LogLevel;
@@ -340,6 +351,10 @@ export async function getDeviceInfo(serial: string): Promise<DeviceDetail> {
 
 export async function listPackages(serial: string): Promise<string[]> {
   return invoke<string[]>("list_packages", { serial });
+}
+
+export async function getInstalledApps(serial: string): Promise<AppInfo[]> {
+  return invoke<AppInfo[]>("get_installed_apps", { serial });
 }
 
 export async function getAppIcon(serial: string, pkg: string): Promise<string> {

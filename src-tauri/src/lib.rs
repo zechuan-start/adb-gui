@@ -198,6 +198,7 @@ pub fn run() {
             commands::device_info::get_device_info,
             commands::packages::list_packages,
             commands::app_icon::get_app_icon,
+            commands::app_info::get_installed_apps,
             commands::wifi::adb_connect,
             commands::wifi::adb_disconnect,
             commands::wifi::enable_wifi_debugging,
