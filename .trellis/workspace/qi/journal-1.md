@@ -482,3 +482,36 @@ Validated ADB WiFi transport state after connect, added reconnect regression cov
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: 批量应用信息 dex 实现
+
+**Date**: 2026-09-02
+**Task**: 批量应用信息 dex 实现
+**Branch**: `claude/adb-dex-jar-app-info-qk34vq`
+
+### Summary
+
+实现 app_process dex 批量获取第三方应用名称、版本、图标、安装时间与 APK 大小；新增 Rust/Tauri 命令和 React 结构化列表，失败时回退旧包名与懒加载图标流程。前端 277 项测试及生产构建通过；当前环境缺少 Rust、JDK/Android SDK 和真机，cargo、dex 编译及设备验证留待用户本地完成。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bfc4261` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
