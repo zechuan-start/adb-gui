@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { RefreshCw } from "lucide-react";
 import type { DeviceInfo } from "@/lib/tauri";
 import {
   getDeviceBySerial,
@@ -82,11 +83,12 @@ export function getDeviceSpecStripModel(
     detail.battery_level ? `${detail.battery_level}%` : "",
     detail.battery_status,
   );
+  const vendorModel = joinValues(detail.manufacturer, detail.model);
 
   return {
     items: [
-      ...(detail.model.trim()
-        ? [{ key: "model", label: "型号", value: detail.model.trim() }]
+      ...(vendorModel
+        ? [{ key: "model", label: "厂商 / 型号", value: vendorModel }]
         : baseItems.filter((item) => item.key === "model")),
       serialItem,
       ...optionalItem("android", "Android / SDK", android),
@@ -98,10 +100,25 @@ export function getDeviceSpecStripModel(
   };
 }
 
-export function DeviceSpecStrip() {
+export function getForegroundActivityLabel(
+  device: DeviceInfo | null,
+  currentActivity: string,
+): string {
+  if (!device || !isOnlineDevice(device)) {
+    return "设备不可用";
+  }
+  return currentActivity || "暂无前台 Activity";
+}
+
+interface DeviceSpecStripProps {
+  onRefreshActivity: () => void;
+}
+
+export function DeviceSpecStrip({ onRefreshActivity }: DeviceSpecStripProps) {
   const devices = useDeviceStore((state) => state.devices);
   const selectedDevice = useDeviceStore((state) => state.selectedDevice);
   const deviceDetail = useDeviceStore((state) => state.deviceDetail);
+  const currentActivity = useDeviceStore((state) => state.currentActivity);
   const refreshDeviceDetail = useDeviceStore((state) => state.refreshDeviceDetail);
   const device = getDeviceBySerial(devices, selectedDevice);
   const onlineSerial = device && isOnlineDevice(device) ? device.serial : null;
@@ -122,22 +139,41 @@ export function DeviceSpecStrip() {
     <section
       aria-label="设备规格"
       aria-busy={model.loading}
-      className="grid min-h-[92px] shrink-0 grid-cols-3 border border-rule bg-surface2 lg:min-h-14 lg:grid-cols-6"
+      className="shrink-0 border border-rule bg-surface2"
     >
-      {model.items.map((item) => (
-        <dl
-          key={item.key}
-          className="flex min-w-0 flex-col justify-center border-r border-rule px-3 py-2 last:border-r-0"
-        >
-          <dt className="text-[10px] uppercase text-ink3">{item.label}</dt>
-          <dd
-            className="mt-0.5 truncate font-data text-[11px] text-ink"
-            title={item.title ?? item.value}
+      <div className="grid min-h-[92px] grid-cols-3 border-b border-rule lg:min-h-14 lg:grid-cols-6">
+        {model.items.map((item) => (
+          <dl
+            key={item.key}
+            className="flex min-w-0 flex-col justify-center border-r border-rule px-3 py-2 last:border-r-0"
           >
-            {item.value}
-          </dd>
-        </dl>
-      ))}
+            <dt className="text-[10px] uppercase text-ink3">{item.label}</dt>
+            <dd
+              className="mt-0.5 truncate font-data text-[11px] text-ink"
+              title={item.title ?? item.value}
+            >
+              {item.value}
+            </dd>
+          </dl>
+        ))}
+      </div>
+
+      <dl className="flex min-h-9 items-center gap-2.5 px-3 py-1.5">
+        <dt className="shrink-0 text-[10px] uppercase text-ink3">Activity</dt>
+        <dd className="min-w-0 flex-1 break-all font-data text-[11px] leading-5 text-ink">
+          {getForegroundActivityLabel(device, currentActivity)}
+        </dd>
+        <button
+          type="button"
+          onClick={onRefreshActivity}
+          disabled={!onlineSerial}
+          className="flex h-7 w-7 shrink-0 items-center justify-center border border-rule text-ink2 hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+          title="刷新前台 Activity"
+          aria-label="刷新前台 Activity"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+        </button>
+      </dl>
     </section>
   );
 }

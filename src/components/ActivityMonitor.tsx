@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils";
 export function CurrentAppActionsTool() {
   const devices = useDeviceStore((s) => s.devices);
   const selectedDevice = useDeviceStore((s) => s.selectedDevice);
-  const currentActivity = useDeviceStore((s) => s.currentActivity);
   const currentPackage = useDeviceStore((s) => s.currentPackage);
   const device = getDeviceBySerial(devices, selectedDevice);
   const showToast = useFeedbackStore((s) => s.showToast);
@@ -150,10 +149,6 @@ export function CurrentAppActionsTool() {
           </button>
         </div>
       )}
-
-      <div className="mt-auto border-t border-dashed border-rule2 pt-3 text-xs text-ink2">
-        {currentActivity || "暂无前台 Activity"}
-      </div>
     </div>
   );
 }

@@ -187,14 +187,14 @@ function App() {
     <>
       <LogcatRuntime />
       <AppShell
-        topBar={<TopBar onRefreshActivity={refreshCurrentActivity} />}
+        topBar={<TopBar />}
         statusBanner={<StatusBanner />}
         logcat={<LogcatPanel visible={logcatVisible} />}
       >
         <WorkspacePane id="tools" activePane={activePane}>
           <div className="h-full min-h-0 overflow-y-auto px-[18px] pb-6 pt-4">
             <div className="space-y-4">
-              <DeviceSpecStrip />
+              <DeviceSpecStrip onRefreshActivity={refreshCurrentActivity} />
               <div className="grid grid-cols-[repeat(auto-fill,minmax(min(240px,100%),1fr))] gap-3.5">
                 <ToolModule icon={<Camera />} title="截图" reference="A-01">
                   <ScreenshotTool />

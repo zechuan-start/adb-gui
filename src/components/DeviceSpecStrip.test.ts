@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getDeviceSpecStripModel,
+  getForegroundActivityLabel,
   type DeviceSpecStripModel,
 } from "@/components/DeviceSpecStrip";
 import type { DeviceDetail, DeviceInfo } from "@/lib/tauri";
@@ -54,13 +55,25 @@ describe("getDeviceSpecStripModel", () => {
 
     expect(model?.loading).toBe(false);
     expect(itemValues(model)).toEqual({
-      model: "Pixel 9 Pro",
+      model: "Google / Pixel 9 Pro",
       serial: "emulator-5554",
       android: "16 / SDK 36",
       abi: "arm64-v8a",
       display: "1440x3120 / 560",
       battery: "82% / Charging",
     });
+  });
+
+  it("keeps the model readable when the manufacturer is unknown", () => {
+    const model = getDeviceSpecStripModel(
+      device(),
+      detailState({
+        serial: "emulator-5554",
+        detail: { ...detail(), manufacturer: "" },
+      }),
+    );
+
+    expect(itemValues(model).model).toBe("Pixel 9 Pro");
   });
 
   it("uses a fixed loading status before online detail arrives", () => {
@@ -105,5 +118,24 @@ describe("getDeviceSpecStripModel", () => {
 
   it("does not render a strip when no device is selected", () => {
     expect(getDeviceSpecStripModel(null, detailState())).toBeNull();
+  });
+});
+
+describe("getForegroundActivityLabel", () => {
+  it("shows the polled activity for an online device", () => {
+    expect(
+      getForegroundActivityLabel(device(), "cn.example.app/.main.MainActivity"),
+    ).toBe("cn.example.app/.main.MainActivity");
+  });
+
+  it("falls back to an empty-foreground hint for an online device", () => {
+    expect(getForegroundActivityLabel(device(), "")).toBe("暂无前台 Activity");
+  });
+
+  it("reports an unusable device instead of a stale activity", () => {
+    expect(
+      getForegroundActivityLabel(device("unauthorized"), "cn.example.app/.Main"),
+    ).toBe("设备不可用");
+    expect(getForegroundActivityLabel(null, "")).toBe("设备不可用");
   });
 });
