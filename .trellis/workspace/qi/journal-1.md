@@ -448,3 +448,37 @@ Implemented and verified port forwarding, screen recording, and bug report colle
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: Fix ADB WiFi switching and release v0.1.6
+
+**Date**: 2026-09-02
+**Task**: Fix ADB WiFi switching and release v0.1.6
+**Branch**: `main`
+
+### Summary
+
+Validated ADB WiFi transport state after connect, added reconnect regression coverage, bumped version to 0.1.6, and published signed cross-platform release assets.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fe14bde` | (see git log) |
+| `1a7b898` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

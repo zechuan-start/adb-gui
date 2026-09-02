@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 12
+- **Total Sessions**: 13
 - **Last Active**: 2026-09-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~450 | Active |
+| `journal-1.md` | ~484 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 13 | 2026-09-02 | Fix ADB WiFi switching and release v0.1.6 | `fe14bde`, `1a7b898` | `main` |
 | 12 | 2026-09-02 | Blueprint Quiet UI 翻新收口 | `d6c769f` | `codex/blueprint-quiet-ui-refresh` |
 | 11 | 2026-09-01 | Blueprint 工具工作台翻新 | - | `main` |
 | 10 | 2026-09-01 | 发布 v0.1.4 正式版 | `bfbfaa7`, `d301aa0`, `107d5fb` | `main` |
