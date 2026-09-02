@@ -71,18 +71,43 @@
 
 ## Acceptance Criteria
 
-- [ ] TBD（需求探索完成后补全，覆盖：批量命令返回结构、失败兜底行为、UI 展示、
-      dex 资源发布方式）
+- [ ] 新增 `scripts/build-app-info-dex/`（Java 源码 + 构建脚本），在装有 JDK +
+      Android SDK（`d8`、`android.jar`）的环境下可一键生成
+      `src-tauri/resources/app-info.dex`，并被 `tauri.conf.json` 现有的
+      `resources/` 打包规则自动纳入分发（dex 字节码与主机 OS/设备 CPU 架构无关，
+      不需要区分 macos/linux/windows 或 arm/x86 变体）。
+- [ ] 新增 Rust 命令 `get_installed_apps(serial)`：推送 `app-info.dex` 到
+      `/data/local/tmp/`，用 `app_process` 执行，解析 stdout JSON，返回
+      `Vec<AppInfo>`（`packageName`/`appName`/`versionName`/`versionCode`/
+      `icon`(96×96 base64 PNG data URI)/`firstInstallTime`/`lastUpdateTime`/
+      `apkSize`）。
+- [ ] 该命令内部任一环节失败（push 失败、`app_process` 非零退出、stdout 不是
+      合法 JSON、超时）都视为整体失败，返回可区分的错误，不返回部分结果。
+- [ ] `PackageManagerPanel` 优先调用 `get_installed_apps`；调用失败时自动回退到
+      现有 `list_packages` + 逐包 `get_app_icon` 路径，仅展示包名 + 图标（无
+      appName/version/size），并给出可感知的降级提示（如列表头部的轻提示，而非
+      静默降级到看起来完全一样的界面）。
+- [ ] 不改动 `list_packages`（`useLogcatPackageResolution.ts` 仍直接依赖它）。
+- [ ] `implement.md` 中列出的验证步骤里显式包含"需要用户在有 Android SDK 的机器
+      上跑构建脚本 + 连真机执行 `get_installed_apps` 验证"这一步，不在本次会话
+      内声称已验证。
 
-## Open Questions（阻塞规划，需要用户决策）
+## Open Questions（已全部决策完毕）
 
 - [x] 应用范围：**只展示第三方应用**，与现状 `pm list packages -3` 语义一致。
       本轮不加 `isSystemApp` 字段/筛选 UI，系统应用视图留到二期。
-- [ ] 图标输出尺寸：`getApplicationIcon` 默认按当前 density 解析，可能拿到
-      192px+ 的大图，全量应用一次性输出会显著增大 JSON 体积和内存占用，是否需要
-      在 dex 内统一缩放到固定尺寸？
-- [ ] dex 构建工具链的产出流程/维护方式（是否需要一份可重复执行的构建脚本，
-      放哪个目录，参考 `scripts/fetch-platform-tools.sh` 的风格）。
+- [x] 图标输出尺寸：dex 内用 `Bitmap.createScaledBitmap` 统一缩到 **96×96** 再
+      `compress` 成 PNG，兼顾清晰度与体积。
+- [x] 验证方式：**按完整方案实现**（dex 源码 + 构建脚本 + Rust 命令 + 前端）。
+      当前云端会话无 adb / 无连接设备 / 无 `ANDROID_HOME`/`android.jar`（只有裸
+      `java`/`javac`），无法在本会话内编译出可运行的 dex，也无法连真机验证 Binder
+      调用是否成功。构建脚本产出的 `.dex` 需要用户在有 Android SDK 的环境跑一次
+      生成，再连真机验证；这个验证缺口会在 `design.md`/`implement.md` 的
+      验证计划里显式标出，不假装"已验证"。
+- [x] 覆盖的 Android 版本范围：**以较新设备为主**，dex 内实现按 Android 10
+      （API 29）左右的 `ApplicationPackageManager`/`IPackageManager` 调用方式为
+      基准；不额外为更老设备做多套反射兜底分支。旧设备/dex 方式失败时统一走
+      「裸包名 + 逐包图标」的现有回退路径，不强求 dex 方式在老设备上也成功。
 
 ## Notes
 
