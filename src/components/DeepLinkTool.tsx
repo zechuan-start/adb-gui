@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ExternalLink, Link2, RefreshCw } from "lucide-react";
+import { ExternalLink, RefreshCw } from "lucide-react";
 import { useDeviceStore } from "@/store/device";
 import { useFeedbackStore } from "@/store/feedback";
 import { openDeepLink } from "@/lib/tauri";
@@ -34,18 +34,8 @@ export function DeepLinkTool() {
   const disabled = !device || !isOnlineDevice(device) || !url.trim() || busy;
 
   return (
-    <section className="rounded-lg border border-border bg-card p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-sm font-semibold">
-          <Link2 className="h-4 w-4" />
-          Deep Link
-        </h2>
-        <span className="text-xs text-muted-foreground">
-          {device ? device.model || device.serial : "请选择设备"}
-        </span>
-      </div>
-
-      <div className="mt-4 flex gap-2">
+    <div className="flex h-full min-w-0 flex-col">
+      <div className="flex gap-1.5">
         <input
           value={url}
           onChange={(event) => setUrl(event.target.value)}
@@ -59,14 +49,15 @@ export function DeepLinkTool() {
           autoCorrect="off"
           autoCapitalize="off"
           spellCheck={false}
-          className="min-w-0 flex-1 rounded-md border border-border bg-secondary px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+          disabled={!device || !isOnlineDevice(device)}
+          className="h-9 min-w-0 flex-1 border border-rule bg-surface px-2.5 font-data text-xs outline-none transition-colors placeholder:text-ink3 focus:border-note disabled:cursor-not-allowed disabled:opacity-40"
         />
         <button
           type="button"
           onClick={() => void handleOpen()}
           disabled={disabled}
           className={cn(
-            "inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50",
+            "inline-flex h-9 shrink-0 items-center gap-2 border border-ink bg-ink px-3 font-data text-xs font-medium text-onink transition-colors hover:border-ink2 hover:bg-ink2 disabled:cursor-not-allowed disabled:opacity-40",
             busy && "opacity-80",
           )}
         >
@@ -75,9 +66,9 @@ export function DeepLinkTool() {
         </button>
       </div>
 
-      <div className="mt-3 rounded-md border border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+      <div className="mt-auto border-t border-dashed border-rule2 pt-3 text-xs text-ink2">
         {device && isOnlineDevice(device) ? "等待输入地址" : "设备在线后可操作"}
       </div>
-    </section>
+    </div>
   );
 }

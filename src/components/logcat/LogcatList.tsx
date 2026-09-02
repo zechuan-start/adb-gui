@@ -4,7 +4,7 @@ import {
   useEffect,
   useMemo,
   useRef,
-  type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
 import { ArrowDownToLine } from "lucide-react";
@@ -13,13 +13,19 @@ import {
   type Virtualizer,
 } from "@tanstack/react-virtual";
 import { useFollowScroll } from "@/hooks/useFollowScroll";
-import {
-  findFilteredSeqIndex,
-  LOGCAT_ROW_HEIGHT,
-  type LogcatRingBuffer,
-} from "@/lib/logcat";
+import { LOGCAT_ROW_HEIGHT, type LogcatRingBuffer } from "@/lib/logcat";
 import { formatQueryValue } from "@/lib/logcatQuery";
+import {
+  groupCrashTraces,
+  type LogcatRenderItem,
+} from "@/lib/logcatRender";
+import {
+  hasNativeTextSelection,
+  resolveCopyAction,
+  type CopyTargetSnapshot,
+} from "@/lib/logcatSelection";
 import { columnSignature, type LogcatColumn } from "@/lib/logcatView";
+import { useFeedbackStore } from "@/store/feedback";
 import { useLogcatStore } from "@/store/logcat";
 import { LogcatRow } from "@/components/logcat/LogcatRow";
 
@@ -31,61 +37,93 @@ interface LogcatListProps {
 type ItemOffsetResolver = (index: number) => number;
 type LogcatVirtualizer = Virtualizer<HTMLDivElement, HTMLDivElement>;
 
+interface SelectionGesture {
+  seq: number;
+  index: number;
+  detached: boolean;
+}
+
 interface LogcatVirtualRowsProps {
   visible: boolean;
   scrollRef: RefObject<HTMLDivElement | null>;
   buffer: LogcatRingBuffer;
-  filteredSeqs: number[];
-  filteredHead: number;
-  filteredCount: number;
-  revision: number;
-  anchoredSeq: number | null;
+  renderItems: readonly LogcatRenderItem[];
   columns: Readonly<Record<LogcatColumn, boolean>>;
   softWrap: boolean;
+  cozyRows: boolean;
+  rowHeight: number;
+  selectedSeq: number | null;
   onTagClick: (tag: string) => void;
+  onToggleTrace: (seq: number) => void;
   onMeasurementsChanged: () => void;
   setItemOffsetResolver: (resolver: ItemOffsetResolver) => void;
 }
 
-function fixedItemOffset(index: number): number {
-  return index * LOGCAT_ROW_HEIGHT;
+function fixedItemOffset(index: number, rowHeight: number): number {
+  return index * rowHeight;
 }
 
-function measuredItemOffset(virtualizer: LogcatVirtualizer, index: number): number {
+function measuredItemOffset(
+  virtualizer: LogcatVirtualizer,
+  index: number,
+  rowHeight: number,
+): number {
   const renderedItem = virtualizer
     .getVirtualItems()
     .find((item) => item.index === index);
   if (renderedItem) {
     return renderedItem.start;
   }
-  return virtualizer.getOffsetForIndex(index, "start")?.[0] ?? fixedItemOffset(index);
+  return virtualizer.getOffsetForIndex(index, "start")?.[0]
+    ?? fixedItemOffset(index, rowHeight);
+}
+
+function findRenderItemIndex(
+  renderItems: readonly LogcatRenderItem[],
+  seq: number,
+): number | null {
+  let low = 0;
+  let high = renderItems.length - 1;
+  while (low <= high) {
+    const middle = low + Math.floor((high - low) / 2);
+    const candidate = renderItems[middle]?.seq;
+    if (candidate === seq) {
+      return middle;
+    }
+    if (candidate < seq) {
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return null;
 }
 
 function LogcatVirtualRowsView({
   visible,
   scrollRef,
   buffer,
-  filteredSeqs,
-  filteredHead,
-  filteredCount,
-  revision,
-  anchoredSeq,
+  renderItems,
   columns,
   softWrap,
+  cozyRows,
+  rowHeight,
+  selectedSeq,
   onTagClick,
+  onToggleTrace,
   onMeasurementsChanged,
   setItemOffsetResolver,
 }: LogcatVirtualRowsProps) {
   const previouslyVisibleRef = useRef(visible);
   const getItemKey = useCallback(
-    (index: number) => filteredSeqs[filteredHead + index] ?? -(index + 1),
-    [filteredHead, filteredSeqs, revision],
+    (index: number) => renderItems[index]?.seq ?? -(index + 1),
+    [renderItems],
   );
   const virtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
-    count: filteredCount,
+    count: renderItems.length,
     getScrollElement: () => scrollRef.current,
     getItemKey,
-    estimateSize: () => LOGCAT_ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     overscan: 30,
     onChange: (_instance, sync) => {
       if (softWrap && !sync) {
@@ -96,8 +134,8 @@ function LogcatVirtualRowsView({
 
   setItemOffsetResolver(
     softWrap
-      ? (index) => measuredItemOffset(virtualizer, index)
-      : fixedItemOffset,
+      ? (index) => measuredItemOffset(virtualizer, index, rowHeight)
+      : (index) => fixedItemOffset(index, rowHeight),
   );
 
   useEffect(() => {
@@ -117,15 +155,17 @@ function LogcatVirtualRowsView({
   }, [onMeasurementsChanged, softWrap, virtualizer, visible]);
 
   return (
-    <div
-      style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}
-    >
+    <div style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}>
       {virtualizer.getVirtualItems().map((virtualItem) => {
-        const seq = filteredSeqs[filteredHead + virtualItem.index];
-        const entry = seq === undefined ? undefined : buffer.bySeq(seq);
-        if (!entry) {
+        const renderItem = renderItems[virtualItem.index];
+        const entry = renderItem ? buffer.bySeq(renderItem.seq) : undefined;
+        if (!renderItem || !entry) {
           return null;
         }
+        const traceCount = renderItem.kind === "crash-head"
+          ? renderItem.traceSeqs.length
+          : 0;
+        const traceExpanded = renderItem.kind === "crash-head" && renderItem.expanded;
         return (
           <div
             key={virtualItem.key}
@@ -137,16 +177,20 @@ function LogcatVirtualRowsView({
               top: 0,
               left: 0,
               width: "100%",
-              height: softWrap ? undefined : `${LOGCAT_ROW_HEIGHT}px`,
+              height: softWrap ? undefined : `${rowHeight}px`,
               transform: `translateY(${virtualItem.start}px)`,
             }}
           >
             <LogcatRow
               entry={entry}
-              anchored={entry.seq === anchoredSeq}
+              selected={entry.seq === selectedSeq}
               columns={columns}
               softWrap={softWrap}
+              cozy={cozyRows}
+              traceCount={traceCount}
+              traceExpanded={traceExpanded}
               onTagClick={onTagClick}
+              onToggleTrace={onToggleTrace}
             />
           </div>
         );
@@ -169,29 +213,50 @@ export function LogcatList({ visible, loading }: LogcatListProps) {
   const followMode = useLogcatStore((state) => state.followMode);
   const detachedNewCount = useLogcatStore((state) => state.detachedNewCount);
   const anchoredSeq = useLogcatStore((state) => state.anchoredSeq);
+  const selectedSeq = useLogcatStore((state) => state.selectedSeq);
+  const autoFold = useLogcatStore((state) => state.autoFold);
+  const expandedCrashSeqs = useLogcatStore((state) => state.expandedCrashSeqs);
+  const cozyRows = useLogcatStore((state) => state.cozyRows);
   const columns = useLogcatStore((state) => state.columns);
   const softWrap = useLogcatStore((state) => state.softWrap);
   const setFollowMode = useLogcatStore((state) => state.setFollowMode);
   const setAnchoredSeq = useLogcatStore((state) => state.setAnchoredSeq);
-  const itemOffsetResolverRef = useRef<ItemOffsetResolver>(fixedItemOffset);
+  const setSelectedSeq = useLogcatStore((state) => state.setSelectedSeq);
+  const toggleCrashExpanded = useLogcatStore((state) => state.toggleCrashExpanded);
+  const rowHeight = cozyRows ? 24 : LOGCAT_ROW_HEIGHT;
+  const itemOffsetResolverRef = useRef<ItemOffsetResolver>(
+    (index) => fixedItemOffset(index, rowHeight),
+  );
   const measurementFrameRef = useRef<number | null>(null);
-  const layoutKey = `${softWrap ? "wrap" : "fixed"}:${columnSignature(columns)}`;
+  const selectionGestureRef = useRef<SelectionGesture | null>(null);
 
+  const renderItems = useMemo(
+    () => groupCrashTraces({
+      buffer,
+      filteredSeqs,
+      filteredHead,
+      filteredCount,
+      autoFold,
+      expandedCrashSeqs,
+    }),
+    [
+      autoFold,
+      buffer,
+      expandedCrashSeqs,
+      filteredCount,
+      filteredHead,
+      filteredSeqs,
+      revision,
+    ],
+  );
+  const layoutKey = `${softWrap ? "wrap" : "fixed"}:${rowHeight}:${columnSignature(columns)}`;
   const anchorIndex = useMemo(
-    () =>
-      anchoredSeq === null
-        ? null
-        : findFilteredSeqIndex(
-            filteredSeqs,
-            filteredHead,
-            filteredCount,
-            anchoredSeq,
-          ),
-    [anchoredSeq, filteredCount, filteredHead, filteredSeqs, revision],
+    () => anchoredSeq === null ? null : findRenderItemIndex(renderItems, anchoredSeq),
+    [anchoredSeq, renderItems],
   );
   const getItemOffset = useCallback(
     (index: number) => itemOffsetResolverRef.current(index),
-    [layoutKey],
+    [layoutKey, renderItems],
   );
   const followScroll = useFollowScroll({
     visible,
@@ -238,62 +303,147 @@ export function LogcatList({ visible, loading }: LogcatListProps) {
     useLogcatStore.getState().appendToQuery(`tag:${formatQueryValue(tag)}`);
   }, []);
 
-  function handleSurfaceClick(event: MouseEvent<HTMLDivElement>) {
-    const target = event.target;
-    const row = target instanceof Element
-      ? target.closest<HTMLElement>("[data-logcat-seq]")
-      : null;
+  const finishSelectionGesture = useCallback(() => {
+    const gesture = selectionGestureRef.current;
+    selectionGestureRef.current = null;
+    if (!gesture || hasNativeTextSelection(window.getSelection()?.toString() ?? null)) {
+      return;
+    }
+    if (!gesture.detached) {
+      followScroll.detachAt(gesture.seq, gesture.index);
+    }
+    const currentSelectedSeq = useLogcatStore.getState().selectedSeq;
+    setSelectedSeq(currentSelectedSeq === gesture.seq ? null : gesture.seq);
+  }, [followScroll.detachAt, setSelectedSeq]);
+
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+    function cancelSelectionGesture(): void {
+      selectionGestureRef.current = null;
+    }
+    window.addEventListener("pointerup", finishSelectionGesture);
+    window.addEventListener("pointercancel", cancelSelectionGesture);
+    return () => {
+      window.removeEventListener("pointerup", finishSelectionGesture);
+      window.removeEventListener("pointercancel", cancelSelectionGesture);
+      selectionGestureRef.current = null;
+    };
+  }, [finishSelectionGesture, visible]);
+
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+
+    async function copySelectedLine(text: string): Promise<void> {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (error) {
+        useFeedbackStore.getState().showToast("error", `复制日志失败: ${String(error)}`);
+      }
+    }
+
+    function handleCopyShortcut(event: KeyboardEvent): void {
+      if (
+        event.key.toLowerCase() !== "c" ||
+        !(event.metaKey || event.ctrlKey) ||
+        event.altKey
+      ) {
+        return;
+      }
+      const target: CopyTargetSnapshot | null = event.target instanceof HTMLElement
+        ? {
+            tagName: event.target.tagName,
+            isContentEditable: event.target.isContentEditable,
+          }
+        : null;
+      const state = useLogcatStore.getState();
+      const action = resolveCopyAction({
+        target,
+        nativeSelectionText: window.getSelection()?.toString() ?? null,
+        selectedSeq: state.selectedSeq,
+        selectedEntry:
+          state.selectedSeq === null ? null : state.buffer.bySeq(state.selectedSeq) ?? null,
+      });
+      if (!action) {
+        return;
+      }
+      event.preventDefault();
+      void copySelectedLine(action.text);
+    }
+
+    window.addEventListener("keydown", handleCopyShortcut);
+    return () => window.removeEventListener("keydown", handleCopyShortcut);
+  }, [visible]);
+
+  function handleSurfacePointerDown(event: ReactPointerEvent<HTMLDivElement>): void {
+    followScroll.onPointerDown(event);
+    if (event.button !== 0 || !(event.target instanceof Element)) {
+      return;
+    }
+    const row = event.target.closest<HTMLElement>("[data-logcat-seq]");
     if (!row || !event.currentTarget.contains(row)) {
-      followScroll.detachAt(null, null);
+      selectionGestureRef.current = null;
+      return;
+    }
+    if (event.target.closest("button, input, textarea, select, a")) {
+      selectionGestureRef.current = null;
       return;
     }
     const seq = Number(row.dataset.logcatSeq);
-    const index = Number.isSafeInteger(seq)
-      ? findFilteredSeqIndex(filteredSeqs, filteredHead, filteredCount, seq)
-      : null;
-    followScroll.detachAt(index === null ? null : seq, index);
+    const index = Number.isSafeInteger(seq) ? findRenderItemIndex(renderItems, seq) : null;
+    if (index === null) {
+      selectionGestureRef.current = null;
+      return;
+    }
+    const detached = event.target.closest("[data-logcat-message]") !== null;
+    selectionGestureRef.current = { seq, index, detached };
+    if (detached) {
+      followScroll.detachAt(seq, index);
+    }
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1">
+    <div className="relative flex min-h-0 flex-1 bg-log-bg">
       <div
         ref={followScroll.scrollRef}
-        className="min-h-0 flex-1 overflow-auto font-mono text-xs"
-        onClickCapture={handleSurfaceClick}
+        className="min-h-0 flex-1 overflow-auto bg-log-bg font-data text-[11px]"
         onScroll={followScroll.onScroll}
         onWheel={followScroll.onWheel}
-        onPointerDown={followScroll.onPointerDown}
+        onPointerDownCapture={handleSurfacePointerDown}
         onTouchStart={followScroll.onTouchStart}
         onTouchMove={followScroll.onTouchMove}
         onTouchEnd={followScroll.onTouchEnd}
         onTouchCancel={followScroll.onTouchEnd}
       >
         {loading ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+          <div className="flex h-full items-center justify-center text-sm text-log-dim">
             正在连接日志流...
           </div>
         ) : totalCount === 0 ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+          <div className="flex h-full items-center justify-center text-sm text-log-dim">
             暂无日志
           </div>
         ) : filteredCount === 0 ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+          <div className="flex h-full items-center justify-center text-sm text-log-dim">
             没有匹配当前查询的日志
           </div>
         ) : (
           <LogcatVirtualRows
-            key={softWrap ? "wrapped" : "fixed"}
+            key={`${softWrap ? "wrapped" : "fixed"}:${rowHeight}`}
             visible={visible}
             scrollRef={followScroll.scrollRef}
             buffer={buffer}
-            filteredSeqs={filteredSeqs}
-            filteredHead={filteredHead}
-            filteredCount={filteredCount}
-            revision={revision}
-            anchoredSeq={anchoredSeq}
+            renderItems={renderItems}
             columns={columns}
             softWrap={softWrap}
+            cozyRows={cozyRows}
+            rowHeight={rowHeight}
+            selectedSeq={selectedSeq}
             onTagClick={handleTagClick}
+            onToggleTrace={toggleCrashExpanded}
             onMeasurementsChanged={scheduleMeasurementCompensation}
             setItemOffsetResolver={setItemOffsetResolver}
           />
@@ -304,7 +454,7 @@ export function LogcatList({ visible, loading }: LogcatListProps) {
         <button
           type="button"
           onClick={followScroll.scrollToBottom}
-          className="absolute bottom-4 right-4 inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-popover px-3 text-xs text-popover-foreground shadow-lg transition-colors hover:bg-secondary"
+          className="absolute bottom-3 right-3 inline-flex h-7 items-center gap-1.5 border border-rule bg-log-bg px-2.5 text-[11px] text-ink shadow-[2px_2px_0_var(--color-hard-shadow)] hover:bg-hover"
           title="回到底部并跟随"
         >
           <ArrowDownToLine className="h-3.5 w-3.5" />

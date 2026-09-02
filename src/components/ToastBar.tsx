@@ -25,13 +25,15 @@ export function ToastBar() {
   }
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-50 px-4 pb-4">
+    <div className="fixed bottom-4 left-[184px] z-50 w-[min(340px,calc(100vw-200px))]">
       <div
+        role={toast.kind === "success" ? "status" : "alert"}
+        aria-live={toast.kind === "success" ? "polite" : "assertive"}
         className={cn(
-          "mx-auto flex max-w-4xl items-center gap-3 rounded-lg border px-4 py-2 shadow-lg",
+          "flex min-h-11 items-center gap-3 border border-l-[3px] bg-paper px-3 py-2 font-data text-[11px] text-ink shadow-[3px_3px_0_var(--color-hard-shadow)]",
           toast.kind === "success"
-            ? "border-success/50 bg-success-surface text-foreground"
-            : "border-destructive/50 bg-destructive-surface text-foreground"
+            ? "border-success/50 border-l-success"
+            : "border-destructive/50 border-l-destructive"
         )}
       >
         {toast.kind === "success" ? (
@@ -39,12 +41,13 @@ export function ToastBar() {
         ) : (
           <AlertCircle className="h-4 w-4 text-destructive" />
         )}
-        <span className="min-w-0 flex-1 truncate text-sm">{toast.message}</span>
+        <span className="min-w-0 flex-1 break-words leading-5">{toast.message}</span>
         <button
           type="button"
           onClick={clearToast}
-          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-ink3 hover:bg-hover hover:text-ink"
           title="关闭"
+          aria-label="关闭通知"
         >
           <X className="h-4 w-4" />
         </button>

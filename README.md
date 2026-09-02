@@ -8,7 +8,7 @@ ADB GUI is a cross-platform desktop toolbox for Android developers and testers. 
 
 ![ADB GUI tools workspace](docs/images/adb-gui-overview.png)
 
-_The tools workspace with a connected Android device. Device state, current Activity, ADB source, and the active target remain visible while you work._
+_The tools workspace with a connected Android device. The active target and ADB source stay in the top bar, and the device specification strip carries the current Activity on its own row._
 
 ## Highlights
 
@@ -23,7 +23,7 @@ _The tools workspace with a connected Android device. Device state, current Acti
 
 - Continuously discovers attached and network devices and shows online, offline, or unauthorized state.
 - Connects or disconnects devices by IP address, and can switch the selected USB device to ADB over Wi-Fi.
-- Displays the current foreground Activity, ADB version/source, and device details such as model, manufacturer, Android version, SDK, ABI, resolution, density, and battery state.
+- Displays the ADB version/source in the top bar, and a specification strip with manufacturer/model, serial, Android version, SDK, ABI, resolution, density, and battery state, plus a dedicated row for the current foreground Activity.
 
 ### Diagnostics and evidence
 
@@ -117,7 +117,7 @@ ADB GUI 是一款面向 Android 开发与测试场景的跨平台桌面工具. �
 
 ![ADB GUI 工具工作区](docs/images/adb-gui-overview.png)
 
-_已连接 Android 设备时的工具工作区. 设备状态、当前 Activity、ADB 来源和操作目标始终显示在窗口顶部._
+_已连接 Android 设备时的工具工作区. 操作目标和 ADB 来源常驻窗口顶部, 当前 Activity 在设备信息条中单独占一行._
 
 ## 核心特点
 
@@ -132,7 +132,7 @@ _已连接 Android 设备时的工具工作区. 设备状态、当前 Activity�
 
 - 持续发现 USB 和网络设备, 显示在线、离线或未授权状态.
 - 支持通过 IP 连接或断开设备, 也可以把当前 USB 设备切换到 ADB Wi-Fi 模式.
-- 显示当前前台 Activity、ADB 版本与来源, 并可查看型号、厂商、Android 版本、SDK、ABI、分辨率、密度、电量等设备信息.
+- 顶栏显示 ADB 版本与来源; 设备信息条平铺厂商与型号、序列号、Android 版本、SDK、ABI、分辨率、密度、电量, 并用单独一行显示当前前台 Activity.
 
 ### 诊断与证据收集
 

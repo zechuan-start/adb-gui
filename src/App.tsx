@@ -1,92 +1,104 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import {
-  ClipboardList,
-  FolderTree,
-  LayoutList,
-  Moon,
-  QrCode,
-  RefreshCw,
-  ScanLine,
-  Sun,
-  TabletSmartphone,
+  AppWindow,
+  ArrowLeftRight,
+  Bug,
+  Camera,
+  Keyboard,
+  Link2,
+  PackageOpen,
+  Video,
 } from "lucide-react";
-import { useDeviceStore } from "@/store/device";
-import { useFeedbackStore } from "@/store/feedback";
-import { useThemeStore } from "@/store/theme";
+import { CurrentAppActionsTool } from "@/components/ActivityMonitor";
+import { ApkTool } from "@/components/AppManager";
+import { BugReportTool } from "@/components/BugReportTool";
+import { CodeDecoderPage } from "@/components/CodeDecoderPage";
+import { CodeGeneratorPage } from "@/components/CodeGeneratorPage";
+import { DeepLinkTool } from "@/components/DeepLinkTool";
+import { DeviceSpecStrip } from "@/components/DeviceSpecStrip";
+import { DeviceFileManager } from "@/components/DeviceFileManager";
+import { AppShell } from "@/components/layout/AppShell";
+import { StatusBanner } from "@/components/layout/StatusBanner";
+import { TopBar } from "@/components/layout/TopBar";
+import { LogcatPanel } from "@/components/logcat/LogcatPanel";
+import { LogcatRuntime } from "@/components/logcat/LogcatRuntime";
+import { PackageManagerPanel } from "@/components/PackageManager";
+import { PortForwardTool } from "@/components/PortForwardTool";
+import { QuickKeysTool } from "@/components/QuickKeys";
+import { ScreenRecordTool } from "@/components/ScreenRecordTool";
+import { ScreenshotTool } from "@/components/Screenshot";
+import { ToastBar } from "@/components/ToastBar";
+import { ToolModule } from "@/components/ToolModule";
+import { UpdateChecker } from "@/components/UpdateChecker";
 import {
   createActivityPollingController,
   type ActivityPollingController,
 } from "@/hooks/activityPollingController";
+import { getDeviceBySerial } from "@/lib/device";
 import {
   getAdbInfo,
   getCurrentActivity,
+  isTauriRuntime,
   listDeviceProcesses,
   listDevices,
   onDevicesUpdated,
 } from "@/lib/tauri";
-import { DeviceSelector } from "@/components/DeviceSelector";
-import { ScreenshotTool } from "@/components/Screenshot";
-import { ScreenRecordTool } from "@/components/ScreenRecordTool";
-import { ApkTool } from "@/components/AppManager";
-import { QuickKeysTool } from "@/components/QuickKeys";
-import { LogcatPanel } from "@/components/logcat/LogcatPanel";
-import { CurrentAppActionsTool } from "@/components/ActivityMonitor";
-import { UpdateChecker } from "@/components/UpdateChecker";
-import { DeviceInfoButton } from "@/components/DeviceInfoPanel";
-import { DeepLinkTool } from "@/components/DeepLinkTool";
-import { PortForwardTool } from "@/components/PortForwardTool";
-import { BugReportTool } from "@/components/BugReportTool";
-import { PackageManagerPanel } from "@/components/PackageManager";
-import { ToastBar } from "@/components/ToastBar";
-import { WifiConnectButton } from "@/components/WifiConnect";
-import { CodeGeneratorPage } from "@/components/CodeGeneratorPage";
-import { CodeDecoderPage } from "@/components/CodeDecoderPage";
-import { DeviceFileManager } from "@/components/DeviceFileManager";
 import { cn } from "@/lib/utils";
+import { useDeviceStore } from "@/store/device";
+import { useFeedbackStore } from "@/store/feedback";
 import { useLogcatStore } from "@/store/logcat";
+import { type PaneId, useUiStore } from "@/store/ui";
 
-type TabId = "tools" | "logcat" | "apps" | "files" | "code" | "decoder";
+interface WorkspacePaneProps {
+  id: PaneId;
+  activePane: PaneId;
+  children: ReactNode;
+}
 
-const TABS: { id: TabId; label: string; icon: typeof TabletSmartphone; badge?: string }[] = [
-  { id: "tools", label: "工具", icon: TabletSmartphone },
-  { id: "logcat", label: "日志", icon: ClipboardList },
-  { id: "apps", label: "应用", icon: LayoutList },
-  { id: "files", label: "文件", icon: FolderTree },
-  { id: "code", label: "生码", icon: QrCode },
-  { id: "decoder", label: "解码", icon: ScanLine },
-];
+function WorkspacePane({ id, activePane, children }: WorkspacePaneProps) {
+  const active = id === activePane;
+  return (
+    <section
+      role="tabpanel"
+      aria-labelledby={`pane-nav-${id}`}
+      aria-hidden={!active}
+      className={cn("h-full min-h-0", !active && "hidden")}
+    >
+      {children}
+    </section>
+  );
+}
 
 function App() {
-  const [activeTab, setActiveTab] = useState<TabId>("tools");
-  const [logcatMounted, setLogcatMounted] = useState(false);
   const activityControllerRef = useRef<ActivityPollingController | null>(null);
   const processGenerationRef = useRef(0);
-  const logcatVisible = activeTab === "logcat";
-  const logcatRestartNonce = useLogcatStore((state) => state.restartNonce);
-  const {
-    adbInfo,
-    setAdbInfo,
-    setDevices,
-    selectedDevice,
-    setCurrentActivity,
-    currentActivity,
-  } = useDeviceStore();
+  const activePane = useUiStore((state) => state.activePane);
+  const logcatVisible = useUiStore((state) => state.logOpenByPane[activePane]);
+  const devices = useDeviceStore((state) => state.devices);
+  const selectedDevice = useDeviceStore((state) => state.selectedDevice);
+  const setAdbInfo = useDeviceStore((state) => state.setAdbInfo);
+  const setDevices = useDeviceStore((state) => state.setDevices);
+  const setCurrentActivity = useDeviceStore((state) => state.setCurrentActivity);
   const showToast = useFeedbackStore((state) => state.showToast);
-  const { theme, setTheme } = useThemeStore();
+  const logcatRestartNonce = useLogcatStore((state) => state.restartNonce);
+  const selected = getDeviceBySerial(devices, selectedDevice);
+  const onlineSerial = selected?.state === "device" ? selected.serial : null;
 
   useEffect(() => {
-    if (logcatVisible) {
-      setLogcatMounted(true);
+    if (!isTauriRuntime()) {
+      return;
     }
-  }, [logcatVisible]);
 
-  useEffect(() => {
-    getAdbInfo().then(setAdbInfo).catch(console.error);
-    listDevices().then(setDevices).catch(console.error);
+    void getAdbInfo().then(setAdbInfo).catch((error) => {
+      showToast("error", `读取 ADB 信息失败: ${String(error)}`);
+    });
+    void listDevices().then(setDevices).catch((error) => {
+      showToast("error", `读取设备列表失败: ${String(error)}`);
+    });
 
     let disposed = false;
     let unlistenDevices: (() => void) | null = null;
-    void onDevicesUpdated((devices) => setDevices(devices))
+    void onDevicesUpdated((nextDevices) => setDevices(nextDevices))
       .then((nextUnlisten) => {
         if (disposed) {
           nextUnlisten();
@@ -112,23 +124,21 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!selectedDevice) {
+    if (!onlineSerial) {
       activityControllerRef.current = null;
       setCurrentActivity("");
       useLogcatStore.getState().clearProcessMap();
       return;
     }
+
     let lastError = "";
     let lastProcessError = "";
-    let processMapKey: string | null = null;
-    if (logcatMounted) {
-      processGenerationRef.current += 1;
-      processMapKey = `${selectedDevice}:${logcatRestartNonce}:${processGenerationRef.current}`;
-      useLogcatStore.getState().beginProcessMapSession(processMapKey);
-    }
-    const controller = createActivityPollingController(selectedDevice, {
+    processGenerationRef.current += 1;
+    const processMapKey = `${onlineSerial}:${logcatRestartNonce}:${processGenerationRef.current}`;
+    useLogcatStore.getState().beginProcessMapSession(processMapKey);
+    const controller = createActivityPollingController(onlineSerial, {
       loadActivity: getCurrentActivity,
-      loadProcesses: processMapKey === null ? undefined : listDeviceProcesses,
+      loadProcesses: listDeviceProcesses,
       schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
       cancelSchedule: (handle) => window.clearTimeout(handle),
       now: () => Date.now(),
@@ -144,14 +154,9 @@ function App() {
         }
       },
       onProcessRefreshing: () => {
-        if (processMapKey !== null) {
-          useLogcatStore.getState().beginProcessMapRefresh(processMapKey);
-        }
+        useLogcatStore.getState().beginProcessMapRefresh(processMapKey);
       },
       onProcesses: (entries, updatedAt) => {
-        if (processMapKey === null) {
-          return;
-        }
         lastProcessError = "";
         useLogcatStore.getState().completeProcessMapRefresh(
           processMapKey,
@@ -160,9 +165,6 @@ function App() {
         );
       },
       onProcessError: (error) => {
-        if (processMapKey === null) {
-          return;
-        }
         const message = `读取设备进程表失败: ${String(error)}`;
         useLogcatStore.getState().failProcessMapRefresh(processMapKey, message);
         if (lastProcessError !== message) {
@@ -179,128 +181,65 @@ function App() {
         activityControllerRef.current = null;
       }
     };
-  }, [logcatMounted, logcatRestartNonce, selectedDevice, setCurrentActivity, showToast]);
-
-  const adbLabel = useMemo(() => {
-    if (!adbInfo) {
-      return "adb 未就绪";
-    }
-    return `adb ${adbInfo.version} (${adbInfo.source})`;
-  }, [adbInfo]);
+  }, [logcatRestartNonce, onlineSerial, setCurrentActivity, showToast]);
 
   return (
-    <div className="flex h-screen flex-col bg-background text-foreground">
-      <header className="border-b border-border bg-card/80">
-        <div className="flex h-10 items-center gap-3 px-4">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <TabletSmartphone className="h-4 w-4" />
-            <span>ADB GUI</span>
-          </div>
-          <DeviceSelector />
-          <WifiConnectButton />
-          <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="font-mono">{adbLabel}</span>
-            <DeviceInfoButton />
-            <button
-              type="button"
-              onClick={() => {
-                const next = theme === "dark" ? "light" : "dark";
-                setTheme(next);
-              }}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-secondary text-muted-foreground transition-colors hover:text-foreground"
-              title={theme === "dark" ? "切换到亮色模式" : "切换到暗色模式"}
-            >
-              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                getAdbInfo().then(setAdbInfo).catch(console.error);
-                listDevices().then(setDevices).catch(console.error);
-              }}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-secondary text-muted-foreground transition-colors hover:text-foreground"
-              title="刷新"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-        {selectedDevice && (
-          <div className="flex h-7 items-center gap-3 border-t border-border bg-secondary/40 px-4 text-xs">
-            <span className="text-muted-foreground">Activity:</span>
-            <span className="min-w-0 flex-1 truncate font-mono text-foreground" title={currentActivity || "暂无前台 Activity"}>
-              {currentActivity || "暂无前台 Activity"}
-            </span>
-            <button
-              type="button"
-              onClick={() => void refreshCurrentActivity()}
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-              title="刷新 Activity"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        )}
-      </header>
-
-      <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="border-b border-border bg-card px-4 py-2">
-          <div className="inline-flex rounded-lg border border-border bg-secondary/60 p-1">
-            {TABS.map((tab) => {
-              const Icon = tab.icon;
-              const active = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id)}
-                  className={cn(
-                    "inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors",
-                    active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                  <span>{tab.label}</span>
-                  {tab.badge && <span className="text-[10px] text-muted-foreground">{tab.badge}</span>}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-hidden">
-          {activeTab === "tools" && (
-            <section className="flex min-h-0 h-full flex-col gap-3 overflow-y-auto p-4">
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-4">
-                <ScreenshotTool />
-                <ScreenRecordTool />
-                <ApkTool />
-                <DeepLinkTool />
+    <>
+      <LogcatRuntime />
+      <AppShell
+        topBar={<TopBar />}
+        statusBanner={<StatusBanner />}
+        logcat={<LogcatPanel visible={logcatVisible} />}
+      >
+        <WorkspacePane id="tools" activePane={activePane}>
+          <div className="h-full min-h-0 overflow-y-auto px-[18px] pb-6 pt-4">
+            <div className="space-y-4">
+              <DeviceSpecStrip onRefreshActivity={refreshCurrentActivity} />
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(min(240px,100%),1fr))] gap-3.5">
+                <ToolModule icon={<Camera />} title="截图" reference="A-01">
+                  <ScreenshotTool />
+                </ToolModule>
+                <ToolModule icon={<Video />} title="录屏" reference="A-02">
+                  <ScreenRecordTool active={activePane === "tools"} />
+                </ToolModule>
+                <ToolModule icon={<PackageOpen />} title="安装 APK" reference="A-03">
+                  <ApkTool active={activePane === "tools"} />
+                </ToolModule>
+                <ToolModule icon={<Link2 />} title="Deep Link" reference="A-04">
+                  <DeepLinkTool />
+                </ToolModule>
+                <ToolModule icon={<ArrowLeftRight />} title="端口转发" reference="A-05" wide>
+                  <PortForwardTool active={activePane === "tools"} />
+                </ToolModule>
+                <ToolModule icon={<Keyboard />} title="快捷按键" reference="A-06">
+                  <QuickKeysTool />
+                </ToolModule>
+                <ToolModule icon={<AppWindow />} title="当前应用" reference="A-07">
+                  <CurrentAppActionsTool />
+                </ToolModule>
+                <ToolModule icon={<Bug />} title="Bug 报告" reference="A-08">
+                  <BugReportTool />
+                </ToolModule>
               </div>
-              <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(280px,1fr)_minmax(0,2fr)]">
-                <BugReportTool />
-                <PortForwardTool />
-              </div>
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[2fr_3fr]">
-                <QuickKeysTool />
-                <CurrentAppActionsTool />
-              </div>
-            </section>
-          )}
-          {(logcatMounted || logcatVisible) && (
-            <div className={cn("h-full min-h-0", !logcatVisible && "hidden")}>
-              <LogcatPanel visible={logcatVisible} />
             </div>
-          )}
-          {activeTab === "apps" && <PackageManagerPanel />}
-          {activeTab === "files" && <DeviceFileManager />}
-          {activeTab === "code" && <CodeGeneratorPage />}
-          {activeTab === "decoder" && <CodeDecoderPage />}
-        </div>
-      </main>
+          </div>
+        </WorkspacePane>
+        <WorkspacePane id="apps" activePane={activePane}>
+          <PackageManagerPanel />
+        </WorkspacePane>
+        <WorkspacePane id="files" activePane={activePane}>
+          <DeviceFileManager active={activePane === "files"} />
+        </WorkspacePane>
+        <WorkspacePane id="codegen" activePane={activePane}>
+          <CodeGeneratorPage />
+        </WorkspacePane>
+        <WorkspacePane id="decoder" activePane={activePane}>
+          <CodeDecoderPage active={activePane === "decoder"} />
+        </WorkspacePane>
+      </AppShell>
       <ToastBar />
       <UpdateChecker />
-    </div>
+    </>
   );
 }
 

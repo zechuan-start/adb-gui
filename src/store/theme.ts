@@ -1,36 +1,103 @@
 import { create } from "zustand";
 
-type Theme = "light" | "dark" | "system";
+export type Theme = "system" | "light" | "dark";
 
 interface ThemeState {
   theme: Theme;
   setTheme: (theme: Theme) => void;
 }
 
-function getSystemDark(): boolean {
-  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+const THEME_STORAGE_KEY = "theme";
+const SYSTEM_THEME_QUERY = "(prefers-color-scheme: dark)";
+
+function isTheme(value: string | null): value is Theme {
+  return value === "system" || value === "light" || value === "dark";
 }
 
-function applyTheme(theme: Theme) {
-  const isDark = theme === "dark" || (theme === "system" && getSystemDark());
+function persistTheme(theme: Theme): void {
+  try {
+    globalThis.localStorage?.setItem(THEME_STORAGE_KEY, theme);
+  } catch {
+    // Storage can be unavailable in sandboxed WebViews; the in-memory choice still applies.
+  }
+}
+
+function readTheme(): Theme {
+  try {
+    const stored = globalThis.localStorage?.getItem(THEME_STORAGE_KEY) ?? null;
+    if (isTheme(stored)) {
+      return stored;
+    }
+    if (stored !== null) {
+      persistTheme("system");
+    }
+  } catch {
+    // An unreadable preference has the same explicit behavior as a missing preference.
+  }
+  return "system";
+}
+
+function createSystemThemeQuery(): MediaQueryList | null {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return null;
+  }
+  try {
+    return window.matchMedia(SYSTEM_THEME_QUERY);
+  } catch {
+    return null;
+  }
+}
+
+const systemThemeQuery = createSystemThemeQuery();
+
+function applyTheme(theme: Theme): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+  const systemDark = systemThemeQuery?.matches ?? false;
+  const isDark = theme === "dark" || (theme === "system" && systemDark);
   document.documentElement.classList.toggle("dark", isDark);
 }
 
-const stored = (localStorage.getItem("theme") as Theme) || "system";
-applyTheme(stored);
+const initialTheme = readTheme();
+applyTheme(initialTheme);
 
 export const useThemeStore = create<ThemeState>((set) => ({
-  theme: stored,
+  theme: initialTheme,
   setTheme: (theme) => {
-    localStorage.setItem("theme", theme);
+    persistTheme(theme);
     applyTheme(theme);
     set({ theme });
   },
 }));
 
-window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-  const current = useThemeStore.getState().theme;
-  if (current === "system") {
+function handleSystemThemeChange(): void {
+  if (useThemeStore.getState().theme === "system") {
     applyTheme("system");
   }
-});
+}
+
+let removeSystemThemeListener: (() => void) | null = null;
+
+if (systemThemeQuery) {
+  if (typeof systemThemeQuery.addEventListener === "function") {
+    systemThemeQuery.addEventListener("change", handleSystemThemeChange);
+    removeSystemThemeListener = () => {
+      systemThemeQuery.removeEventListener("change", handleSystemThemeChange);
+    };
+  } else if (typeof systemThemeQuery.addListener === "function") {
+    systemThemeQuery.addListener(handleSystemThemeChange);
+    removeSystemThemeListener = () => {
+      systemThemeQuery.removeListener(handleSystemThemeChange);
+    };
+  }
+}
+
+export function disposeThemeListener(): void {
+  removeSystemThemeListener?.();
+  removeSystemThemeListener = null;
+}
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(disposeThemeListener);
+}

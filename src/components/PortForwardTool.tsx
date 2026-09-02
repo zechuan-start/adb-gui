@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link2, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Plus, RefreshCw, Trash2 } from "lucide-react";
+import { BlueprintSelect } from "@/components/BlueprintSelect";
 import { useDeviceStore } from "@/store/device";
 import { useFeedbackStore } from "@/store/feedback";
 import {
@@ -12,6 +13,15 @@ import { getDeviceBySerial, isOnlineDevice } from "@/lib/device";
 import { cn } from "@/lib/utils";
 
 type Direction = ForwardRule["direction"];
+
+const DIRECTION_OPTIONS = [
+  { value: "forward", label: "forward" },
+  { value: "reverse", label: "reverse" },
+] as const;
+
+interface PortForwardToolProps {
+  active?: boolean;
+}
 
 function normalizePort(value: string): string | null {
   const trimmed = value.trim();
@@ -27,7 +37,7 @@ function normalizePort(value: string): string | null {
   return String(parsed);
 }
 
-export function PortForwardTool() {
+export function PortForwardTool({ active = true }: PortForwardToolProps) {
   const devices = useDeviceStore((s) => s.devices);
   const selectedDevice = useDeviceStore((s) => s.selectedDevice);
   const showToast = useFeedbackStore((s) => s.showToast);
@@ -45,15 +55,20 @@ export function PortForwardTool() {
   const refreshSeqRef = useRef(0);
   const currentSerialRef = useRef(serial);
   const currentOnlineRef = useRef(online);
+  const currentActiveRef = useRef(active);
 
   currentSerialRef.current = serial;
   currentOnlineRef.current = online;
+  currentActiveRef.current = active;
 
   const refreshRules = useCallback(async () => {
     const requestSeq = refreshSeqRef.current + 1;
     refreshSeqRef.current = requestSeq;
     const requestSerial = serial;
 
+    if (!currentActiveRef.current) {
+      return;
+    }
     if (!requestSerial || !online) {
       setRules([]);
       setLoading(false);
@@ -63,12 +78,22 @@ export function PortForwardTool() {
     setLoading(true);
     try {
       const nextRules = await listPortForwards(requestSerial);
-      if (refreshSeqRef.current !== requestSeq || currentSerialRef.current !== requestSerial) {
+      if (
+        !currentActiveRef.current ||
+        !currentOnlineRef.current ||
+        refreshSeqRef.current !== requestSeq ||
+        currentSerialRef.current !== requestSerial
+      ) {
         return;
       }
       setRules(nextRules);
     } catch (refreshError) {
-      if (refreshSeqRef.current !== requestSeq || currentSerialRef.current !== requestSerial) {
+      if (
+        !currentActiveRef.current ||
+        !currentOnlineRef.current ||
+        refreshSeqRef.current !== requestSeq ||
+        currentSerialRef.current !== requestSerial
+      ) {
         return;
       }
       setRules([]);
@@ -77,7 +102,8 @@ export function PortForwardTool() {
       if (
         refreshSeqRef.current === requestSeq &&
         currentSerialRef.current === requestSerial &&
-        currentOnlineRef.current
+        currentOnlineRef.current &&
+        currentActiveRef.current
       ) {
         setLoading(false);
       }
@@ -86,8 +112,13 @@ export function PortForwardTool() {
 
   useEffect(() => {
     setError("");
+    if (!active) {
+      refreshSeqRef.current += 1;
+      setLoading(false);
+      return;
+    }
     void refreshRules();
-  }, [refreshRules]);
+  }, [active, refreshRules]);
 
   async function handleAdd() {
     if (!device || !online || busyKey) {
@@ -138,38 +169,33 @@ export function PortForwardTool() {
   const controlsDisabled = !online || loading || Boolean(busyKey);
 
   return (
-    <section className="rounded-lg border border-border bg-card p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-sm font-semibold">
-          <Link2 className="h-4 w-4" />
-          端口转发
-        </h2>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">
-            {device ? device.model || device.serial : "请选择设备"}
-          </span>
-          <button
-            type="button"
-            onClick={() => void refreshRules()}
-            disabled={!online || loading}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-            title="刷新端口转发"
-          >
-            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-          </button>
-        </div>
+    <div className="flex h-full min-w-0 flex-col">
+      <div className="mb-2 flex justify-end">
+        <button
+          type="button"
+          onClick={() => void refreshRules()}
+          disabled={!online || loading}
+          className="inline-flex h-7 w-7 items-center justify-center text-ink2 transition-colors hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+          title="刷新端口转发"
+          aria-label="刷新端口转发"
+        >
+          <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+        </button>
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-2 lg:grid-cols-[140px_1fr_1fr_auto]">
-        <select
+      <div className="grid grid-cols-2 gap-1.5 min-[1180px]:grid-cols-[110px_1fr_1fr_auto]">
+        <BlueprintSelect
           value={direction}
-          onChange={(event) => setDirection(event.target.value as Direction)}
+          options={DIRECTION_OPTIONS}
+          onValueChange={(nextDirection) => {
+            if (nextDirection === "forward" || nextDirection === "reverse") {
+              setDirection(nextDirection);
+            }
+          }}
+          ariaLabel="转发方向"
           disabled={controlsDisabled}
-          className="h-9 rounded-md border border-border bg-secondary px-3 text-sm outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <option value="forward">forward</option>
-          <option value="reverse">reverse</option>
-        </select>
+          className="h-8 px-2.5 disabled:opacity-40"
+        />
         <input
           type="number"
           min={1}
@@ -186,7 +212,7 @@ export function PortForwardTool() {
           }}
           disabled={controlsDisabled}
           placeholder="本机端口"
-          className="h-9 min-w-0 rounded-md border border-border bg-secondary px-3 text-sm outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          className="h-8 min-w-0 border border-rule bg-surface px-2.5 font-data text-xs outline-none focus:border-note disabled:cursor-not-allowed disabled:opacity-40"
         />
         <input
           type="number"
@@ -204,14 +230,14 @@ export function PortForwardTool() {
           }}
           disabled={controlsDisabled}
           placeholder="设备端口"
-          className="h-9 min-w-0 rounded-md border border-border bg-secondary px-3 text-sm outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          className="h-8 min-w-0 border border-rule bg-surface px-2.5 font-data text-xs outline-none focus:border-note disabled:cursor-not-allowed disabled:opacity-40"
         />
         <button
           type="button"
           onClick={() => void handleAdd()}
           disabled={controlsDisabled || !localPort.trim() || !remotePort.trim()}
           className={cn(
-            "inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50",
+            "inline-flex h-8 items-center justify-center gap-2 border border-ink bg-ink px-3 font-data text-xs font-medium text-onink transition-colors hover:border-ink2 hover:bg-ink2 disabled:cursor-not-allowed disabled:opacity-40",
             busyKey === "add" && "opacity-80",
           )}
         >
@@ -224,7 +250,7 @@ export function PortForwardTool() {
         {error}
       </div>
 
-      <div className="mt-2 overflow-hidden rounded-md border border-border">
+      <div className="mt-2 overflow-hidden border-t border-rule">
         {loading ? (
           <div className="flex h-24 items-center justify-center gap-2 text-xs text-muted-foreground">
             <RefreshCw className="h-4 w-4 animate-spin" />
@@ -236,8 +262,8 @@ export function PortForwardTool() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[520px] text-left text-xs">
-              <thead className="border-b border-border bg-secondary/40 text-muted-foreground">
+            <table className="w-full min-w-[520px] border-collapse text-left font-data text-[11px]">
+              <thead className="border-b border-rule text-ink3">
                 <tr>
                   <th className="px-3 py-2 font-medium">方向</th>
                   <th className="px-3 py-2 font-medium">本机端口</th>
@@ -251,14 +277,14 @@ export function PortForwardTool() {
                   const rowBusy = busyKey === `${rule.direction}:${removePort}`;
 
                   return (
-                    <tr key={`${rule.direction}:${rule.local_port}:${rule.remote_port}:${rule.raw}`} className="border-b border-border last:border-0">
+                    <tr key={`${rule.direction}:${rule.local_port}:${rule.remote_port}:${rule.raw}`} className="border-b border-dashed border-rule2 last:border-0">
                       <td className="px-3 py-2">
                         <span
                           className={cn(
-                            "inline-flex rounded-md px-2 py-1 font-mono",
+                            "inline-flex px-2 py-1 font-data",
                             rule.direction === "forward"
-                              ? "bg-primary/10 text-primary"
-                              : "bg-secondary text-muted-foreground",
+                              ? "text-note"
+                              : "text-ink2",
                           )}
                         >
                           {rule.direction}
@@ -271,7 +297,7 @@ export function PortForwardTool() {
                           type="button"
                           onClick={() => void handleRemove(rule)}
                           disabled={controlsDisabled}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
+                          className="inline-flex h-7 w-7 items-center justify-center text-ink3 transition-colors hover:bg-err-band hover:text-err disabled:cursor-not-allowed disabled:opacity-40"
                           title="删除规则"
                         >
                           {rowBusy ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
@@ -285,6 +311,6 @@ export function PortForwardTool() {
           </div>
         )}
       </div>
-    </section>
+    </div>
   );
 }

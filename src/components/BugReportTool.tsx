@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bug, ClipboardCopy, FileArchive, FolderOpen, RefreshCw } from "lucide-react";
+import { ClipboardCopy, FileArchive, FolderOpen, RefreshCw } from "lucide-react";
 import { useDeviceStore } from "@/store/device";
 import { useFeedbackStore } from "@/store/feedback";
 import { collectFullBugreport, collectQuickBugReport, revealFile } from "@/lib/tauri";
@@ -58,24 +58,14 @@ export function BugReportTool() {
   const disabled = !online || busy !== null;
 
   return (
-    <section className="rounded-lg border border-border bg-card p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-sm font-semibold">
-          <Bug className="h-4 w-4" />
-          Bug 报告
-        </h2>
-        <span className="text-xs text-muted-foreground">
-          {device ? device.model || device.serial : "请选择设备"}
-        </span>
-      </div>
-
-      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+    <div className="flex h-full min-w-0 flex-col">
+      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
         <button
           type="button"
           onClick={() => void handleQuickCollect()}
           disabled={disabled}
           className={cn(
-            "inline-flex h-12 items-center justify-center gap-2 rounded-lg border border-border bg-secondary px-3 text-sm font-medium transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-50",
+            "inline-flex h-9 items-center justify-center gap-2 border border-rule bg-transparent px-3 font-data text-xs font-medium transition-colors hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40",
             busy === "quick" && "opacity-80",
           )}
         >
@@ -87,7 +77,7 @@ export function BugReportTool() {
           onClick={() => void handleFullBugreport()}
           disabled={disabled}
           className={cn(
-            "inline-flex h-12 items-center justify-center gap-2 rounded-lg border border-border bg-secondary px-3 text-sm font-medium transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-50",
+            "inline-flex h-9 items-center justify-center gap-2 border border-rule bg-transparent px-3 font-data text-xs font-medium transition-colors hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40",
             busy === "full" && "opacity-80",
           )}
         >
@@ -96,15 +86,15 @@ export function BugReportTool() {
         </button>
       </div>
 
-      <div className="mt-3 min-h-5 text-xs text-muted-foreground">
+      <div className="mt-3 min-h-5 text-xs text-ink2">
         {busy === "full" ? "正在生成完整 Bugreport，可能需要数分钟。" : "快速收集包含截图、Activity、设备信息和最近日志。"}
       </div>
 
-      <div className="mt-3 rounded-md border border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+      <div className="mt-3 min-h-8 break-all border-y border-dashed border-rule2 py-2 font-data text-[11px] text-ink2">
         {lastPath ? lastPath : online ? "最近报告路径将在这里显示。" : "设备在线后可操作"}
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-auto flex flex-wrap gap-1.5 pt-3">
         <button
           type="button"
           disabled={!lastPath}
@@ -115,7 +105,7 @@ export function BugReportTool() {
             await navigator.clipboard.writeText(lastPath);
             showToast("success", "已复制报告路径");
           }}
-          className="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-1.5 text-xs transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-8 items-center gap-2 border border-rule bg-transparent px-2.5 font-data text-[11px] transition-colors hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
         >
           <ClipboardCopy className="h-4 w-4" />
           复制路径
@@ -128,12 +118,12 @@ export function BugReportTool() {
               void revealFile(lastPath);
             }
           }}
-          className="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-1.5 text-xs transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-8 items-center gap-2 border border-rule bg-transparent px-2.5 font-data text-[11px] transition-colors hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
         >
           <FolderOpen className="h-4 w-4" />
           {lastKind === "full" ? "显示文件" : "显示目录"}
         </button>
       </div>
-    </section>
+    </div>
   );
 }

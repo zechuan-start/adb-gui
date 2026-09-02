@@ -1,0 +1,3 @@
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"检查主题降级、effect 清理、测试和构建."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"检查 PaneId、theme 和设备状态类型边界."}
+{"file":".trellis/tasks/09-01-blueprint-quiet-ui-refresh/research/prototype-audit.md","reason":"检查 1200x800 与 900x600 外壳基线."}

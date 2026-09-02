@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Camera, ClipboardCopy, FolderOpen, RefreshCw, Image as ImageIcon } from "lucide-react";
+import { ClipboardCopy, FolderOpen, RefreshCw, Image as ImageIcon } from "lucide-react";
 import { useDeviceStore } from "@/store/device";
 import { openFile, revealFile, takeScreenshot } from "@/lib/tauri";
 import { useFeedbackStore } from "@/store/feedback";
@@ -32,37 +32,27 @@ export function ScreenshotTool() {
   }
 
   return (
-    <section className="rounded-lg border border-border bg-card p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-sm font-semibold">
-          <Camera className="h-4 w-4" />
-          截图
-        </h2>
-        <span className="text-xs text-muted-foreground">
-          {device ? device.model || device.serial : "请选择设备"}
-        </span>
-      </div>
-
+    <div className="flex h-full min-w-0 flex-col">
       <button
         type="button"
         onClick={handleScreenshot}
         disabled={!device || !isOnlineDevice(device) || busy}
         className={cn(
-          "mt-4 flex h-14 w-full items-center justify-center gap-3 rounded-lg border border-border bg-secondary px-4 text-sm font-medium transition-colors",
+          "flex h-9 w-full items-center justify-center gap-2 border border-ink bg-ink px-3 font-data text-xs font-medium text-onink transition-colors",
           busy && "opacity-80",
           (!device || !isOnlineDevice(device)) && "cursor-not-allowed opacity-50",
-          !busy && device && isOnlineDevice(device) && "hover:bg-secondary/80"
+          !busy && device && isOnlineDevice(device) && "hover:border-ink2 hover:bg-ink2"
         )}
       >
         {busy ? <RefreshCw className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-4 w-4" />}
         {busy ? "截图中..." : "截图并打开"}
       </button>
 
-      <div className="mt-4 space-y-3">
-        <div className="rounded-md border border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+      <div className="mt-3 flex flex-1 flex-col gap-3">
+        <div className="min-h-8 break-all border-y border-dashed border-rule2 py-2 font-data text-[11px] text-ink2">
           {lastPath ? lastPath : "最近截图将在这里显示。"}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="mt-auto flex flex-wrap gap-1.5">
           <button
             type="button"
             disabled={!lastPath}
@@ -73,7 +63,7 @@ export function ScreenshotTool() {
               await navigator.clipboard.writeText(lastPath);
               showToast("success", "已复制截图路径");
             }}
-            className="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-1.5 text-xs transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-8 items-center gap-2 border border-rule bg-transparent px-2.5 font-data text-[11px] transition-colors hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
             <ClipboardCopy className="h-4 w-4" />
             复制路径
@@ -87,7 +77,7 @@ export function ScreenshotTool() {
               }
               await revealFile(lastPath);
             }}
-            className="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-1.5 text-xs transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-8 items-center gap-2 border border-rule bg-transparent px-2.5 font-data text-[11px] transition-colors hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
             <FolderOpen className="h-4 w-4" />
             在文件管理器中显示
@@ -101,13 +91,13 @@ export function ScreenshotTool() {
               }
               await openFile(lastPath);
             }}
-            className="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-1.5 text-xs transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-8 items-center gap-2 border border-rule bg-transparent px-2.5 font-data text-[11px] transition-colors hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
             <ImageIcon className="h-4 w-4" />
             用默认程序打开
           </button>
         </div>
       </div>
-    </section>
+    </div>
   );
 }

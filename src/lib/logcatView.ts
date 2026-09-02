@@ -37,12 +37,12 @@ export const COMPACT_COLUMNS: Readonly<Record<LogcatColumn, boolean>> = {
 
 export const COLUMN_WIDTHS: Readonly<Record<LogcatColumn, string>> = {
   date: "w-10",
-  time: "w-[5.5rem]",
-  pid: "w-12",
-  tid: "w-12",
-  packageName: "w-44",
-  tag: "w-40",
-  level: "w-3",
+  time: "w-[5.75rem]",
+  pid: "w-[5.75rem]",
+  tid: "w-[5.75rem]",
+  packageName: "w-[10.5rem]",
+  tag: "w-[9.5rem]",
+  level: "w-3.5",
 };
 
 export const LOGCAT_COLUMNS: ReadonlyArray<{

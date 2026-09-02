@@ -1,86 +1,162 @@
+@import "@fontsource/ibm-plex-sans/latin-400.css";
+@import "@fontsource/ibm-plex-sans/latin-500.css";
+@import "@fontsource/ibm-plex-sans/latin-600.css";
+@import "@fontsource/ibm-plex-mono/latin-400.css";
+@import "@fontsource/ibm-plex-mono/latin-500.css";
+@import "@fontsource/ibm-plex-mono/latin-600.css";
 @import "tailwindcss";
 @import "tw-animate-css";
 
-@theme {
-  --color-background: oklch(0.985 0 0);
-  --color-foreground: oklch(0.145 0 0);
-  --color-card: oklch(1 0 0);
-  --color-card-foreground: oklch(0.145 0 0);
-  --color-popover: oklch(1 0 0);
-  --color-popover-foreground: oklch(0.145 0 0);
-  --color-primary: oklch(0.205 0 0);
-  --color-primary-foreground: oklch(0.985 0 0);
-  --color-secondary: oklch(0.95 0 0);
-  --color-secondary-foreground: oklch(0.205 0 0);
-  --color-muted: oklch(0.95 0 0);
-  --color-muted-foreground: oklch(0.45 0 0);
-  --color-accent: oklch(0.95 0 0);
-  --color-accent-foreground: oklch(0.205 0 0);
-  --color-destructive: oklch(0.577 0.245 27.325);
-  --color-destructive-foreground: oklch(0.985 0 0);
-  --color-destructive-surface: oklch(0.96 0.035 25);
-  --color-success: oklch(0.45 0.14 155);
-  --color-success-surface: oklch(0.96 0.035 155);
-  --color-warning: oklch(0.52 0.14 75);
-  --color-border: oklch(0 0 0 / 10%);
-  --color-input: oklch(0 0 0 / 15%);
-  --color-ring: oklch(0.556 0 0);
-  --color-sidebar: oklch(0.97 0 0);
-  --color-sidebar-foreground: oklch(0.145 0 0);
-  --color-sidebar-primary: oklch(0.488 0.243 264.376);
-  --color-sidebar-primary-foreground: oklch(0.985 0 0);
-  --color-sidebar-accent: oklch(0.95 0 0);
-  --color-sidebar-accent-foreground: oklch(0.205 0 0);
-  --color-sidebar-border: oklch(0 0 0 / 10%);
-  --color-sidebar-ring: oklch(0.556 0 0);
-  --radius: 0.625rem;
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme static {
+  --font-ui: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-data);
+
+  --color-paper: #eae8e1;
+  --color-grid: rgba(27, 42, 74, 0.07);
+  --color-ink: #1b2a4a;
+  --color-ink2: #4c5a73;
+  --color-ink3: #7a8394;
+  --color-rule: rgba(27, 42, 74, 0.16);
+  --color-rule2: rgba(27, 42, 74, 0.07);
+  --color-surface: rgba(255, 255, 255, 0.42);
+  --color-surface2: rgba(255, 255, 255, 0.5);
+  --color-hover: rgba(27, 42, 74, 0.055);
+  --color-onink: #eae8e1;
+  --color-note: #7a5cb8;
+  --color-ok: #1f6b4f;
+  --color-warn: #8a6410;
+  --color-err: #a93326;
+  --color-hard-shadow: rgba(27, 42, 74, 0.18);
+  --color-log-bg: #f3f1eb;
+  --color-log-dim: #646e7f;
+  --color-log-dim2: #5e6879;
+  --color-log-tag: #3a465e;
+  --color-warn-band: rgba(138, 100, 16, 0.09);
+  --color-err-band: rgba(169, 51, 38, 0.09);
+  --color-qr-light: #ffffff;
+  --color-qr-dark: #0e1f38;
+
+  /* Compatibility roles used by pages that have not been visually refreshed yet. */
+  --color-background: var(--color-paper);
+  --color-foreground: var(--color-ink);
+  --color-card: var(--color-surface2);
+  --color-card-foreground: var(--color-ink);
+  --color-popover: var(--color-paper);
+  --color-popover-foreground: var(--color-ink);
+  --color-primary: var(--color-ink);
+  --color-primary-foreground: var(--color-onink);
+  --color-secondary: var(--color-surface);
+  --color-secondary-foreground: var(--color-ink);
+  --color-muted: var(--color-surface);
+  --color-muted-foreground: var(--color-ink2);
+  --color-accent: var(--color-hover);
+  --color-accent-foreground: var(--color-ink);
+  --color-destructive: var(--color-err);
+  --color-destructive-foreground: var(--color-onink);
+  --color-destructive-surface: var(--color-err-band);
+  --color-success: var(--color-ok);
+  --color-success-foreground: var(--color-onink);
+  --color-success-surface: color-mix(in srgb, var(--color-ok) 9%, transparent);
+  --color-warning: var(--color-warn);
+  --color-warning-foreground: var(--color-onink);
+  --color-warning-surface: var(--color-warn-band);
+  --color-border: var(--color-rule);
+  --color-input: var(--color-rule);
+  --color-ring: var(--color-note);
+  --color-sidebar: var(--color-surface);
+  --color-sidebar-foreground: var(--color-ink);
+  --color-sidebar-primary: var(--color-ink);
+  --color-sidebar-primary-foreground: var(--color-onink);
+  --color-sidebar-accent: var(--color-hover);
+  --color-sidebar-accent-foreground: var(--color-ink);
+  --color-sidebar-border: var(--color-rule);
+  --color-sidebar-ring: var(--color-note);
+
+  --radius: 0;
+  --radius-xs: 0;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-2xl: 0;
+  --radius-3xl: 0;
+  --radius-4xl: 0;
+}
+
+:root {
+  color-scheme: light;
 }
 
 .dark {
-  --color-background: oklch(0.145 0 0);
-  --color-foreground: oklch(0.985 0 0);
-  --color-card: oklch(0.205 0 0);
-  --color-card-foreground: oklch(0.985 0 0);
-  --color-popover: oklch(0.205 0 0);
-  --color-popover-foreground: oklch(0.985 0 0);
-  --color-primary: oklch(0.922 0 0);
-  --color-primary-foreground: oklch(0.205 0 0);
-  --color-secondary: oklch(0.269 0 0);
-  --color-secondary-foreground: oklch(0.985 0 0);
-  --color-muted: oklch(0.269 0 0);
-  --color-muted-foreground: oklch(0.708 0 0);
-  --color-accent: oklch(0.269 0 0);
-  --color-accent-foreground: oklch(0.985 0 0);
-  --color-destructive: oklch(0.704 0.191 22.216);
-  --color-destructive-foreground: oklch(0.985 0 0);
-  --color-destructive-surface: oklch(0.25 0.055 25);
-  --color-success: oklch(0.72 0.17 155);
-  --color-success-surface: oklch(0.25 0.055 155);
-  --color-warning: oklch(0.78 0.15 75);
-  --color-border: oklch(1 0 0 / 10%);
-  --color-input: oklch(1 0 0 / 15%);
-  --color-ring: oklch(0.556 0 0);
-  --color-sidebar: oklch(0.205 0 0);
-  --color-sidebar-foreground: oklch(0.985 0 0);
-  --color-sidebar-primary: oklch(0.488 0.243 264.376);
-  --color-sidebar-primary-foreground: oklch(0.985 0 0);
-  --color-sidebar-accent: oklch(0.269 0 0);
-  --color-sidebar-accent-foreground: oklch(0.985 0 0);
-  --color-sidebar-border: oklch(1 0 0 / 10%);
-  --color-sidebar-ring: oklch(0.556 0 0);
+  color-scheme: dark;
+  --color-paper: #102340;
+  --color-grid: rgba(255, 255, 255, 0.045);
+  --color-ink: #e4eaf3;
+  --color-ink2: #aebbce;
+  --color-ink3: #8a98af;
+  --color-rule: rgba(255, 255, 255, 0.2);
+  --color-rule2: rgba(255, 255, 255, 0.08);
+  --color-surface: rgba(255, 255, 255, 0.045);
+  --color-surface2: rgba(255, 255, 255, 0.055);
+  --color-hover: rgba(255, 255, 255, 0.07);
+  --color-onink: #0e1f38;
+  --color-note: #b49cee;
+  --color-ok: #57c99b;
+  --color-warn: #e0b54a;
+  --color-err: #ff7a6b;
+  --color-hard-shadow: rgba(0, 0, 0, 0.45);
+  --color-log-bg: #0e1f38;
+  --color-log-dim: #95a3b9;
+  --color-log-dim2: #8a98af;
+  --color-log-tag: #c6d3e6;
+  --color-warn-band: rgba(224, 181, 74, 0.1);
+  --color-err-band: rgba(255, 122, 107, 0.11);
 }
 
 * {
   border-color: var(--color-border);
 }
 
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
-  background-color: var(--color-background);
-  color: var(--color-foreground);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   margin: 0;
-  padding: 0;
   overflow: hidden;
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.blueprint-grid {
+  background:
+    linear-gradient(var(--color-grid) 1px, transparent 1px) 0 0 / 100% 22px,
+    linear-gradient(90deg, var(--color-grid) 1px, transparent 1px) 0 0 / 22px 100%,
+    var(--color-paper);
+}
+
+.font-data,
+.font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+:where(button, a, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--color-note);
+  outline-offset: 1px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-note) 34%, transparent);
+  color: inherit;
 }
 
 ::-webkit-scrollbar {
@@ -93,10 +169,20 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 3px;
+  border-radius: 0;
+  background: var(--color-rule);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-muted-foreground);
+  background: var(--color-ink3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation: none !important;
+    transition: none !important;
+  }
 }

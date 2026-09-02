@@ -1,0 +1,5 @@
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"约束 Logcat 行、工具栏和工作区组件边界."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"约束 ui/logcat store 的唯一状态所有权."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"约束高流量、错误边界、测试和构建质量."}
+{"file":".trellis/tasks/09-01-log-view-readability/research/current-logcat-readability.md","reason":"记录现有虚拟列表、选择、查询和滚动基线."}
+{"file":".trellis/tasks/09-01-blueprint-quiet-ui-refresh/research/prototype-audit.md","reason":"记录原型 Logcat 交互和已发现的视觉问题."}

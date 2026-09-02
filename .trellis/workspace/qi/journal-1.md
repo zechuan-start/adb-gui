@@ -384,3 +384,67 @@ Implemented and verified port forwarding, screen recording, and bug report colle
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: Blueprint 工具工作台翻新
+
+**Date**: 2026-09-01
+**Task**: Blueprint 工具工作台翻新
+**Branch**: `main`
+
+### Summary
+
+完成 A-01 至 A-08 工具模块、设备规格条与详情单一状态 owner, 修复隐藏页轮询/拖拽/端口刷新竞态; 260 项测试、build 和 1200x800/900x600 浏览器验收通过, 真实设备冒烟因无设备保留未验证.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 12: Blueprint Quiet UI 翻新收口
+
+**Date**: 2026-09-02
+**Task**: Blueprint Quiet UI 翻新收口
+**Branch**: `codex/blueprint-quiet-ui-refresh`
+
+### Summary
+
+完成 Blueprint Quiet 应用外壳、主题、工具工作台与持久 Logcat 集成, 通过前端 270 项、Rust 57 项测试及生产构建, 并提交到独立分支。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d6c769f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

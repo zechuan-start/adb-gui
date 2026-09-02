@@ -51,17 +51,12 @@ export function QuickKeysTool() {
   }
 
   return (
-    <section className="rounded-lg border border-border bg-card p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold">快捷按键</h2>
-        <span className="text-xs text-muted-foreground">{device ? device.model || device.serial : "请先连接设备"}</span>
-      </div>
-
-      <div className="mt-4 space-y-3">
+    <div className="flex h-full min-w-0 flex-col justify-between gap-3">
+      <div className="flex flex-1 flex-col justify-between gap-3">
         {KEY_GROUPS.map((group) => (
           <div key={group.label} className="space-y-2">
-            <div className="text-xs text-muted-foreground">{group.label}</div>
-            <div className="flex flex-wrap gap-2">
+            <div className="font-data text-[10.5px] text-ink3">{group.label}</div>
+            <div className="flex flex-wrap gap-1.5">
               {group.items.map((item) => {
                 const Icon = item.icon;
                 return (
@@ -72,7 +67,7 @@ export function QuickKeysTool() {
                     disabled={!device || !isOnlineDevice(device)}
                     onClick={() => void handleKey(item.action)}
                     className={cn(
-                      "inline-flex h-9 w-9 items-center justify-center rounded-md bg-secondary text-foreground transition-all hover:bg-secondary/80 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                      "inline-flex h-8 w-8 items-center justify-center border border-rule bg-transparent text-ink transition-all hover:border-ink3 hover:bg-hover active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
                     )}
                   >
                     <Icon className="h-4 w-4" />
@@ -83,6 +78,6 @@ export function QuickKeysTool() {
           </div>
         ))}
       </div>
-    </section>
+    </div>
   );
 }

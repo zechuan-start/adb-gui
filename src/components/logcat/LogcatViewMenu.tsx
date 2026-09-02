@@ -17,9 +17,13 @@ interface LogcatViewMenuProps {
 export function LogcatViewMenu({ disabled }: LogcatViewMenuProps) {
   const columns = useLogcatStore((state) => state.columns);
   const softWrap = useLogcatStore((state) => state.softWrap);
+  const autoFold = useLogcatStore((state) => state.autoFold);
+  const cozyRows = useLogcatStore((state) => state.cozyRows);
   const setViewFormat = useLogcatStore((state) => state.setViewFormat);
   const setColumn = useLogcatStore((state) => state.setColumn);
   const setSoftWrap = useLogcatStore((state) => state.setSoftWrap);
+  const setAutoFold = useLogcatStore((state) => state.setAutoFold);
+  const setCozyRows = useLogcatStore((state) => state.setCozyRows);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -73,7 +77,7 @@ export function LogcatViewMenu({ disabled }: LogcatViewMenuProps) {
         aria-controls="logcat-view-menu"
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-secondary text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+        className="inline-flex h-7 w-7 items-center justify-center border border-rule text-log-dim hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
         title="调整 Logcat 视图"
       >
         <Columns3 className="h-3.5 w-3.5" />
@@ -84,20 +88,20 @@ export function LogcatViewMenu({ disabled }: LogcatViewMenuProps) {
           id="logcat-view-menu"
           role="dialog"
           aria-label="Logcat 视图设置"
-          className="absolute right-0 top-full z-30 mt-1 w-72 max-w-[calc(100vw-2rem)] rounded-md border border-border bg-popover p-3 text-popover-foreground shadow-lg"
+          className="absolute right-0 top-full z-30 mt-1 w-72 max-w-[calc(100vw-2rem)] border border-rule bg-popover p-3 text-popover-foreground shadow-[3px_3px_0_var(--color-hard-shadow)]"
         >
           <div className="text-[11px] font-medium text-muted-foreground">视图格式</div>
-          <div className="mt-2 grid grid-cols-2 rounded-md bg-secondary p-0.5">
+          <div className="mt-2 grid grid-cols-2 border border-rule bg-surface p-0.5">
             <button
               ref={firstControlRef}
               type="button"
               aria-pressed={standardActive}
               onClick={() => chooseFormat("standard")}
               className={cn(
-                "h-7 rounded px-2 text-xs transition-colors",
+                "h-7 px-2 text-xs",
                 standardActive
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
+                  ? "bg-ink text-onink"
+                  : "text-ink2 hover:bg-hover hover:text-ink",
               )}
             >
               Standard
@@ -107,10 +111,10 @@ export function LogcatViewMenu({ disabled }: LogcatViewMenuProps) {
               aria-pressed={compactActive}
               onClick={() => chooseFormat("compact")}
               className={cn(
-                "h-7 rounded px-2 text-xs transition-colors",
+                "h-7 px-2 text-xs",
                 compactActive
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
+                  ? "bg-ink text-onink"
+                  : "text-ink2 hover:bg-hover hover:text-ink",
               )}
             >
               Compact
@@ -137,15 +141,35 @@ export function LogcatViewMenu({ disabled }: LogcatViewMenuProps) {
             ))}
           </div>
 
-          <label className="mt-3 flex cursor-pointer items-center gap-2 border-t border-border pt-3 text-xs text-popover-foreground">
-            <input
-              type="checkbox"
-              checked={softWrap}
-              onChange={(event) => setSoftWrap(event.currentTarget.checked)}
-              className="h-3.5 w-3.5 accent-foreground"
-            />
-            <span>Soft-Wrap</span>
-          </label>
+          <div className="mt-3 grid gap-2 border-t border-rule pt-3">
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-popover-foreground">
+              <input
+                type="checkbox"
+                checked={autoFold}
+                onChange={(event) => setAutoFold(event.currentTarget.checked)}
+                className="h-3.5 w-3.5 accent-foreground"
+              />
+              <span>自动折叠崩溃堆栈</span>
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-popover-foreground">
+              <input
+                type="checkbox"
+                checked={softWrap}
+                onChange={(event) => setSoftWrap(event.currentTarget.checked)}
+                className="h-3.5 w-3.5 accent-foreground"
+              />
+              <span>Soft-Wrap</span>
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-popover-foreground">
+              <input
+                type="checkbox"
+                checked={cozyRows}
+                onChange={(event) => setCozyRows(event.currentTarget.checked)}
+                className="h-3.5 w-3.5 accent-foreground"
+              />
+              <span>宽行距</span>
+            </label>
+          </div>
         </div>
       )}
     </div>

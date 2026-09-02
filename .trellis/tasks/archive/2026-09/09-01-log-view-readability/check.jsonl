@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"检查虚拟化性能、选择复制、失败路径、测试和构建."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"检查没有复制日志、跟随、选择或未读事实源."}
+{"file":".trellis/tasks/09-01-log-view-readability/research/current-logcat-readability.md","reason":"回归现有 10,000 行、fixed/wrap、查询和多行选择能力."}
+{"file":".trellis/tasks/09-01-blueprint-quiet-ui-refresh/research/prototype-audit.md","reason":"检查 compact 工具栏和断流提示已修正."}

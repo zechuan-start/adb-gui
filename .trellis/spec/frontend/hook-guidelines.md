@@ -29,6 +29,23 @@ useEffect(() => {
 }, []);
 ```
 
+## Tauri Runtime Effects
+
+Automatic Tauri commands, listeners, and polling effects must check `isTauriRuntime()` before starting. Plain Vite or Python-served previews do not inject Tauri IPC and must remain usable for visual review without raw `invoke` or `transformCallback` error toasts.
+
+```tsx
+useEffect(() => {
+  if (!isTauriRuntime()) {
+    return;
+  }
+  return startTauriLifecycle();
+}, []);
+```
+
+This boundary applies only to automatic background work. Do not mock successful command results or add a fallback command source. User-triggered desktop operations keep their existing explicit error feedback.
+
+When listener registration is asynchronous, runtime gating alone is insufficient. The event callback and registration error path must also read the current enabled state, and a registration that resolves after cleanup must immediately call its returned unlisten function. This prevents a partially registered Tauri listener from acting on a pane that became inactive while registration was pending.
+
 ## Streaming Lifecycles
 
 `useLogcatStream` connects React device selection to the pure `logcatStreamController`. Keep event listeners, start/stop commands, animation-frame scheduling, and stale-session rejection in the controller so they can be tested in the Node Vitest environment without rendering React.
@@ -92,3 +109,20 @@ useEffect(() => {
 - 忘记在 useEffect 中返回 cleanup (尤其是 `listen` 和 `setInterval`).
 - Zustand selector 应使用 `(s) => s.field` 而非 destructure 整个 store (避免不必要 re-render).
 - Do not let a custom lifecycle hook keep another copy of domain state already owned by a store.
+
+### Persistent Hidden Panes
+
+Keeping page components mounted preserves local form and scroll state, but `display: none` does not suspend their effects. Every window-, document-, or Tauri-level listener must accept an `active` input and unregister when its pane is inactive. This is required for drag-drop, paste, and keyboard shortcuts so hidden panes cannot consume events intended for the visible pane.
+
+```tsx
+useEffect(() => {
+  if (!active) {
+    return;
+  }
+  return onGlobalEvent(handleEvent);
+}, [active, handleEvent]);
+```
+
+Use a current ref when an asynchronous listener can emit between render and passive-effect cleanup. Both the callback and delayed rejection path must reject work while the pane is inactive. Automatic reads owned by a pane must also invalidate their request generation, or check the current active state and request id, before committing results or displaying errors.
+
+Virtualized panes must re-measure when they become visible because measurements taken under `display: none` are invalid. Tests must cover state preservation with a real browser and verify that only the active pane responds to global input.

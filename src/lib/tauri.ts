@@ -1,5 +1,5 @@
 
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { downloadDir, join, sep } from "@tauri-apps/api/path";
 import { readImage } from "@tauri-apps/plugin-clipboard-manager";
@@ -103,6 +103,10 @@ export interface ScreenRecordStatus {
 export interface ScreenRecordResult {
   path: string;
   opened: boolean;
+}
+
+export function isTauriRuntime(): boolean {
+  return isTauri();
 }
 
 export interface QuickReportResult {

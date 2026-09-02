@@ -1,0 +1,2 @@
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"检查 TypeScript、错误处理、测试和构建质量边界."}
+{"file":".trellis/tasks/09-01-blueprint-quiet-ui-refresh/research/prototype-audit.md","reason":"核对实现没有复制已发现的工具栏换行和断流透字问题."}

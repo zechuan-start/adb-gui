@@ -73,6 +73,32 @@ return { buffer: new LogcatRingBuffer(), nextSeq: 0 };
 return { buffer: new LogcatRingBuffer() };
 ```
 
+### Logcat View Identity
+
+Keep viewport and selection identities separate even though both reference a row `seq`:
+
+- `anchoredSeq` identifies the row used to compensate scroll position while detached.
+- `selectedSeq` identifies the row copied when no native text selection exists.
+- `expandedCrashSeqs` keys independent crash-fold state by crash-head seq.
+
+Do not write any of these fields into `LogcatEntry`. When FIFO append evicts a referenced seq, clear stale selection and expansion in the same Zustand update that commits the batch. `clearScreen`, `restart`, and device reset clear row identities, while `autoFold`, `cozyRows`, column, and Soft-Wrap preferences remain view settings.
+
+### Logcat Unread Baseline
+
+Unread state uses the latest real buffer entry, not `nextSeq` alone. `nextSeq` remains monotonic across clear/restart/reset, so an empty buffer must report zero unread and advance its read baseline to `nextSeq - 1`.
+
+```typescript
+const latestSeq = totalCount > 0 ? buffer.at(totalCount - 1)?.seq ?? null : null;
+const baseline = latestSeq ?? nextSeq - 1;
+const unread = open || latestSeq === null
+  ? 0
+  : readThroughSeq === null
+    ? totalCount
+    : Math.max(0, latestSeq - readThroughSeq);
+```
+
+Do not clamp the seq difference to ring-buffer capacity: rows that arrived while hidden remain unread even after FIFO eviction. Tests must cover an empty cleared buffer, first-read state, open state, and a hidden interval larger than 10,000 rows.
+
 ---
 
 ## 何时用全局 vs 局部
@@ -99,3 +125,42 @@ return { buffer: new LogcatRingBuffer() };
 - Do not increment `revision` or mutate visible Logcat data for paused incoming frames; a selected viewport must remain a stable snapshot until resume.
 - Do not derive session freshness from serial alone; every batch, exit, and stop must use the current `sessionId`.
 - Do not reset `nextSeq` when clearing the Logcat window or replacing a session/device.
+
+### Explicit Device Selection vs Automatic Preference
+
+`setDevices` owns automatic device preference and alias migration through `getPreferredSelectedDeviceSerial`. `setSelectedDevice` is a different contract: it must accept the exact selectable device requested by the user, including USB `unauthorized` and `offline` entries, and must not redirect that request to another online device.
+
+```typescript
+// Automatic refresh may prefer an online alias.
+const selectedDevice = getPreferredSelectedDeviceSerial(devices, previousSerial);
+
+// Explicit UI selection preserves the requested context.
+const requested = getDeviceBySerial(devices, requestedSerial);
+const selectedDevice = requested && isSelectableDevice(requested)
+  ? requested.serial
+  : null;
+```
+
+Device-backed lifecycles must derive an `onlineSerial` from the selected `DeviceInfo.state`; a non-null serial alone does not authorize ADB commands. Store tests must assert explicit USB unauthorized/offline selection and rejection of unavailable network-only entries.
+
+### Serial-Bound Device Detail
+
+`useDeviceStore` is the only owner of `getDeviceInfo` results. Components such as the specification strip and device information panel consume the same state and call the same refresh action; they must not keep local detail/loading/error copies.
+
+```typescript
+interface DeviceDetailState {
+  serial: string | null;
+  detail: DeviceDetail | null;
+  loading: boolean;
+  error: string | null;
+}
+
+refreshDeviceDetail(): Promise<void>;
+```
+
+- Bind every detail result to the requested serial and a monotonically increasing request generation. Serial comparison alone is insufficient because an A -> B -> A switch can make the first A response look current.
+- Clear detail immediately when explicit selection, automatic selection, or online availability changes. Unauthorized/offline devices may display list metadata, but must never retain fields loaded while the serial was online.
+- Share an in-flight request for the same current serial. A stale success or failure must not publish state or user feedback into the newer selection.
+- Keep command errors in `DeviceDetailState.error`; background consumers may render that error without duplicating toast ownership.
+
+Tests must cover same-serial request deduplication, immediate clearing, online-to-offline transition, and late A/B responses across A -> B -> A.
