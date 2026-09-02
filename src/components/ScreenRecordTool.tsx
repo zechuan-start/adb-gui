@@ -4,6 +4,7 @@ import { useDeviceStore } from "@/store/device";
 import { useFeedbackStore } from "@/store/feedback";
 import {
   getScreenRecordStatus,
+  isTauriRuntime,
   openFile,
   revealFile,
   startScreenRecord,
@@ -11,7 +12,12 @@ import {
   type ScreenRecordStatus,
 } from "@/lib/tauri";
 import { getDeviceBySerial, isOnlineDevice } from "@/lib/device";
+import { createScreenRecordPollingController } from "@/hooks/screenRecordPollingController";
 import { cn } from "@/lib/utils";
+
+interface ScreenRecordToolProps {
+  active?: boolean;
+}
 
 const IDLE_STATUS: ScreenRecordStatus = {
   active: false,
@@ -26,7 +32,7 @@ function formatElapsed(seconds: number): string {
   return `${minutes}:${rest}`;
 }
 
-export function ScreenRecordTool() {
+export function ScreenRecordTool({ active = true }: ScreenRecordToolProps) {
   const devices = useDeviceStore((s) => s.devices);
   const selectedDevice = useDeviceStore((s) => s.selectedDevice);
   const showToast = useFeedbackStore((s) => s.showToast);
@@ -37,14 +43,25 @@ export function ScreenRecordTool() {
   const [busy, setBusy] = useState<"start" | "stop" | null>(null);
   const [lastPath, setLastPath] = useState("");
   const finalizingRef = useRef(false);
+  const activeRef = useRef(active);
+  const refreshSeqRef = useRef(0);
+
+  activeRef.current = active;
 
   const refreshStatus = useCallback(async () => {
+    const requestSeq = refreshSeqRef.current + 1;
+    refreshSeqRef.current = requestSeq;
     try {
       const nextStatus = await getScreenRecordStatus();
+      if (!activeRef.current || refreshSeqRef.current !== requestSeq) {
+        return null;
+      }
       setStatus(nextStatus);
       return nextStatus;
     } catch (error) {
-      showToast("error", `刷新录屏状态失败: ${error}`);
+      if (activeRef.current && refreshSeqRef.current === requestSeq) {
+        showToast("error", `刷新录屏状态失败: ${error}`);
+      }
       return null;
     }
   }, [showToast]);
@@ -71,27 +88,41 @@ export function ScreenRecordTool() {
   }, [refreshStatus, showToast]);
 
   useEffect(() => {
-    void refreshStatus();
-    const timer = window.setInterval(() => {
-      void refreshStatus();
-    }, 1000);
+    if (!active || busy !== null || !isTauriRuntime()) {
+      refreshSeqRef.current += 1;
+      return;
+    }
 
-    return () => window.clearInterval(timer);
-  }, [refreshStatus]);
+    const controller = createScreenRecordPollingController({
+      loadStatus: getScreenRecordStatus,
+      schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
+      cancelSchedule: (handle) => window.clearTimeout(handle),
+      onStatus: setStatus,
+      onError: (error) => {
+        showToast("error", `刷新录屏状态失败: ${String(error)}`);
+      },
+    });
+    controller.run();
+
+    return () => {
+      controller.dispose();
+      refreshSeqRef.current += 1;
+    };
+  }, [active, busy, showToast]);
 
   useEffect(() => {
-    if (status.pending_pull) {
+    if (active && status.pending_pull) {
       void finalizeRecording("录屏已结束，文件已保存");
     }
-  }, [finalizeRecording, status.pending_pull]);
+  }, [active, finalizeRecording, status.pending_pull]);
 
   useEffect(() => {
-    if (!status.active || !status.serial || status.serial === selectedDevice) {
+    if (!active || !status.active || !status.serial || status.serial === selectedDevice) {
       return;
     }
 
     void finalizeRecording("切换设备，已停止并保存上一段录屏");
-  }, [finalizeRecording, selectedDevice, status.active, status.serial]);
+  }, [active, finalizeRecording, selectedDevice, status.active, status.serial]);
 
   async function handleStart() {
     if (!device || !online || busy || status.active || status.pending_pull) {
@@ -117,26 +148,16 @@ export function ScreenRecordTool() {
   const elapsed = recording ? formatElapsed(status.elapsed_secs) : "00:00";
 
   return (
-    <section className="rounded-lg border border-border bg-card p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-sm font-semibold">
-          <Video className="h-4 w-4" />
-          录屏
-        </h2>
-        <span className="text-xs text-muted-foreground">
-          {device ? device.model || device.serial : "请选择设备"}
-        </span>
-      </div>
-
+    <div className="flex h-full min-w-0 flex-col">
       <button
         type="button"
         onClick={() => recording ? void finalizeRecording() : void handleStart()}
         disabled={buttonDisabled}
         className={cn(
-          "mt-4 flex h-14 w-full items-center justify-center gap-3 rounded-lg border border-border px-4 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+          "flex h-9 w-full items-center justify-center gap-2 border px-3 font-data text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
           recording
-            ? "bg-destructive/10 text-destructive hover:bg-destructive/15"
-            : "bg-secondary hover:bg-secondary/80",
+            ? "border-err text-err hover:bg-err-band"
+            : "border-ink bg-ink text-onink hover:border-ink2 hover:bg-ink2",
           busy && "opacity-80",
         )}
       >
@@ -150,15 +171,15 @@ export function ScreenRecordTool() {
         {busy === "start" ? "启动中..." : busy === "stop" ? "保存中..." : recording ? "停止录屏" : "开始录屏"}
       </button>
 
-      <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-        <div className="rounded-md border border-border bg-secondary/40 px-3 py-2">
-          <div className="text-muted-foreground">状态</div>
+      <div className="mt-3 grid grid-cols-2 border-y border-rule text-xs">
+        <div className="border-r border-dashed border-rule px-2.5 py-2">
+          <div className="font-data text-[10.5px] text-ink3">状态</div>
           <div className="mt-1 font-medium">
             {status.pending_pull ? "保存中" : status.active ? "录制中" : online ? "待开始" : "设备在线后可操作"}
           </div>
         </div>
-        <div className="rounded-md border border-border bg-secondary/40 px-3 py-2">
-          <div className="flex items-center gap-1 text-muted-foreground">
+        <div className="px-2.5 py-2">
+          <div className="flex items-center gap-1 font-data text-[10.5px] text-ink3">
             <Clock className="h-3.5 w-3.5" />
             时长
           </div>
@@ -166,11 +187,11 @@ export function ScreenRecordTool() {
         </div>
       </div>
 
-      <div className="mt-3 rounded-md border border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+      <div className="mt-3 min-h-8 break-all border-b border-dashed border-rule2 pb-2 font-data text-[11px] text-ink2">
         {lastPath ? lastPath : "录屏将保存到截图目录。"}
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-auto flex flex-wrap gap-1.5 pt-3">
         <button
           type="button"
           disabled={!lastPath}
@@ -179,7 +200,7 @@ export function ScreenRecordTool() {
               void revealFile(lastPath);
             }
           }}
-          className="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-1.5 text-xs transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-8 items-center gap-2 border border-rule bg-transparent px-2.5 font-data text-[11px] transition-colors hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
         >
           <FolderOpen className="h-4 w-4" />
           在文件管理器中显示
@@ -192,12 +213,12 @@ export function ScreenRecordTool() {
               void openFile(lastPath);
             }
           }}
-          className="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-1.5 text-xs transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-8 items-center gap-2 border border-rule bg-transparent px-2.5 font-data text-[11px] transition-colors hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Video className="h-4 w-4" />
           用默认程序打开
         </button>
       </div>
-    </section>
+    </div>
   );
 }

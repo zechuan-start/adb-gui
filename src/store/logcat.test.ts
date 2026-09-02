@@ -30,6 +30,8 @@ describe("useLogcatStore", () => {
     useLogcatStore.getState().reset();
     useLogcatStore.getState().setViewFormat("standard");
     useLogcatStore.getState().setSoftWrap(false);
+    useLogcatStore.getState().setAutoFold(true);
+    useLogcatStore.getState().setCozyRows(false);
     useLogcatStore.getState().commitQuery("");
     useLogcatStore.setState({ nextSeq: 0 });
   });
@@ -68,6 +70,34 @@ describe("useLogcatStore", () => {
     expect(state.columns.tag).toBe(true);
     expect(state.softWrap).toBe(true);
     expect(state.activeQuery).toBe("level:WARN");
+  });
+
+  it("keeps selection and crash expansion separate from the scroll anchor", () => {
+    beginSession();
+    useLogcatStore.getState().appendBatch([
+      line(0, "E", {
+        tag: "AndroidRuntime",
+        message: "FATAL EXCEPTION: main",
+      }),
+    ], 7);
+
+    useLogcatStore.getState().setAnchoredSeq(0);
+    useLogcatStore.getState().setSelectedSeq(0);
+    useLogcatStore.getState().toggleCrashExpanded(0);
+    useLogcatStore.getState().setAutoFold(false);
+    useLogcatStore.getState().setCozyRows(true);
+
+    const state = useLogcatStore.getState();
+    expect(state.anchoredSeq).toBe(0);
+    expect(state.selectedSeq).toBe(0);
+    expect(state.expandedCrashSeqs).toEqual(new Set([0]));
+    expect(state.autoFold).toBe(false);
+    expect(state.cozyRows).toBe(true);
+
+    useLogcatStore.getState().setSelectedSeq(0);
+    useLogcatStore.getState().toggleCrashExpanded(0);
+    expect(useLogcatStore.getState().selectedSeq).toBe(0);
+    expect(useLogcatStore.getState().expandedCrashSeqs.size).toBe(0);
   });
 
   it("marks a pending restart disconnected when the device disappears", () => {
@@ -594,9 +624,16 @@ describe("useLogcatStore", () => {
 
   it("clears an anchor after its row is evicted", () => {
     beginSession();
-    useLogcatStore.getState().appendBatch([line(0)], 7);
+    useLogcatStore.getState().appendBatch([
+      line(0, "E", {
+        tag: "AndroidRuntime",
+        message: "FATAL EXCEPTION: main",
+      }),
+    ], 7);
     useLogcatStore.getState().setFollowMode("detached");
     useLogcatStore.getState().setAnchoredSeq(0);
+    useLogcatStore.getState().setSelectedSeq(0);
+    useLogcatStore.getState().toggleCrashExpanded(0);
 
     const overflow = Array.from({ length: LOGCAT_CAPACITY }, (_, index) => line(index + 1));
     useLogcatStore.getState().appendBatch(overflow, 7);
@@ -604,6 +641,8 @@ describe("useLogcatStore", () => {
     const state = useLogcatStore.getState();
     expect(state.buffer.bySeq(0)).toBeUndefined();
     expect(state.anchoredSeq).toBeNull();
+    expect(state.selectedSeq).toBeNull();
+    expect(state.expandedCrashSeqs.size).toBe(0);
   });
 
   it("bounds a paused backlog and drops its oldest rows", () => {

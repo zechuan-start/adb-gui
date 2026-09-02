@@ -52,6 +52,7 @@ import {
 import {
   createDeviceDirectory,
   downloadDeviceFile,
+  isTauriRuntime,
   listDeviceDirectory,
   onDragDrop,
   pickDeviceDownloadPath,
@@ -65,7 +66,11 @@ import { useDeviceStore } from "@/store/device";
 import { useFeedbackStore } from "@/store/feedback";
 import { cn } from "@/lib/utils";
 
-export function DeviceFileManager() {
+interface DeviceFileManagerProps {
+  active?: boolean;
+}
+
+export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
   const devices = useDeviceStore((state) => state.devices);
   const selectedDevice = useDeviceStore((state) => state.selectedDevice);
   const showToast = useFeedbackStore((state) => state.showToast);
@@ -90,6 +95,9 @@ export function DeviceFileManager() {
   const listRequestRef = useRef(0);
   const previewRequestRef = useRef(0);
   const operationBusyRef = useRef(false);
+  const activeRef = useRef(active);
+
+  activeRef.current = active;
 
   const contextMatches = state.serial === onlineSerial;
   const visiblePath = contextMatches ? state.path : "";
@@ -132,8 +140,14 @@ export function DeviceFileManager() {
       dispatch({ type: "list-start", serial, requestId });
       try {
         const listing = await listDeviceDirectory(serial, path);
+        if (!activeRef.current || requestId !== listRequestRef.current) {
+          return;
+        }
         dispatch({ type: "list-success", serial, requestId, listing });
       } catch (error) {
+        if (!activeRef.current || requestId !== listRequestRef.current) {
+          return;
+        }
         const message = errorMessage(error);
         dispatch({ type: "list-error", serial, requestId, error: message });
         if (
@@ -167,6 +181,12 @@ export function DeviceFileManager() {
   useEffect(() => {
     listRequestRef.current += 1;
     previewRequestRef.current += 1;
+
+    if (!active || !isTauriRuntime()) {
+      setDragActive(false);
+      return;
+    }
+
     dispatch({ type: "reset", serial: onlineSerial });
     setDragActive(false);
     setFolderDialogOpen(false);
@@ -175,7 +195,7 @@ export function DeviceFileManager() {
     if (onlineSerial) {
       void loadDirectory(onlineSerial, null);
     }
-  }, [loadDirectory, onlineSerial]);
+  }, [active, loadDirectory, onlineSerial]);
 
   const startUpload = useCallback(
     async (paths: string[], capturedContext?: DeviceOperationContext) => {
@@ -274,26 +294,46 @@ export function DeviceFileManager() {
     ],
   );
 
+  const dragDropEnabled =
+    active &&
+    Boolean(onlineSerial) &&
+    state.serial === onlineSerial &&
+    Boolean(state.path) &&
+    !folderDialogOpen &&
+    !folderBusy &&
+    !state.listLoading;
+  const dragDropContextRef = useRef({ enabled: dragDropEnabled, startUpload });
+  dragDropContextRef.current = { enabled: dragDropEnabled, startUpload };
+
   useEffect(() => {
+    if (!dragDropEnabled) {
+      setDragActive(false);
+    }
+  }, [dragDropEnabled]);
+
+  useEffect(() => {
+    if (!active || !isTauriRuntime()) {
+      setDragActive(false);
+      return;
+    }
+
     let disposed = false;
     let unlisten: (() => void) | null = null;
     onDragDrop((event) => {
+      if (disposed) {
+        return;
+      }
+      if (event.type === "leave" || event.type === "drop") {
+        setDragActive(false);
+      }
+      const dragDropContext = dragDropContextRef.current;
+      if (!dragDropContext.enabled || operationBusyRef.current) {
+        return;
+      }
       if (event.type === "enter") {
-        setDragActive(
-          event.paths.length > 0 &&
-            Boolean(operationContextRef.current.serial) &&
-            state.serial === operationContextRef.current.serial &&
-            Boolean(state.path) &&
-            !folderDialogOpen &&
-            !folderBusy &&
-            !state.listLoading &&
-            !operationBusyRef.current,
-        );
-      } else if (event.type === "leave") {
-        setDragActive(false);
+        setDragActive(event.paths.length > 0);
       } else if (event.type === "drop") {
-        setDragActive(false);
-        void startUpload(event.paths);
+        void dragDropContext.startUpload(event.paths);
       }
     })
       .then((cleanup) => {
@@ -303,13 +343,17 @@ export function DeviceFileManager() {
           unlisten = cleanup;
         }
       })
-      .catch((error) => showToast("error", `拖拽监听启动失败: ${errorMessage(error)}`));
+      .catch((error) => {
+        if (!disposed && activeRef.current) {
+          showToast("error", `拖拽监听启动失败: ${errorMessage(error)}`);
+        }
+      });
 
     return () => {
       disposed = true;
       unlisten?.();
     };
-  }, [folderBusy, folderDialogOpen, showToast, startUpload, state.listLoading, state.path, state.serial]);
+  }, [active, showToast]);
 
   async function handlePickUpload() {
     const operationContext = operationContextRef.current;
@@ -480,8 +524,8 @@ export function DeviceFileManager() {
   }
 
   return (
-    <section className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-4 py-2">
+    <section className="flex h-full min-h-0 flex-col">
+      <div className="flex h-[43px] shrink-0 items-center gap-2 border-b border-rule bg-surface px-3">
         <button
           type="button"
           onClick={() => onlineSerial && void loadDirectory(onlineSerial, null)}
@@ -501,14 +545,14 @@ export function DeviceFileManager() {
           <ArrowUp className="h-4 w-4" />
         </button>
 
-        <form onSubmit={handlePathSubmit} className="flex min-w-[260px] flex-1 items-center gap-1">
+        <form onSubmit={handlePathSubmit} className="flex min-w-0 flex-1 items-center gap-1">
           <input
             value={contextMatches ? state.pathDraft : ""}
             onChange={(event) => dispatch({ type: "set-path-draft", value: event.target.value })}
             disabled={!onlineSerial || operationBusy || transferBusy || folderBusy}
             placeholder={onlineSerial ? "正在读取设备下载目录..." : "连接设备后可浏览文件"}
             aria-label="设备绝对路径"
-            className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-3 font-mono text-xs outline-none transition-colors focus:border-primary disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-8 min-w-0 flex-1 border border-rule bg-paper px-3 font-data text-[11.5px] text-ink outline-none placeholder:text-ink3 disabled:cursor-not-allowed disabled:opacity-60"
           />
           <button
             type="button"
@@ -545,6 +589,30 @@ export function DeviceFileManager() {
         >
           <RefreshCw className={cn("h-4 w-4", state.listLoading && "animate-spin")} />
         </button>
+      </div>
+
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-dashed border-rule bg-surface2 px-3">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto font-data text-[10.5px]">
+          {breadcrumbs.length > 0 ? (
+            breadcrumbs.map((breadcrumb, index) => (
+              <div key={breadcrumb.path} className="flex shrink-0 items-center gap-1">
+                {index > 0 && <ChevronRight className="h-3.5 w-3.5 text-ink3" />}
+                <button
+                  type="button"
+                  onClick={() => onlineSerial && void loadDirectory(onlineSerial, breadcrumb.path)}
+                  disabled={
+                    operationBusy || transferBusy || folderBusy || breadcrumb.path === visiblePath
+                  }
+                  className="px-1 py-0.5 text-ink2 hover:bg-hover hover:text-ink disabled:text-ink"
+                >
+                  {breadcrumb.label}
+                </button>
+              </div>
+            ))
+          ) : (
+            <span className="text-ink3">设备文件</span>
+          )}
+        </div>
         <button
           type="button"
           onClick={() => {
@@ -555,40 +623,18 @@ export function DeviceFileManager() {
           disabled={controlsDisabled}
           className={commandButtonClass}
         >
-          <FolderPlus className="h-4 w-4" />
-          新建目录
+          <FolderPlus className="h-3.5 w-3.5" />
+          <span className="hidden min-[1040px]:inline">新建目录</span>
         </button>
         <button
           type="button"
           onClick={() => void handlePickUpload()}
           disabled={controlsDisabled}
-          className="inline-flex h-8 items-center gap-2 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-7 items-center gap-1.5 border border-ink bg-ink px-2 font-data text-[10.5px] font-medium text-onink hover:bg-ink2 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <Upload className="h-4 w-4" />
-          上传文件
+          <Upload className="h-3.5 w-3.5" />
+          <span className="hidden min-[1040px]:inline">上传文件</span>
         </button>
-      </div>
-
-      <div className="flex h-8 items-center gap-1 overflow-x-auto border-b border-border bg-secondary/30 px-4 text-xs">
-        {breadcrumbs.length > 0 ? (
-          breadcrumbs.map((breadcrumb, index) => (
-            <div key={breadcrumb.path} className="flex shrink-0 items-center gap-1">
-              {index > 0 && <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
-              <button
-                type="button"
-                onClick={() => onlineSerial && void loadDirectory(onlineSerial, breadcrumb.path)}
-                disabled={
-                  operationBusy || transferBusy || folderBusy || breadcrumb.path === visiblePath
-                }
-                className="rounded px-1 py-0.5 font-mono text-muted-foreground hover:bg-secondary hover:text-foreground disabled:text-foreground"
-              >
-                {breadcrumb.label}
-              </button>
-            </div>
-          ))
-        ) : (
-          <span className="text-muted-foreground">设备文件</span>
-        )}
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,7fr)_minmax(260px,3fr)]">
@@ -601,11 +647,11 @@ export function DeviceFileManager() {
           error={contextMatches ? state.listError : ""}
           online={Boolean(onlineSerial)}
           disabled={operationBusy || transferBusy || folderBusy || state.listLoading}
-          dragActive={dragActive}
+          dragActive={dragActive && dragDropEnabled}
           onSelect={handleSelectEntry}
           onOpenDirectory={(entry) => onlineSerial && void loadDirectory(onlineSerial, entry.path)}
         />
-        <aside className="flex min-h-0 flex-col border-l border-border bg-card/40">
+        <aside className="flex min-h-0 flex-col border-l border-rule bg-surface2">
           <DeviceFileDetails
             entry={selectedEntry}
             preview={state.preview}
@@ -622,10 +668,10 @@ export function DeviceFileManager() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
           <form
             onSubmit={(event) => void handleCreateDirectory(event)}
-            className="w-full max-w-sm rounded-lg border border-border bg-card p-4 shadow-xl"
+            className="w-full max-w-sm border border-rule bg-paper p-0 text-ink shadow-[3px_3px_0_var(--color-hard-shadow)]"
           >
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-sm font-semibold">新建目录</h2>
+            <div className="flex h-10 items-center justify-between gap-3 border-b border-rule bg-surface px-3">
+              <h2 className="text-sm font-semibold text-ink">新建目录</h2>
               <button
                 type="button"
                 onClick={() => setFolderDialogOpen(false)}
@@ -636,47 +682,49 @@ export function DeviceFileManager() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="mt-3 break-all font-mono text-xs text-muted-foreground">{state.path}</div>
-            <input
-              autoFocus
-              value={folderName}
-              onChange={(event) => {
-                setFolderName(event.target.value);
-                setFolderError("");
-              }}
-              disabled={folderBusy || operationBusy || transferBusy}
-              placeholder="目录名称"
-              aria-label="新目录名称"
-              className="mt-3 h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none transition-colors focus:border-primary disabled:opacity-60"
-            />
-            <div className="mt-2 min-h-5 text-xs text-destructive">{folderError}</div>
-            <div className="mt-3 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setFolderDialogOpen(false)}
-                disabled={folderBusy}
-                className={commandButtonClass}
-              >
-                取消
-              </button>
-              <button
-                type="submit"
-                disabled={
-                  !folderName.trim() ||
-                  folderBusy ||
-                  operationBusy ||
-                  transferBusy ||
-                  state.listLoading
-                }
-                className="inline-flex h-8 items-center gap-2 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {folderBusy ? (
-                  <LoaderCircle className="h-4 w-4 animate-spin" />
-                ) : (
-                  <FolderPlus className="h-4 w-4" />
-                )}
-                创建
-              </button>
+            <div className="p-3">
+              <div className="break-all font-data text-[10.5px] text-ink3">{state.path}</div>
+              <input
+                autoFocus
+                value={folderName}
+                onChange={(event) => {
+                  setFolderName(event.target.value);
+                  setFolderError("");
+                }}
+                disabled={folderBusy || operationBusy || transferBusy}
+                placeholder="目录名称"
+                aria-label="新目录名称"
+                className="mt-3 h-8 w-full border border-rule bg-paper px-3 text-xs text-ink outline-none placeholder:text-ink3 disabled:opacity-60"
+              />
+              <div className="mt-2 min-h-5 text-xs text-err">{folderError}</div>
+              <div className="mt-3 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFolderDialogOpen(false)}
+                  disabled={folderBusy}
+                  className={commandButtonClass}
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={
+                    !folderName.trim() ||
+                    folderBusy ||
+                    operationBusy ||
+                    transferBusy ||
+                    state.listLoading
+                  }
+                  className="inline-flex h-8 items-center gap-2 border border-ink bg-ink px-3 font-data text-[11px] font-medium text-onink hover:bg-ink2 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {folderBusy ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <FolderPlus className="h-4 w-4" />
+                  )}
+                  创建
+                </button>
+              </div>
             </div>
           </form>
         </div>
@@ -727,15 +775,15 @@ function DeviceFileList({
   }, [directoryPath]);
 
   return (
-    <div className={cn("relative flex min-h-0 flex-col", dragActive && "bg-primary/5")}>
-      <div className="grid h-9 shrink-0 grid-cols-[minmax(180px,1fr)_72px_88px_138px] items-center border-b border-border bg-secondary/40 px-3 text-[11px] font-medium text-muted-foreground">
+    <div className={cn("relative flex min-h-0 flex-col bg-log-bg/45", dragActive && "bg-hover")}>
+      <div className="grid h-8 shrink-0 grid-cols-[minmax(140px,1fr)_64px_72px_116px] items-center border-b border-rule bg-surface px-3 font-data text-[10px] font-medium text-ink3">
         <span>名称</span>
         <span>类型</span>
         <span className="text-right">大小</span>
         <span className="text-right">修改时间</span>
       </div>
       {error && (
-        <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <div className="border-b border-err bg-err-band px-3 py-2 text-xs text-err">
           {error}
         </div>
       )}
@@ -754,20 +802,20 @@ function DeviceFileList({
                 disabled={disabled}
                 title={entry.path}
                 className={cn(
-                  "absolute left-0 top-0 grid w-full grid-cols-[minmax(180px,1fr)_72px_88px_138px] items-center border-b border-border/60 px-3 text-left text-xs transition-colors hover:bg-secondary/60 disabled:cursor-not-allowed",
-                  selected && "bg-primary/10",
+                  "absolute left-0 top-0 grid w-full grid-cols-[minmax(140px,1fr)_64px_72px_116px] items-center border-b border-dashed border-rule2 px-3 text-left text-[11.5px] hover:bg-hover disabled:cursor-not-allowed",
+                  selected && "bg-hover before:absolute before:inset-y-1 before:left-0 before:w-[3px] before:bg-note",
                 )}
                 style={{ height: virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}
               >
                 <span className="flex min-w-0 items-center gap-2">
                   <DeviceEntryIcon entry={entry} />
-                  <span className="truncate font-medium">{entry.name}</span>
+                  <span className="truncate font-medium text-ink">{entry.name}</span>
                 </span>
-                <span className="truncate text-muted-foreground">{deviceFileTypeLabel(entry)}</span>
-                <span className="text-right font-mono text-muted-foreground">
+                <span className="truncate text-ink3">{deviceFileTypeLabel(entry)}</span>
+                <span className="text-right font-data text-ink2">
                   {entry.kind === "directory" ? "-" : formatDeviceFileSize(entry.size)}
                 </span>
-                <span className="text-right tabular-nums text-muted-foreground">
+                <span className="text-right font-data text-ink3">
                   {formatDeviceModifiedAt(entry.modified_at)}
                 </span>
               </button>
@@ -789,7 +837,7 @@ function DeviceFileList({
         )}
       </div>
       {dragActive && (
-        <div className="pointer-events-none absolute inset-3 z-10 flex items-center justify-center border-2 border-dashed border-primary bg-background/90 text-sm font-medium text-primary">
+        <div className="pointer-events-none absolute inset-3 z-10 flex items-center justify-center border-2 border-dashed border-note bg-paper/95 text-sm font-medium text-note">
           释放以上传到当前目录
         </div>
       )}
@@ -799,24 +847,24 @@ function DeviceFileList({
 
 function CenteredState({ icon, text }: { icon: ReactNode; text: string }) {
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-ink3">
       {icon}
-      <span className="text-sm">{text}</span>
+      <span className="text-xs">{text}</span>
     </div>
   );
 }
 
 function DeviceEntryIcon({ entry }: { entry: DeviceFileEntry }) {
   if (entry.kind === "directory") {
-    return <Folder className="h-4 w-4 shrink-0 text-amber-500" />;
+    return <Folder className="h-4 w-4 shrink-0 text-note" />;
   }
   if (entry.kind === "symlink") {
-    return <Link className="h-4 w-4 shrink-0 text-cyan-500" />;
+    return <Link className="h-4 w-4 shrink-0 text-ink3" />;
   }
   if (entry.previewable) {
-    return <FileImage className="h-4 w-4 shrink-0 text-emerald-500" />;
+    return <FileImage className="h-4 w-4 shrink-0 text-ok" />;
   }
-  return <File className="h-4 w-4 shrink-0 text-muted-foreground" />;
+  return <File className="h-4 w-4 shrink-0 text-ink3" />;
 }
 
 interface DeviceFileDetailsProps {
@@ -841,25 +889,26 @@ function DeviceFileDetails({
   onOpenDirectory,
 }: DeviceFileDetailsProps) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-auto p-4">
+    <div className="flex min-h-0 flex-1 flex-col overflow-auto p-3">
       {!entry ? (
-        <div className="flex min-h-48 flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
-          <File className="h-8 w-8" />
-          <span className="text-sm">选择文件或目录</span>
+        <div className="flex min-h-48 flex-1 flex-col items-center justify-center gap-2 text-ink3">
+          <File className="h-6 w-6" />
+          <strong className="text-sm font-semibold text-ink">未选择项目</strong>
+          <span className="text-xs">从左侧选择文件或目录.</span>
         </div>
       ) : (
         <>
           <div className="flex min-w-0 items-start gap-2">
             <DeviceEntryIcon entry={entry} />
             <div className="min-w-0 flex-1">
-              <h2 className="break-all text-sm font-semibold">{entry.name}</h2>
-              <div className="mt-1 text-xs text-muted-foreground">{deviceFileTypeLabel(entry)}</div>
+              <h2 className="break-all text-sm font-semibold text-ink">{entry.name}</h2>
+              <div className="mt-1 font-data text-[10.5px] text-ink3">{deviceFileTypeLabel(entry)}</div>
             </div>
           </div>
 
-          <div className="mt-4 flex min-h-44 flex-1 items-center justify-center overflow-hidden border-y border-border py-3">
+          <div className="mt-3 flex min-h-40 flex-1 items-center justify-center overflow-hidden border-y border-dashed border-rule py-3">
             {preview.loading ? (
-              <LoaderCircle className="h-7 w-7 animate-spin text-muted-foreground" />
+              <LoaderCircle className="h-7 w-7 animate-spin text-ink3" />
             ) : preview.data ? (
               <img
                 src={preview.data.data_url}
@@ -867,23 +916,23 @@ function DeviceFileDetails({
                 className="max-h-full max-w-full object-contain"
               />
             ) : entry.kind === "directory" ? (
-              <Folder className="h-16 w-16 text-amber-500/70" />
+              <Folder className="h-14 w-14 text-note" />
             ) : entry.previewable ? (
-              <div className="px-4 text-center text-xs text-muted-foreground">
+              <div className="px-4 text-center text-xs text-ink3">
                 {preview.error || "图片预览不可用"}
               </div>
             ) : (
-              <File className="h-16 w-16 text-muted-foreground/50" />
+              <File className="h-14 w-14 text-ink3" />
             )}
           </div>
 
-          <dl className="mt-4 grid grid-cols-[64px_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
-            <dt className="text-muted-foreground">大小</dt>
-            <dd>{entry.kind === "directory" ? "-" : formatDeviceFileSize(entry.size)}</dd>
-            <dt className="text-muted-foreground">修改时间</dt>
-            <dd>{formatDeviceModifiedAt(entry.modified_at)}</dd>
-            <dt className="text-muted-foreground">路径</dt>
-            <dd className="break-all font-mono text-muted-foreground">{entry.path}</dd>
+          <dl className="mt-3 grid grid-cols-[64px_minmax(0,1fr)] gap-x-3 gap-y-2 font-data text-[10.5px]">
+            <dt className="text-ink3">大小</dt>
+            <dd className="m-0 text-ink">{entry.kind === "directory" ? "-" : formatDeviceFileSize(entry.size)}</dd>
+            <dt className="text-ink3">修改时间</dt>
+            <dd className="m-0 text-ink">{formatDeviceModifiedAt(entry.modified_at)}</dd>
+            <dt className="text-ink3">路径</dt>
+            <dd className="m-0 break-all text-ink2">{entry.path}</dd>
           </dl>
 
           <div className="mt-4 flex flex-wrap gap-2">
@@ -910,7 +959,7 @@ function DeviceFileDetails({
                 type="button"
                 onClick={() => void onDownload(entry)}
                 disabled={disabled}
-                className="inline-flex h-8 items-center gap-2 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-8 items-center gap-2 border border-ink bg-ink px-3 font-data text-[11px] font-medium text-onink hover:bg-ink2 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Download className="h-4 w-4" />
                 下载到电脑
@@ -931,41 +980,41 @@ function TransferPanel({
   onReveal: (path: string) => Promise<void>;
 }) {
   return (
-    <div className="flex max-h-56 min-h-32 flex-col border-t border-border">
-      <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-4 text-xs font-medium">
-        <span>最近传输</span>
+    <div className="flex max-h-56 min-h-32 flex-col border-t border-rule">
+      <div className="flex h-9 shrink-0 items-center justify-between border-b border-rule bg-surface px-3 text-xs font-medium">
+        <span className="text-ink">最近传输</span>
         {transfer && (
-          <span className="text-muted-foreground">{deviceTransferSummary(transfer)}</span>
+          <span className="font-data text-[10px] text-ink3">{deviceTransferSummary(transfer)}</span>
         )}
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
         {!transfer ? (
-          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+          <div className="flex h-full items-center justify-center text-xs text-ink3">
             暂无传输记录
           </div>
         ) : (
           transfer.items.map((item, index) => (
-            <div key={`${item.sourcePath}-${index}`} className="flex gap-2 border-b border-border/60 px-4 py-2 text-xs">
+            <div key={`${item.sourcePath}-${index}`} className="flex gap-2 border-b border-dashed border-rule2 px-3 py-2 text-xs">
               <TransferStatusIcon status={item.status} />
               <div className="min-w-0 flex-1">
                 <div className="truncate font-medium" title={item.name}>
                   {item.name}
                 </div>
                 {item.status === "active" && (
-                  <div className="mt-0.5 text-muted-foreground">
+                  <div className="mt-0.5 text-ink3">
                     {transfer.kind === "upload" ? "正在上传" : "正在下载"}
                   </div>
                 )}
                 {item.status === "success" && (
                   <div className="mt-0.5 flex items-center gap-1">
-                    <span className="min-w-0 flex-1 truncate font-mono text-muted-foreground" title={item.targetPath}>
+                    <span className="min-w-0 flex-1 truncate font-data text-ink3" title={item.targetPath}>
                       {item.targetPath}
                     </span>
                     {transfer.kind === "download" && (
                       <button
                         type="button"
                         onClick={() => void onReveal(item.targetPath)}
-                        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"
+                        className="inline-flex h-6 w-6 shrink-0 items-center justify-center border border-rule text-ink3 hover:bg-hover hover:text-ink"
                         title="在文件管理器中显示"
                       >
                         <FolderOpen className="h-3.5 w-3.5" />
@@ -974,7 +1023,7 @@ function TransferPanel({
                   </div>
                 )}
                 {item.status === "error" && (
-                  <div className="mt-0.5 break-words text-destructive">{item.error}</div>
+                  <div className="mt-0.5 break-words text-err">{item.error}</div>
                 )}
               </div>
             </div>
@@ -988,13 +1037,13 @@ function TransferPanel({
 function TransferStatusIcon({ status }: { status: DeviceTransferBatch["items"][number]["status"] }) {
   switch (status) {
     case "pending":
-      return <span className="mt-1 h-3.5 w-3.5 shrink-0 rounded-full border border-border" />;
+      return <span className="mt-1 h-3.5 w-3.5 shrink-0 border border-rule" />;
     case "active":
-      return <LoaderCircle className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary" />;
+      return <LoaderCircle className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-note" />;
     case "success":
-      return <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />;
+      return <Check className="mt-0.5 h-4 w-4 shrink-0 text-ok" />;
     case "error":
-      return <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />;
+      return <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-err" />;
   }
 }
 
@@ -1003,7 +1052,7 @@ function errorMessage(error: unknown): string {
 }
 
 const iconButtonClass =
-  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex h-8 w-8 shrink-0 items-center justify-center border border-rule text-ink2 hover:border-ink3 hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40";
 
 const commandButtonClass =
-  "inline-flex h-8 items-center gap-2 rounded-md bg-secondary px-3 text-xs font-medium text-foreground transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex h-7 items-center gap-1.5 border border-rule px-2 font-data text-[10.5px] font-medium text-ink hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40";

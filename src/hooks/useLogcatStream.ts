@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { createLogcatStreamController } from "@/hooks/logcatStreamController";
 import { LOGCAT_CAPACITY } from "@/lib/logcat";
+import { getDeviceBySerial } from "@/lib/device";
 import {
   onLogcatBatch,
   onLogcatExit,
@@ -12,48 +13,57 @@ import { useFeedbackStore } from "@/store/feedback";
 import { useLogcatStore } from "@/store/logcat";
 
 export function useLogcatStream(): void {
+  const devices = useDeviceStore((state) => state.devices);
   const selectedDevice = useDeviceStore((state) => state.selectedDevice);
   const showToast = useFeedbackStore((state) => state.showToast);
   const restartNonce = useLogcatStore((state) => state.restartNonce);
+  const selected = getDeviceBySerial(devices, selectedDevice);
+  const onlineSerial = selected?.state === "device" ? selected.serial : null;
 
   useEffect(() => {
     const store = useLogcatStore.getState();
-    if (!selectedDevice) {
+    if (!onlineSerial) {
       if (store.serial !== null) {
-        store.markDeviceUnavailable("设备已断开");
+        store.markDeviceUnavailable(selectedDevice ? "设备不可用" : "设备已断开");
       } else {
         store.reset();
       }
       return;
     }
-    if (store.serial !== selectedDevice) {
+    if (store.serial !== onlineSerial) {
       store.reset();
     }
-  }, [selectedDevice]);
+  }, [onlineSerial, selectedDevice]);
 
   useEffect(() => {
-    if (!selectedDevice) {
+    if (!onlineSerial) {
       return;
     }
 
     const generation = restartNonce;
     const currentStore = useLogcatStore.getState();
     if (
-      currentStore.serial === selectedDevice &&
+      currentStore.serial === onlineSerial &&
       currentStore.streamState === "disconnected"
     ) {
       return;
     }
 
     function isCurrentGeneration(): boolean {
+      const deviceState = useDeviceStore.getState();
+      const currentDevice = getDeviceBySerial(
+        deviceState.devices,
+        deviceState.selectedDevice,
+      );
       return (
-        useDeviceStore.getState().selectedDevice === selectedDevice &&
+        currentDevice?.serial === onlineSerial &&
+        currentDevice.state === "device" &&
         useLogcatStore.getState().restartNonce === generation
       );
     }
 
     currentStore.setStreamState("starting");
-    const controller = createLogcatStreamController(selectedDevice, {
+    const controller = createLogcatStreamController(onlineSerial, {
       capacity: LOGCAT_CAPACITY,
       listenBatch: onLogcatBatch,
       listenExit: onLogcatExit,
@@ -86,5 +96,5 @@ export function useLogcatStream(): void {
     // Register both listeners before starting adb so the initial dump cannot be lost.
     void controller.run();
     return controller.dispose;
-  }, [restartNonce, selectedDevice, showToast]);
+  }, [onlineSerial, restartNonce, showToast]);
 }

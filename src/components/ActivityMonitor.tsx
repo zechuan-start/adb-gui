@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Copy, Play, ShieldAlert, Square } from "lucide-react";
 import { useDeviceStore } from "@/store/device";
 import { useFeedbackStore } from "@/store/feedback";
@@ -19,6 +19,12 @@ export function CurrentAppActionsTool() {
   const packageName = useMemo(() => currentPackage || manualPkg.trim(), [currentPackage, manualPkg]);
   const targetLabel = packageName || "暂无前台应用";
   const canAct = !!device && isOnlineDevice(device) && !!packageName;
+
+  useEffect(() => {
+    if (!canAct) {
+      setConfirmAction(null);
+    }
+  }, [canAct]);
 
   async function handleAction(action: "force-stop" | "launch" | "clear" | "uninstall") {
     if (!device || !isOnlineDevice(device) || !packageName) {
@@ -45,14 +51,9 @@ export function CurrentAppActionsTool() {
   }
 
   return (
-    <section className="rounded-lg border border-border bg-card p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold">当前应用</h2>
-        <span className="text-xs text-muted-foreground">{device ? device.model || device.serial : "请先连接设备"}</span>
-      </div>
-
-      <div className="mt-4 flex items-center gap-2 rounded-md border border-border bg-secondary/30 px-3 py-2">
-        <span className="text-xs text-muted-foreground">包名</span>
+    <div className="flex h-full min-w-0 flex-col">
+      <div className="flex items-center gap-2 border-y border-rule px-2.5 py-2">
+        <span className="font-data text-[10.5px] text-ink3">包名</span>
         <span className="min-w-0 flex-1 truncate font-mono text-sm">{targetLabel}</span>
         <button
           type="button"
@@ -64,7 +65,7 @@ export function CurrentAppActionsTool() {
             showToast("success", "已复制包名");
           }}
           disabled={!packageName}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-secondary text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-7 w-7 items-center justify-center text-ink2 transition-colors hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
           title="复制包名"
         >
           <Copy className="h-4 w-4" />
@@ -81,18 +82,18 @@ export function CurrentAppActionsTool() {
             autoCorrect="off"
             autoCapitalize="off"
             spellCheck={false}
-            className="w-full rounded-md border border-border bg-secondary px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+            className="h-9 w-full border border-rule bg-surface px-2.5 font-data text-xs outline-none placeholder:text-ink3 focus:border-note"
           />
         </div>
       )}
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1.5">
           <button
             type="button"
             disabled={!canAct}
             onClick={() => void handleAction("force-stop")}
-            className="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-1.5 text-sm transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-8 items-center gap-2 border border-rule bg-transparent px-2.5 font-data text-[11px] transition-colors hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Square className="h-4 w-4" />
             强停
@@ -101,20 +102,20 @@ export function CurrentAppActionsTool() {
             type="button"
             disabled={!canAct}
             onClick={() => void handleAction("launch")}
-            className="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-1.5 text-sm transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-8 items-center gap-2 border border-rule bg-transparent px-2.5 font-data text-[11px] transition-colors hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Play className="h-4 w-4" />
             启动
           </button>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1.5">
           <button
             type="button"
             disabled={!canAct}
             onClick={() => setConfirmAction(confirmAction === "clear" ? null : "clear")}
             className={cn(
-              "inline-flex items-center gap-2 rounded-md border border-red-500/50 px-3 py-1.5 text-sm text-red-200 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+              "inline-flex h-8 items-center gap-2 border border-err/60 px-2.5 font-data text-[11px] text-err transition-colors hover:bg-err-band disabled:cursor-not-allowed disabled:opacity-40"
             )}
           >
             <AlertTriangle className="h-4 w-4" />
@@ -125,7 +126,7 @@ export function CurrentAppActionsTool() {
             disabled={!canAct}
             onClick={() => setConfirmAction(confirmAction === "uninstall" ? null : "uninstall")}
             className={cn(
-              "inline-flex items-center gap-2 rounded-md border border-red-500/50 px-3 py-1.5 text-sm text-red-200 transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+              "inline-flex h-8 items-center gap-2 border border-err/60 px-2.5 font-data text-[11px] text-err transition-colors hover:bg-err-band disabled:cursor-not-allowed disabled:opacity-40"
             )}
           >
             <ShieldAlert className="h-4 w-4" />
@@ -135,23 +136,24 @@ export function CurrentAppActionsTool() {
       </div>
 
       {confirmAction && (
-        <div className="mt-3 flex items-center justify-between gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-100">
+        <div className="mt-3 flex items-center justify-between gap-2 border-l-2 border-err bg-err-band px-3 py-2 text-xs text-err">
           <span>
             {confirmAction === "clear" ? "再次点击以清除数据。" : "再次点击以卸载应用。"}
           </span>
           <button
             type="button"
             onClick={() => void handleAction(confirmAction)}
-            className="rounded-md bg-red-500 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-red-400"
+            disabled={!canAct}
+            className="h-7 border border-err bg-err px-3 font-data text-[11px] font-medium text-onink transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
             确认
           </button>
         </div>
       )}
 
-      <div className="mt-3 text-xs text-muted-foreground">
+      <div className="mt-auto border-t border-dashed border-rule2 pt-3 text-xs text-ink2">
         {currentActivity || "暂无前台 Activity"}
       </div>
-    </section>
+    </div>
   );
 }

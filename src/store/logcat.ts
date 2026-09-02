@@ -52,6 +52,7 @@ export interface LogcatStore {
   followMode: LogcatFollowMode;
   detachedNewCount: number;
   anchoredSeq: number | null;
+  selectedSeq: number | null;
   pausedBacklog: number;
   queryInput: string;
   activeQuery: string;
@@ -66,6 +67,9 @@ export interface LogcatStore {
   processMapKey: string | null;
   processMapError: string | null;
   softWrap: boolean;
+  autoFold: boolean;
+  expandedCrashSeqs: Set<number>;
+  cozyRows: boolean;
   viewFormat: ViewFormat;
   columns: Record<LogcatColumn, boolean>;
   pendingLines: PendingLogcatLine[];
@@ -101,6 +105,10 @@ export interface LogcatStore {
   setColumn: (column: LogcatColumn, visible: boolean) => void;
   setFollowMode: (mode: LogcatFollowMode) => void;
   setAnchoredSeq: (seq: number | null) => void;
+  setSelectedSeq: (seq: number | null) => void;
+  setAutoFold: (enabled: boolean) => void;
+  toggleCrashExpanded: (seq: number) => void;
+  setCozyRows: (enabled: boolean) => void;
   pause: () => void;
   resume: () => void;
   clearScreen: () => void;
@@ -110,6 +118,18 @@ export interface LogcatStore {
 
 const FILTER_COMPACTION_THRESHOLD = Math.floor(LOGCAT_CAPACITY / 2);
 const EMPTY_QUERY: QueryNode = { type: "always" };
+
+function retainedExpandedCrashSeqs(state: LogcatStore): Set<number> {
+  let retained: Set<number> | null = null;
+  for (const seq of state.expandedCrashSeqs) {
+    if (state.buffer.bySeq(seq)?.crashKind === "crash") {
+      continue;
+    }
+    retained ??= new Set(state.expandedCrashSeqs);
+    retained.delete(seq);
+  }
+  return retained ?? state.expandedCrashSeqs;
+}
 
 function sameCompileFailure(left: CompileFailure | null, right: CompileFailure): boolean {
   return left !== null &&
@@ -291,6 +311,13 @@ function applyStreamFrame(
       if (state.anchoredSeq !== null && state.buffer.bySeq(state.anchoredSeq) === undefined) {
         update.anchoredSeq = null;
       }
+      if (state.selectedSeq !== null && state.buffer.bySeq(state.selectedSeq) === undefined) {
+        update.selectedSeq = null;
+      }
+      const expandedCrashSeqs = retainedExpandedCrashSeqs(state);
+      if (expandedCrashSeqs !== state.expandedCrashSeqs) {
+        update.expandedCrashSeqs = expandedCrashSeqs;
+      }
     }
   }
 
@@ -335,6 +362,7 @@ export const useLogcatStore = create<LogcatStore>((set) => ({
   followMode: "follow",
   detachedNewCount: 0,
   anchoredSeq: null,
+  selectedSeq: null,
   pausedBacklog: 0,
   queryInput: "",
   activeQuery: "",
@@ -349,6 +377,9 @@ export const useLogcatStore = create<LogcatStore>((set) => ({
   processMapKey: null,
   processMapError: null,
   softWrap: false,
+  autoFold: true,
+  expandedCrashSeqs: new Set(),
+  cozyRows: false,
   viewFormat: "standard",
   columns: { ...STANDARD_COLUMNS },
   pendingLines: [],
@@ -552,6 +583,37 @@ export const useLogcatStore = create<LogcatStore>((set) => ({
   setAnchoredSeq: (anchoredSeq) => {
     set((state) => (state.anchoredSeq === anchoredSeq ? state : { anchoredSeq }));
   },
+  setSelectedSeq: (selectedSeq) => {
+    set((state) => {
+      if (
+        state.selectedSeq === selectedSeq ||
+        (selectedSeq !== null && state.buffer.bySeq(selectedSeq) === undefined)
+      ) {
+        return state;
+      }
+      return { selectedSeq };
+    });
+  },
+  setAutoFold: (autoFold) => {
+    set((state) => (state.autoFold === autoFold ? state : { autoFold }));
+  },
+  toggleCrashExpanded: (seq) => {
+    set((state) => {
+      if (state.buffer.bySeq(seq)?.crashKind !== "crash") {
+        return state;
+      }
+      const expandedCrashSeqs = new Set(state.expandedCrashSeqs);
+      if (expandedCrashSeqs.has(seq)) {
+        expandedCrashSeqs.delete(seq);
+      } else {
+        expandedCrashSeqs.add(seq);
+      }
+      return { expandedCrashSeqs };
+    });
+  },
+  setCozyRows: (cozyRows) => {
+    set((state) => (state.cozyRows === cozyRows ? state : { cozyRows }));
+  },
   pause: () => {
     set((state) => (state.streamMode === "paused" ? state : { streamMode: "paused" }));
   },
@@ -581,11 +643,17 @@ export const useLogcatStore = create<LogcatStore>((set) => ({
 
       const { entries, nextSeq } = normalizePendingBatch(pendingLines, state.nextSeq);
       appendEntries(state, entries);
+      const expandedCrashSeqs = retainedExpandedCrashSeqs(state);
       return {
         streamMode: "live",
         followMode: "follow",
         detachedNewCount: 0,
         anchoredSeq: null,
+        selectedSeq:
+          state.selectedSeq !== null && state.buffer.bySeq(state.selectedSeq) !== undefined
+            ? state.selectedSeq
+            : null,
+        expandedCrashSeqs,
         pausedBacklog: 0,
         nextSeq,
         totalCount: state.buffer.count,
@@ -608,6 +676,8 @@ export const useLogcatStore = create<LogcatStore>((set) => ({
         followMode: "follow",
         detachedNewCount: 0,
         anchoredSeq: null,
+        selectedSeq: null,
+        expandedCrashSeqs: new Set(),
         revision: state.revision + 1,
       };
     });
@@ -630,6 +700,8 @@ export const useLogcatStore = create<LogcatStore>((set) => ({
         followMode: "follow",
         detachedNewCount: 0,
         anchoredSeq: null,
+        selectedSeq: null,
+        expandedCrashSeqs: new Set(),
         pausedBacklog: 0,
         processMap: new Map(),
         processMapUpdatedAt: 0,
@@ -656,6 +728,8 @@ export const useLogcatStore = create<LogcatStore>((set) => ({
       followMode: "follow",
       detachedNewCount: 0,
       anchoredSeq: null,
+      selectedSeq: null,
+      expandedCrashSeqs: new Set(),
       pausedBacklog: 0,
       currentPackage: "",
       processMap: new Map(),

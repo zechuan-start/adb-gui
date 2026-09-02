@@ -110,6 +110,84 @@ const LogcatRow = memo(LogcatRowView);
 
 The fixed and measured paths must stay visibly separate. Adding a measurement fallback to the fixed path reintroduces layout work and scroll instability even when wrapping is disabled.
 
+### Derived Logcat Render Items
+
+Crash folding is a presentation transform over the filtered sequence. Keep `filteredSeqs` and `filteredCount` as the query source of truth, then derive `LogcatRenderItem[]` for the virtualizer. Once folding is enabled, the virtualizer's `count`, `getItemKey`, row lookup, and anchor index must all use the render items; mixing a filtered index with a folded render index shifts anchors to the wrong row.
+
+```tsx
+const renderItems = groupCrashTraces({ buffer, filteredSeqs, autoFold, expandedCrashSeqs });
+
+useVirtualizer({
+  count: renderItems.length,
+  getItemKey: (index) => renderItems[index].seq,
+  estimateSize: () => rowHeight,
+});
+```
+
+If a fixed cozy mode changes row height, pass the same `rowHeight` to `estimateSize`, the outer row style, the fixed item-offset resolver, and follow-scroll anchoring. The default non-wrapped path remains exactly 20 px.
+
+### Native Logcat Selection
+
+- Put `select-text` only on the message span and keep every metadata field `select-none`.
+- On message `pointerdown`, detach follow immediately without `preventDefault` or pointer capture so browser-native cross-row selection can continue.
+- On `pointerup`, inspect `window.getSelection()` before toggling `selectedSeq`; a non-empty native selection always wins.
+- On Cmd/Ctrl+C, leave editable targets and native selections to the browser. Intercept only when a complete row identified by `selectedSeq` should be copied.
+
+### Themed Option Menus
+
+Use `BlueprintSelect` when an expanded option menu must match the Blueprint light and dark themes. A native `<select>` hands the expanded menu to macOS, so its blue selection, rounded corners, font, and shadow cannot follow application tokens.
+
+```tsx
+<BlueprintSelect
+  value={separatorMode}
+  options={SEPARATOR_OPTIONS}
+  onValueChange={setSeparatorMode}
+  ariaLabel="Separator"
+/>
+```
+
+- Keep the current option in the trigger's accessible name.
+- Keep the paper menu, hard shadow, dashed option separators, quiet selected band, and chevron behavior in `BlueprintSelect`. Consumers may change width and row density or render richer option content, but must not redefine the shared selection palette or menu shell.
+- Pointer-opened menus keep focus on the trigger so the selected band matches the quiet prototype. Keyboard-opened menus move focus to the selected option and retain a visible `focus-visible` outline.
+- Support Arrow keys, Home, End, Enter, Space, Escape, outside-click closing, and trigger focus restoration.
+- Disable an empty selector instead of opening a menu with one non-actionable placeholder.
+- Close an open dynamic selector when its option set changes so focus cannot remain on a removed item.
+
+### Blueprint Floating Surfaces
+
+Keep menus, dialogs, update prompts, and toasts visually separate from the grid and streaming content beneath them.
+
+- Use an opaque `bg-paper` or `bg-log-bg` surface, `border-rule`, and the Blueprint hard shadow. Do not use translucent card backgrounds over Logcat or the blueprint grid because the underlying text and rules remain readable through the overlay.
+- Keep floating surfaces square. A 2 px structural radius is reserved for `ToolModule`; floating menus and notices do not inherit legacy `rounded-*` card styles.
+- Give triggers `aria-expanded` and `aria-controls`. Give the surface its actual role and accessible name.
+- Close transient menus on outside pointer input and Escape. Restore focus to the trigger after Escape so keyboard users keep their position.
+- At the 900 px minimum width, keep bottom notices inside the main workspace and prevent them from covering the 168 px index rail or another persistent notice.
+
+```tsx
+<button
+  ref={triggerRef}
+  type="button"
+  aria-haspopup="dialog"
+  aria-expanded={open}
+  aria-controls="connection-panel"
+>
+  <Wifi />
+</button>
+
+{open && (
+  <div
+    id="connection-panel"
+    role="dialog"
+    aria-label="Connection"
+    className="border border-rule bg-paper shadow-[3px_3px_0_var(--color-hard-shadow)]"
+  >
+    {/* controls */}
+  </div>
+)}
+```
+
+Browser smoke must cover light and dark rendering, the 900 px layout, Escape focus restoration, and a long toast message that wraps without covering index controls.
+
 ---
 
 ## Common Mistakes
