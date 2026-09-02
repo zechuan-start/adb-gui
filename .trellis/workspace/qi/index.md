@@ -29,7 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
-| 14 | 2026-09-02 | 批量应用信息 dex 实现 | `bfc4261` | `claude/adb-dex-jar-app-info-qk34vq` |
+| 14 | 2026-09-02 | 批量应用信息 dex 实现 | `6f353a0` | `claude/adb-dex-jar-app-info-qk34vq` |
 | 13 | 2026-09-02 | Fix ADB WiFi switching and release v0.1.6 | `fe14bde`, `1a7b898` | `main` |
 | 12 | 2026-09-02 | Blueprint Quiet UI 翻新收口 | `d6c769f` | `codex/blueprint-quiet-ui-refresh` |
 | 11 | 2026-09-01 | Blueprint 工具工作台翻新 | - | `main` |

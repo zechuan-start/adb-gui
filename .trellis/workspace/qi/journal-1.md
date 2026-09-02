@@ -496,17 +496,22 @@ Validated ADB WiFi transport state after connect, added reconnect regression cov
 
 ### Main Changes
 
-(Add details)
+- Added the Java/app_process helper and portable Android SDK build script.
+- Added the Rust/Tauri batch command, JSON contract tests, and resource documentation.
+- Updated the application manager to render names, versions, icons, dates, and APK sizes with a visible legacy fallback.
 
 ### Git Commits
 
 | Hash | Message |
 |------|---------|
-| `bfc4261` | (see git log) |
+| `6f353a0` | feat: add batch installed app metadata |
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] 277 frontend tests passed.
+- [OK] TypeScript and Vite production build passed.
+- [OK] Build-script syntax and diff checks passed.
+- [PENDING] Rust, dex compilation, and real-device checks require the user's local toolchain/device.
 
 ### Status
 
