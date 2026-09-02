@@ -76,9 +76,8 @@
 
 ## Open Questions（阻塞规划，需要用户决策）
 
-- [ ] 应用范围：新命令只展示第三方应用（与现状一致，`isSystemApp` 仅作为字段
-      预留），还是同时枚举系统应用（`isSystemApp` 用于实际筛选/分类，UI 需要加
-      筛选入口）？
+- [x] 应用范围：**只展示第三方应用**，与现状 `pm list packages -3` 语义一致。
+      本轮不加 `isSystemApp` 字段/筛选 UI，系统应用视图留到二期。
 - [ ] 图标输出尺寸：`getApplicationIcon` 默认按当前 density 解析，可能拿到
       192px+ 的大图，全量应用一次性输出会显著增大 JSON 体积和内存占用，是否需要
       在 dex 内统一缩放到固定尺寸？
