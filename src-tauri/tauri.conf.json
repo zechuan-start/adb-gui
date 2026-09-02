@@ -36,6 +36,11 @@
     "resources": {
       "resources/": ""
     },
+    "windows": {
+      "nsis": {
+        "installerHooks": "windows/installer-hooks.nsh"
+      }
+    },
     "createUpdaterArtifacts": true
   },
   "plugins": {

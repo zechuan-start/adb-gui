@@ -103,6 +103,77 @@ let mut command = Command::new(program);
 command.creation_flags(CREATE_NO_WINDOW);
 ```
 
+## Scenario: Windows Reinstall with a Bundled ADB Server
+
+### 1. Scope / Trigger
+
+- Trigger: changing the embedded Platform Tools bundle, Windows NSIS installer/updater hooks, ADB path resolution, or application shutdown.
+- The installed `windows/adb.exe` can fork a server that outlives `adb-gui.exe`. That server keeps `AdbWinApi.dll` and `AdbWinUsbApi.dll` loaded, so a reinstall can fail with `Error opening file for writing` even after the UI has closed.
+
+### 2. Signatures
+
+- Runtime cleanup helper: `shutdown_embedded_adb_server(app: &AppHandle) -> Result<(), String>`.
+- NSIS lifecycle hooks: `!macro NSIS_HOOK_PREINSTALL` and `!macro NSIS_HOOK_PREUNINSTALL`, registered through `bundle.windows.nsis.installerHooks`.
+- Graceful server command: `<installed resource dir>/windows/adb.exe kill-server`.
+
+### 3. Contracts
+
+- Treat the ADB server as a separately owned process, not as a child whose lifetime automatically follows `adb-gui.exe`.
+- Runtime shutdown must run after direct ADB children such as Logcat have stopped and before the application process exits.
+- Only stop a server whose resolved executable path is inside this application's installed resource directory. A server from Android Studio, an SDK, or `PATH` is external state and must not be terminated merely because its process name is `adb.exe`.
+- The NSIS preinstall hook is authoritative for upgrades and reinstalls because an already released version may not contain runtime cleanup. It must inspect running process executable paths, stop an exact-path bundled server, wait for that process to exit, and only then allow file replacement.
+- Apply the same ownership-aware cleanup before uninstalling so the resource directory can be removed completely.
+- Do not use `adb server-status` only to test whether a server exists: with no server running, that command starts one and creates the lock being checked. On Windows, inspect the process table without launching ADB; `server-status` is diagnostic only after an existing server has been established.
+
+### 4. Validation & Error Matrix
+
+- No `adb.exe` from the install directory is running -> continue install/uninstall without launching ADB.
+- Exact install-directory server is running -> request `kill-server`, wait for exit, then replace/remove both ADB DLLs.
+- An `adb.exe` from another absolute path is running -> leave it untouched and continue; it does not own the bundled DLLs.
+- Bundled server does not exit before the timeout -> abort before copying files and show an actionable close/retry error; never recommend Ignore because that produces a mixed-version Platform Tools directory.
+- Runtime exit cleanup fails -> log the error and allow app exit; the installer hook remains the recovery boundary.
+- Old `windows/adb.exe` is missing -> skip the graceful command and continue unless an exact-path process still owns the resource files.
+
+### 5. Good/Base/Bad Cases
+
+- Good: launch the installed app, let `adb devices -l` start the bundled server, close the app, and reinstall without a write error for either ADB DLL.
+- Good: reinstall a legacy build while its bundled server is still running; the new installer's preinstall hook releases the old DLLs before extraction.
+- Base: Android Studio has an SDK `adb.exe` server running from another directory; reinstall succeeds without stopping that external server.
+- Bad: cleaning only `adb-gui.exe` or direct Logcat children leaves the forked server alive and the DLLs locked.
+- Bad: unconditional `taskkill /IM adb.exe /F` disrupts unrelated development tools and violates executable-path ownership.
+- Bad: relying only on the new application's exit handler cannot repair reinstallation from versions released before that handler existed.
+
+### 6. Tests Required
+
+- Rust unit tests must cover embedded-path matching, case-insensitive Windows path comparison, missing cached ADB state, and external SDK paths.
+- Installer smoke: record the PID and `ExecutablePath` of the bundled server, run a same-version reinstall, and assert that the PID exits and the installed `AdbWinApi.dll` hash matches the package.
+- Upgrade smoke: repeat from the last public installer to the candidate installer so the NSIS hook, not new runtime code, proves backward recovery.
+- External-server smoke: start ADB from a different SDK directory, reinstall, and assert that exact PID is still running.
+- Uninstall smoke: start the bundled server, uninstall, and assert that no install-directory process or ADB DLL remains.
+- Diagnostic command on Windows:
+
+```powershell
+Get-CimInstance Win32_Process -Filter "Name = 'adb.exe'" |
+  Select-Object ProcessId, ExecutablePath, CommandLine
+```
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```nsh
+nsExec::ExecToLog 'taskkill /IM adb.exe /F'
+```
+
+#### Correct
+
+```text
+1. Enumerate running adb.exe processes without starting a new ADB server.
+2. Match the normalized executable path against $INSTDIR\windows\adb.exe.
+3. Ask that installed executable to run kill-server and wait for the matched PID to exit.
+4. Abort before extraction if the exact-path process still owns the DLLs.
+```
+
 ## Scenario: Batch Android Application Metadata Helper
 
 ### 1. Scope / Trigger

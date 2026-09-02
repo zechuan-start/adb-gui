@@ -17,7 +17,13 @@ fn start_device_poll(app: &AppHandle) {
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
         loop {
+            if adb::is_shutting_down(&app_handle) {
+                break;
+            }
             if let Ok(devices) = commands::device::list_devices(app_handle.clone()) {
+                if adb::is_shutting_down(&app_handle) {
+                    break;
+                }
                 let _ = app_handle.emit("devices-updated", &devices);
             }
             tokio::time::sleep(Duration::from_secs(3)).await;
@@ -226,10 +232,14 @@ pub fn run() {
 
     app.run(|_app, event| match event {
         tauri::RunEvent::Exit => {
+            adb::begin_shutdown(_app);
             if let Err(error) =
                 tauri::async_runtime::block_on(commands::logcat::shutdown_logcat_sessions())
             {
                 eprintln!("failed to stop Logcat sessions during application exit: {error}");
+            }
+            if let Err(error) = adb::shutdown_embedded_adb_server(_app) {
+                eprintln!("failed to stop bundled ADB server during application exit: {error}");
             }
         }
         #[cfg(target_os = "macos")]
