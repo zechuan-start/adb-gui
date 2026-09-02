@@ -1,28 +1,75 @@
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex,
+};
 use tauri::{AppHandle, Manager};
 
 #[cfg(windows)]
+use std::ffi::OsString;
+#[cfg(windows)]
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
+#[cfg(windows)]
 use std::os::windows::process::CommandExt;
+#[cfg(windows)]
+use std::path::Path;
+#[cfg(windows)]
+use std::time::{Duration, Instant};
+#[cfg(windows)]
+use windows_sys::Win32::{
+    Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE},
+    Globalization::{CompareStringOrdinal, CSTR_EQUAL},
+    System::{
+        Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+            TH32CS_SNAPPROCESS,
+        },
+        Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION},
+    },
+};
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+#[cfg(windows)]
+const ADB_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
+#[cfg(windows)]
+const ADB_SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(50);
+#[cfg(windows)]
+const ADB_ABSENCE_CONFIRMATION: Duration = Duration::from_millis(150);
+#[cfg(windows)]
+const ADB_KILL_RETRY_INTERVAL: Duration = Duration::from_millis(250);
+
 pub struct AppState {
     pub adb_path: Mutex<String>,
+    shutting_down: AtomicBool,
 }
 
 impl AppState {
     pub fn new() -> Self {
         Self {
             adb_path: Mutex::new(String::new()),
+            shutting_down: AtomicBool::new(false),
         }
     }
 }
 
+pub fn begin_shutdown(app: &AppHandle) {
+    app.state::<AppState>()
+        .shutting_down
+        .store(true, Ordering::SeqCst);
+}
+
+pub fn is_shutting_down(app: &AppHandle) -> bool {
+    app.state::<AppState>().shutting_down.load(Ordering::SeqCst)
+}
+
 pub fn resolve_adb_path(app: &AppHandle) -> Result<String, String> {
     let state = app.state::<AppState>();
+    if state.shutting_down.load(Ordering::SeqCst) {
+        return Err("application is shutting down".to_string());
+    }
     {
         let cached = state.adb_path.lock().unwrap();
         if !cached.is_empty() {
@@ -212,5 +259,206 @@ pub fn adb_source(adb_path: &str, app: &AppHandle) -> String {
         "sdk".to_string()
     } else {
         "system".to_string()
+    }
+}
+
+#[cfg(not(windows))]
+pub fn shutdown_embedded_adb_server(_app: &AppHandle) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(windows)]
+pub fn shutdown_embedded_adb_server(app: &AppHandle) -> Result<(), String> {
+    let adb_path = {
+        let state = app.state::<AppState>();
+        let cached = state.adb_path.lock().unwrap();
+        if cached.is_empty() {
+            return Ok(());
+        }
+        PathBuf::from(cached.as_str())
+    };
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|error| error.to_string())?;
+    let expected_path = resource_dir.join("windows").join("adb.exe");
+    if !windows_paths_equal(&adb_path, &expected_path) {
+        return Ok(());
+    }
+
+    stop_adb_server_at_path(app, &adb_path)
+}
+
+#[cfg(windows)]
+fn stop_adb_server_at_path(app: &AppHandle, adb_path: &Path) -> Result<(), String> {
+    let started_at = Instant::now();
+    let mut empty_since = None;
+    let mut next_kill_attempt = started_at;
+    let mut last_error = None;
+
+    loop {
+        let process_ids = windows_process_ids_at_path(adb_path)?;
+        let now = Instant::now();
+        if process_ids.is_empty() {
+            let absence_started = empty_since.get_or_insert(now);
+            if now.duration_since(*absence_started) >= ADB_ABSENCE_CONFIRMATION {
+                return Ok(());
+            }
+        } else {
+            empty_since = None;
+            if now >= next_kill_attempt {
+                match prepare_command(app, &adb_path.to_string_lossy())
+                    .arg("kill-server")
+                    .output()
+                {
+                    Ok(output) if output.status.success() => last_error = None,
+                    Ok(output) => {
+                        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                        last_error = Some(if detail.is_empty() {
+                            format!("adb kill-server exited with {}", output.status)
+                        } else {
+                            detail
+                        });
+                    }
+                    Err(error) => {
+                        last_error = Some(format!("failed to run adb kill-server: {error}"))
+                    }
+                }
+                next_kill_attempt = now + ADB_KILL_RETRY_INTERVAL;
+            }
+        }
+
+        if now.duration_since(started_at) >= ADB_SHUTDOWN_TIMEOUT {
+            let process_ids = windows_process_ids_at_path(adb_path)?;
+            if process_ids.is_empty() {
+                return Ok(());
+            }
+            let detail = last_error
+                .map(|error| format!(" Last error: {error}"))
+                .unwrap_or_default();
+            return Err(format!(
+                "bundled ADB server did not exit within 3 seconds (PIDs: {}).{detail}",
+                process_ids
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+
+        std::thread::sleep(ADB_SHUTDOWN_POLL_INTERVAL);
+    }
+}
+
+#[cfg(windows)]
+fn windows_process_ids_at_path(expected_path: &Path) -> Result<Vec<u32>, String> {
+    // SAFETY: the returned snapshot handle is validated and owned until this function returns.
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return Err(format!(
+            "failed to enumerate Windows processes: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    let snapshot = OwnedHandle(snapshot);
+    let mut entry = PROCESSENTRY32W {
+        dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+        ..Default::default()
+    };
+    let mut matches = Vec::new();
+
+    // SAFETY: entry has the required size and remains valid for the complete enumeration.
+    let mut has_entry = unsafe { Process32FirstW(snapshot.0, &mut entry) } != 0;
+    while has_entry {
+        if process_entry_name(&entry).eq_ignore_ascii_case("adb.exe") {
+            if let Some(path) = process_image_path(entry.th32ProcessID) {
+                if windows_paths_equal(&path, expected_path) {
+                    matches.push(entry.th32ProcessID);
+                }
+            }
+        }
+        // SAFETY: snapshot and entry remain valid until the loop completes.
+        has_entry = unsafe { Process32NextW(snapshot.0, &mut entry) } != 0;
+    }
+
+    Ok(matches)
+}
+
+#[cfg(windows)]
+fn process_entry_name(entry: &PROCESSENTRY32W) -> String {
+    let length = entry
+        .szExeFile
+        .iter()
+        .position(|character| *character == 0)
+        .unwrap_or(entry.szExeFile.len());
+    String::from_utf16_lossy(&entry.szExeFile[..length])
+}
+
+#[cfg(windows)]
+fn process_image_path(process_id: u32) -> Option<PathBuf> {
+    // SAFETY: the process handle is checked for null and closed by OwnedHandle.
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process_id) };
+    if process.is_null() {
+        return None;
+    }
+    let process = OwnedHandle(process);
+    let mut buffer = vec![0_u16; 32_768];
+    let mut length = buffer.len() as u32;
+    // SAFETY: buffer is writable for length UTF-16 code units and the process handle is valid.
+    if unsafe { QueryFullProcessImageNameW(process.0, 0, buffer.as_mut_ptr(), &mut length) } == 0 {
+        return None;
+    }
+    buffer.truncate(length as usize);
+    Some(PathBuf::from(OsString::from_wide(&buffer)))
+}
+
+#[cfg(windows)]
+fn windows_paths_equal(left: &Path, right: &Path) -> bool {
+    let left: Vec<u16> = left.as_os_str().encode_wide().collect();
+    let right: Vec<u16> = right.as_os_str().encode_wide().collect();
+    // SAFETY: both pointers are valid for their explicit UTF-16 lengths.
+    unsafe {
+        CompareStringOrdinal(
+            left.as_ptr(),
+            left.len() as i32,
+            right.as_ptr(),
+            right.len() as i32,
+            1,
+        ) == CSTR_EQUAL
+    }
+}
+
+#[cfg(windows)]
+struct OwnedHandle(HANDLE);
+
+#[cfg(windows)]
+impl Drop for OwnedHandle {
+    fn drop(&mut self) {
+        // SAFETY: OwnedHandle is created only from a valid owned Windows handle.
+        unsafe {
+            CloseHandle(self.0);
+        }
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::windows_paths_equal;
+    use std::path::Path;
+
+    #[test]
+    fn windows_path_matching_is_case_insensitive_and_exact() {
+        assert!(windows_paths_equal(
+            Path::new(r"C:\Users\Gin\AppData\Local\ADB GUI\windows\adb.exe"),
+            Path::new(r"c:\users\gin\appdata\local\adb gui\WINDOWS\ADB.EXE")
+        ));
+        assert!(!windows_paths_equal(
+            Path::new(r"C:\Android\platform-tools\adb.exe"),
+            Path::new(r"C:\Users\Gin\AppData\Local\ADB GUI\windows\adb.exe")
+        ));
+        assert!(!windows_paths_equal(
+            Path::new(r"C:\Users\Gin\AppData\Local\ADB GUI\windows\adb-old.exe"),
+            Path::new(r"C:\Users\Gin\AppData\Local\ADB GUI\windows\adb.exe")
+        ));
     }
 }
