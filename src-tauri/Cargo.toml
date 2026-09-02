@@ -1,6 +1,6 @@
 [package]
 name = "adb-gui"
-version = "0.1.5"
+version = "0.1.6"
 description = "Cross-platform ADB GUI tool"
 authors = ["you"]
 edition = "2021"
