@@ -65,18 +65,22 @@ try {
 - `adb_connect(app: AppHandle, address: String) -> Result<String, String>`
 - `adb_disconnect(app: AppHandle, address: String) -> Result<String, String>`
 - `enable_wifi_debugging(app: AppHandle, serial: String) -> Result<String, String>`
+- `run_adb_connect_with(addr, execute) -> Result<String, String>`
 
 ### 3. Contracts
 
 - `address`: user-entered `ip[:port]`; trim whitespace and append `:5555` when the port is omitted.
 - `serial`: selected online USB or network serial passed through `run_adb_with_serial`.
-- Success response: trimmed ADB stdout or the connected `ip:5555` address.
+- Success response: trimmed ADB stdout or the connected `ip:5555` address, only after `adb -s <address> get-state` returns exactly `device`.
 - Failure response: user-readable `String` shown by frontend toast.
+- A stdout-level connect success and an online transport are separate conditions. `connected to` and `already connected to` do not prove that the target is usable.
 
 ### 4. Validation & Error Matrix
 
 - Empty `address` -> `Err("请输入设备 IP 或 ip:port")`.
 - `adb connect` stdout contains `failed`, `unable`, or `cannot` -> return `Err(stdout.trim())` even if process status is success.
+- `adb connect` reports success but `adb -s <address> get-state` is not `device` -> disconnect the stale address and retry connect once.
+- The single reconnect attempt fails or still does not reach `device` -> return `Err(...)`; never emit a success response.
 - Missing WiFi IP from `wlan0` -> `Err("未检测到 WiFi IP, 请确认设备已连接 WiFi")`.
 - `adb tcpip 5555` failure -> return contextual `Err("Failed to enable tcpip mode: ...")`.
 
@@ -84,10 +88,14 @@ try {
 
 - Good: `adb_connect("192.168.1.10")` calls `adb connect 192.168.1.10:5555`.
 - Base: `adb_connect("192.168.1.10:5556")` keeps the explicit port.
+- Good: `already connected to 192.168.1.10:5555` plus `get-state=device` returns success without disrupting the healthy transport.
+- Good: `already connected` plus `device offline` disconnects the stale address, reconnects once, and returns success only when the second `get-state` is `device`.
 - Bad: treating `adb connect` exit status 0 as success without checking stdout can show a false success toast.
+- Bad: treating `already connected` as success without checking transport state can leave the WiFi list empty because offline network devices are intentionally hidden.
 
 ### 6. Tests Required
 
+- Unit-test direct online success, stdout-level failure, stale-offline recovery, and reconnect failure. Assert the exact ADB command sequence and that failure never returns `Ok`.
 - Build/type check: `cargo check` and `npm run build`.
 - Lint: `cargo clippy --all-targets -- -D warnings`.
 - Manual device smoke: run `adb tcpip 5555`, `adb connect <ip>:5555`, `adb disconnect <ip>:5555`, then restore with `adb -s <network-serial> usb` before confirming USB serial returns.
@@ -106,8 +114,8 @@ run_adb(app, &["connect", addr])
 let output = run_adb(app, &["connect", addr])?;
 let lower = output.trim().to_lowercase();
 if lower.contains("failed") || lower.contains("unable") || lower.contains("cannot") {
-    Err(output.trim().to_string())
-} else {
-    Ok(output.trim().to_string())
+    return Err(output.trim().to_string());
 }
+verify_device_online(addr, &mut execute)?;
+Ok(output.trim().to_string())
 ```
