@@ -7,6 +7,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
+import android.os.Looper;
 import android.util.Base64;
 
 import org.json.JSONArray;
@@ -48,6 +49,12 @@ public final class Main {
     }
 
     private static Context createSystemContext() throws Exception {
+        // app_process does not prepare the main looper before invoking this entry point,
+        // while ActivityThread creates handlers during its framework bootstrap.
+        if (Looper.myLooper() == null) {
+            Looper.prepareMainLooper();
+        }
+
         // ActivityThread is hidden from the SDK stubs, so keep the build compatible with
         // a normal android.jar and resolve only this app_process bootstrap path at runtime.
         Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");

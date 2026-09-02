@@ -27,10 +27,7 @@ pub struct AppInfo {
 }
 
 #[tauri::command]
-pub async fn get_installed_apps(
-    app: AppHandle,
-    serial: String,
-) -> Result<Vec<AppInfo>, String> {
+pub async fn get_installed_apps(app: AppHandle, serial: String) -> Result<Vec<AppInfo>, String> {
     let dex_path = resolve_app_info_dex_path(&app)?;
     let local_path = dex_path.to_string_lossy().into_owned();
     let push_app = app.clone();
