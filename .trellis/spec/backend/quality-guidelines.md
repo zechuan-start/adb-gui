@@ -259,6 +259,83 @@ for (const batch of batches) {
 
 Sequential guarded batches bound lock occupancy and prevent stale device writes; the superset check preserves old-dex compatibility without repeating full icon work.
 
+## Scenario: Local Application Information Cache
+
+### 1. Scope / Trigger
+
+- Trigger: changing application metadata loading, persistent application icons, device cache identity, or the app-info cache commands.
+- Applies across `app_info_cache.rs`, `device.ts`, `appInfo.ts`, `appInfoLoader.ts`, the Tauri bridge, and `PackageManager.tsx`.
+
+### 2. Signatures
+
+- `read_app_info_cache(app: AppHandle, device_key: String) -> Result<Vec<AppInfo>, String>` with `#[tauri::command(async)]`.
+- `write_app_info_cache(app: AppHandle, device_key: String, apps: Vec<AppInfo>, new_icons: Vec<AppIconEntry>) -> Result<(), String>` with `#[tauri::command(async)]`.
+- `deviceCacheKey(device: DeviceInfo) -> string`.
+- `appIconKey(packageName: string, lastUpdateTime: number) -> string`.
+- `missingIconPackages(fresh: AppInfo[], cachedIcons: Map<string, string>) -> string[]`.
+- `loadAppInfoSources(options) -> AppInfoSourceResult`.
+
+### 3. Contracts
+
+- Derive the raw device key as `device_id ?? alias_identity ?? serial`; sanitize it next to the Rust filesystem boundary and append the complete 64-bit FNV hash suffix so replacement characters and known low-32-bit collisions cannot merge device directories.
+- Store one `index.json` plus individual PNG files below `app.path().app_cache_dir()/app-info/<sanitized-device-key>/`.
+- Cache identity is `(packageName, lastUpdateTime)`. Values with `lastUpdateTime <= 0` are always live misses and never enter the persistent index.
+- Metadata remains a full live read on every load. Cached metadata may render an optimistic first screen but never replace a completed live result.
+- Cache reads and writes are fallible optimization paths. Read failures return an empty cache; write failures are logged without toast or list failure.
+- Serialize reads and writes by sanitized device key so a reader cannot delete a directory while its index is being committed. Write valid new PNG files first, atomically replace the complete index on Unix or remove-then-rename on Windows, then prune files not referenced by the new index.
+- Reuse exact old `(packageName, lastUpdateTime)` icon references when no valid new icon exists. Validate every stored `iconFile` against the recomputed filename before reading it.
+- The in-memory key is `(deviceKey, packageName, lastUpdateTime)`. Every batch and persistence write checks the current request generation.
+
+### 4. Validation & Error Matrix
+
+- Missing, malformed, wrong-version, or wrong-device-key index -> delete only that device directory and return an empty cache.
+- Missing, unreadable, corrupt, absolute, parent-relative, or separator-containing icon reference -> return that application with an empty icon; keep the rest of the cache.
+- Invalid PNG data URI in `new_icons` -> ignore that new icon and preserve a still-valid exact old reference.
+- Live metadata failure with a nonempty cache -> keep cached rows, enable lazy icons, and show the last-read-data warning; do not run package-only fallback or write cache.
+- Live metadata failure without cache -> use the existing package-only fallback and degraded warning.
+- Cache completion after live metadata -> retain the live rows and use cache only for icon diffing.
+
+### 5. Good/Base/Bad Cases
+
+- Good: unchanged applications produce an empty icon diff and no device icon request while the fresh metadata still replaces the optimistic rows.
+- Base: one upgraded application changes `lastUpdateTime`; only that package is requested and its old PNG is pruned after the new index is committed.
+- Good: USB and WiFi transports with one `device_id` share disk and memory cache identity without concurrent index corruption.
+- Bad: keying memory by serial discards every hit when the merged device switches its primary transport.
+- Bad: allowing a late cache callback to call `setApps` after the live result makes stale metadata the final source of truth.
+
+### 6. Tests Required
+
+- Rust tests cover sanitization collisions, long names, PNG validation, round-trip, invalid index cleanup, per-icon corruption, unsafe paths, unstable timestamps, exact-reference preservation, partial updates, pruning, existing-index replacement, device isolation, concurrent same-key writes, and read/write lock sharing.
+- Frontend helper tests cover device-key fallback, USB/WiFi identity sharing, install/uninstall/update diffs, empty icons, unstable timestamps, and package deduplication.
+- Controller tests cover cache-first, live-first, live failure with late cache, and stale request suppression.
+- Run the 60-second Rust test gate, Rust fmt/Clippy, `pnpm test`, and `pnpm build`.
+- Real-device smoke verifies second-load zero icon requests, install/uninstall/update diffs, corrupt-cache recovery, metadata freshness, and USB/WiFi primary switching.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+const cached = await readAppInfoCache(device.serial);
+setApps(cached);
+setApps(await getInstalledApps(device.serial));
+```
+
+#### Correct
+
+```typescript
+const result = await loadAppInfoSources({
+  readCache: () => readAppInfoCache(deviceCacheKey(device)),
+  readFresh: () => getInstalledApps(device.serial),
+  isCurrent: () => loadRequestRef.current === requestId,
+  onOptimisticCache: setApps,
+  onFresh: setApps,
+  onCacheRead: hydrateCachedIcons,
+});
+```
+
+The controller owns the per-request phase flag, so a late cache result cannot become the final metadata state.
+
 ## Scenario: ADB Port Forward Commands
 
 ### 1. Scope / Trigger

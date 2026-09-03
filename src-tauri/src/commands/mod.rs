@@ -1,6 +1,7 @@
 pub mod app;
 pub mod app_icon;
 pub mod app_info;
+pub mod app_info_cache;
 pub mod bug_report;
 pub mod deeplink;
 pub mod device;

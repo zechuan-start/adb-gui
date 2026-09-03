@@ -60,3 +60,21 @@ export function hasUnrequestedPackages(
   const requested = new Set(requestedPackages);
   return entries.some((entry) => !requested.has(entry.packageName));
 }
+
+export function appIconKey(packageName: string, lastUpdateTime: number): string {
+  return `${packageName}\0${lastUpdateTime}`;
+}
+
+export function missingIconPackages(
+  fresh: AppInfo[],
+  cachedIcons: Map<string, string>,
+): string[] {
+  const missing = new Set<string>();
+  for (const app of fresh) {
+    const cached = cachedIcons.get(appIconKey(app.packageName, app.lastUpdateTime));
+    if (app.lastUpdateTime <= 0 || !cached) {
+      missing.add(app.packageName);
+    }
+  }
+  return [...missing];
+}

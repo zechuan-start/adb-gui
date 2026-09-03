@@ -206,6 +206,8 @@ pub fn run() {
             commands::app_icon::get_app_icon,
             commands::app_info::get_installed_apps,
             commands::app_info::get_installed_app_icons,
+            commands::app_info_cache::read_app_info_cache,
+            commands::app_info_cache::write_app_info_cache,
             commands::wifi::adb_connect,
             commands::wifi::adb_disconnect,
             commands::wifi::enable_wifi_debugging,

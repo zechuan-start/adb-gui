@@ -8,6 +8,10 @@ export interface MergedDevice {
   transports: DeviceInfo[];
 }
 
+export function deviceCacheKey(device: DeviceInfo): string {
+  return device.device_id ?? device.alias_identity ?? device.serial;
+}
+
 export function getDeviceBySerial(devices: DeviceInfo[], serial: string | null): DeviceInfo | null {
   if (!serial) {
     return null;

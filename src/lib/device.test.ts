@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   activeTransports,
+  deviceCacheKey,
   getPreferredSelectedDeviceSerial,
   isNetworkDevice,
   isSelectableDevice,
@@ -24,6 +25,35 @@ function device(serial: string, overrides: Partial<DeviceInfo> = {}): DeviceInfo
 }
 
 describe("device metadata", () => {
+  it("derives a stable cache key through the documented fallback chain", () => {
+    expect(deviceCacheKey(device("usb-a", { device_id: "physical-a" }))).toBe(
+      "physical-a",
+    );
+    expect(
+      deviceCacheKey(
+        device("192.168.1.5:5555", {
+          device_id: null,
+          alias_identity: "phone._adb-tls-connect._tcp",
+        }),
+      ),
+    ).toBe("phone._adb-tls-connect._tcp");
+    expect(
+      deviceCacheKey(
+        device("192.168.1.5:5555", { device_id: null, alias_identity: null }),
+      ),
+    ).toBe("192.168.1.5:5555");
+  });
+
+  it("shares one cache key across USB and WiFi transports for one device", () => {
+    const usb = device("usb-a", { device_id: "physical-a" });
+    const wifi = device("192.168.1.5:5555", {
+      device_id: "physical-a",
+      is_network: true,
+    });
+
+    expect(deviceCacheKey(usb)).toBe(deviceCacheKey(wifi));
+  });
+
   it("uses the backend network flag instead of reparsing the serial", () => {
     const networkSerial = "phone._adb-tls-connect._tcp:5555";
 

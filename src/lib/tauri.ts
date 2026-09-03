@@ -370,6 +370,18 @@ export async function getInstalledAppIcons(
   return invoke<AppIconEntry[]>("get_installed_app_icons", { serial, packages });
 }
 
+export async function readAppInfoCache(deviceKey: string): Promise<AppInfo[]> {
+  return invoke<AppInfo[]>("read_app_info_cache", { deviceKey });
+}
+
+export async function writeAppInfoCache(
+  deviceKey: string,
+  apps: AppInfo[],
+  newIcons: AppIconEntry[],
+): Promise<void> {
+  return invoke<void>("write_app_info_cache", { deviceKey, apps, newIcons });
+}
+
 export async function getAppIcon(serial: string, pkg: string): Promise<string> {
   return invoke<string>("get_app_icon", { serial, pkg });
 }

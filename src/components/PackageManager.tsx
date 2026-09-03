@@ -3,13 +3,16 @@ import { AlertTriangle, Box, Play, RefreshCw, Search, Square, Trash2 } from "luc
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   appDisplayName,
+  appIconKey,
   chunkPackages,
   fallbackAppInfo,
   filterAppInfo,
   hasUnrequestedPackages,
+  missingIconPackages,
   sortAppInfo,
 } from "@/lib/appInfo";
-import { getDeviceBySerial, isOnlineDevice } from "@/lib/device";
+import { loadAppInfoSources } from "@/lib/appInfoLoader";
+import { deviceCacheKey, getDeviceBySerial, isOnlineDevice } from "@/lib/device";
 import { formatDeviceFileSize, formatDeviceModifiedAt } from "@/lib/deviceFiles";
 import {
   clearAppData,
@@ -19,7 +22,9 @@ import {
   getInstalledApps,
   launchApp,
   listPackages,
+  readAppInfoCache,
   uninstallApp,
+  writeAppInfoCache,
 } from "@/lib/tauri";
 import type { AppIconEntry, AppInfo } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
@@ -29,11 +34,15 @@ import { useFeedbackStore } from "@/store/feedback";
 const iconCache = new Map<string, string>();
 const ICON_BATCH_SIZE = 50;
 
-type FallbackState = { reason: string } | null;
+type FallbackState = { kind: "cache" | "packages"; reason: string } | null;
 type IconLoadMode = "bulk-pending" | "bulk-done" | "lazy";
 
-function appIconCacheKey(serial: string, packageName: string): string {
-  return `${serial}\0${packageName}`;
+function appIconCacheKey(
+  deviceKey: string,
+  packageName: string,
+  lastUpdateTime: number,
+): string {
+  return `${deviceKey}\0${packageName}\0${lastUpdateTime}`;
 }
 
 function appVersionLabel(app: AppInfo): string {
@@ -89,35 +98,124 @@ export function PackageManagerPanel() {
   const parentRef = useRef<HTMLDivElement>(null);
   const loadRequestRef = useRef(0);
   const onlineSerial = device && isOnlineDevice(device) ? device.serial : null;
+  const cacheDeviceKey = device ? deviceCacheKey(device) : "";
   const online = onlineSerial !== null;
 
   const loadApps = useCallback(async () => {
-    if (!onlineSerial) {
+    if (!onlineSerial || !cacheDeviceKey) {
       return;
     }
     const serial = onlineSerial;
+    const deviceKey = cacheDeviceKey;
     const requestId = ++loadRequestRef.current;
+    const isCurrent = () => loadRequestRef.current === requestId;
+    const publishApps = (nextApps: AppInfo[]) => {
+      setApps(nextApps);
+      setSelectedPkg((current) =>
+        current && nextApps.some((app) => app.packageName === current) ? current : "",
+      );
+    };
+    const hydrateCachedIcons = (cachedApps: AppInfo[]) => {
+      let changed = false;
+      for (const app of cachedApps) {
+        if (!app.icon) {
+          continue;
+        }
+        iconCache.set(
+          appIconCacheKey(deviceKey, app.packageName, app.lastUpdateTime),
+          app.icon,
+        );
+        changed = true;
+      }
+      if (changed) {
+        setIcons(new Map(iconCache));
+      }
+    };
+    const persistCache = (freshApps: AppInfo[], newIcons: AppIconEntry[]) => {
+      if (!isCurrent()) {
+        return;
+      }
+      void writeAppInfoCache(deviceKey, freshApps, newIcons).catch((error) => {
+        console.error("Failed to write application info cache", error);
+      });
+    };
+
     setLoading(true);
     setFallback(null);
     setFallbackDetailsExpanded(false);
     setIconLoadMode("bulk-pending");
     try {
-      const nextApps = sortAppInfo(await getInstalledApps(serial));
-      if (loadRequestRef.current !== requestId) {
+      const source = await loadAppInfoSources({
+        readCache: async () => sortAppInfo(await readAppInfoCache(deviceKey)),
+        readFresh: async () => sortAppInfo(await getInstalledApps(serial)),
+        isCurrent,
+        onCacheRead: hydrateCachedIcons,
+        onOptimisticCache: (cachedApps) => {
+          publishApps(cachedApps);
+          setLoading(false);
+        },
+        onFresh: publishApps,
+      });
+      if (source.status === "stale") {
         return;
       }
-      setApps(nextApps);
-      setSelectedPkg((current) =>
-        current && nextApps.some((app) => app.packageName === current) ? current : "",
-      );
 
-      const packages = nextApps.map((app) => app.packageName);
+      if (source.status === "failed") {
+        console.error("Failed to load structured application info", source.error);
+        setIconLoadMode("lazy");
+        if (source.cached.length > 0) {
+          publishApps(source.cached);
+          setFallback({ kind: "cache", reason: String(source.error) });
+          return;
+        }
+
+        setFallback({ kind: "packages", reason: String(source.error) });
+        try {
+          const fallbackApps = sortAppInfo(
+            (await listPackages(serial)).map(fallbackAppInfo),
+          );
+          if (!isCurrent()) {
+            return;
+          }
+          publishApps(fallbackApps);
+        } catch (fallbackError) {
+          if (isCurrent()) {
+            showToast("error", `加载应用列表失败: ${String(fallbackError)}`);
+          }
+        }
+        return;
+      }
+
+      const nextApps = source.fresh;
+      const availableIcons = new Map<string, string>();
+      for (const cached of source.cached) {
+        availableIcons.set(
+          appIconKey(cached.packageName, cached.lastUpdateTime),
+          cached.icon,
+        );
+      }
+      for (const app of nextApps) {
+        const memoryIcon = iconCache.get(
+          appIconCacheKey(deviceKey, app.packageName, app.lastUpdateTime),
+        );
+        if (memoryIcon !== undefined) {
+          availableIcons.set(
+            appIconKey(app.packageName, app.lastUpdateTime),
+            memoryIcon,
+          );
+        }
+      }
+
+      const packages = missingIconPackages(nextApps, availableIcons);
       if (packages.length === 0) {
         setIconLoadMode("bulk-done");
+        persistCache(nextApps, []);
       } else {
         void (async () => {
+          const newIcons: AppIconEntry[] = [];
+          const appsByPackage = new Map(nextApps.map((app) => [app.packageName, app]));
           for (const batch of chunkPackages(packages, ICON_BATCH_SIZE)) {
-            if (loadRequestRef.current !== requestId) {
+            if (!isCurrent()) {
               return;
             }
             let entries: AppIconEntry[];
@@ -125,57 +223,47 @@ export function PackageManagerPanel() {
               entries = await getInstalledAppIcons(serial, batch);
             } catch (error) {
               console.error("Failed to load an application icon batch", error);
-              if (loadRequestRef.current === requestId) {
+              if (isCurrent()) {
                 setIconLoadMode("lazy");
+                persistCache(nextApps, newIcons);
               }
               return;
             }
 
-            if (loadRequestRef.current !== requestId) {
+            if (!isCurrent()) {
               return;
             }
+            newIcons.push(...entries);
             for (const entry of entries) {
-              iconCache.set(appIconCacheKey(serial, entry.packageName), entry.icon);
+              const app = appsByPackage.get(entry.packageName);
+              if (!app) {
+                continue;
+              }
+              iconCache.set(
+                appIconCacheKey(deviceKey, entry.packageName, app.lastUpdateTime),
+                entry.icon,
+              );
             }
             setIcons(new Map(iconCache));
             if (hasUnrequestedPackages(entries, batch)) {
               setIconLoadMode("bulk-done");
+              persistCache(nextApps, newIcons);
               return;
             }
           }
 
-          if (loadRequestRef.current === requestId) {
+          if (isCurrent()) {
             setIconLoadMode("bulk-done");
+            persistCache(nextApps, newIcons);
           }
         })();
       }
-    } catch (bulkError) {
-      console.error("Failed to load structured application info", bulkError);
-      if (loadRequestRef.current !== requestId) {
-        return;
-      }
-      setFallback({ reason: String(bulkError) });
-      setIconLoadMode("lazy");
-      try {
-        const nextApps = sortAppInfo((await listPackages(serial)).map(fallbackAppInfo));
-        if (loadRequestRef.current !== requestId) {
-          return;
-        }
-        setApps(nextApps);
-        setSelectedPkg((current) =>
-          current && nextApps.some((app) => app.packageName === current) ? current : "",
-        );
-      } catch (fallbackError) {
-        if (loadRequestRef.current === requestId) {
-          showToast("error", `加载应用列表失败: ${String(fallbackError)}`);
-        }
-      }
     } finally {
-      if (loadRequestRef.current === requestId) {
+      if (isCurrent()) {
         setLoading(false);
       }
     }
-  }, [onlineSerial, showToast]);
+  }, [cacheDeviceKey, onlineSerial, showToast]);
 
   useEffect(() => {
     if (!online) {
@@ -217,27 +305,39 @@ export function PackageManagerPanel() {
     .join("\0");
 
   useEffect(() => {
-    if (!onlineSerial || iconLoadMode !== "lazy") {
+    if (!onlineSerial || !cacheDeviceKey || iconLoadMode !== "lazy") {
       return;
     }
     const requestId = loadRequestRef.current;
     const toLoad = virtualItems
-      .map((item) => filtered[item.index]?.packageName)
-      .filter((packageName): packageName is string => Boolean(packageName))
-      .filter((packageName) => !iconCache.has(appIconCacheKey(onlineSerial, packageName)))
+      .map((item) => filtered[item.index])
+      .filter((app): app is AppInfo => Boolean(app))
+      .filter(
+        (app) =>
+          !iconCache.has(
+            appIconCacheKey(cacheDeviceKey, app.packageName, app.lastUpdateTime),
+          ),
+      )
       .slice(0, 5);
     if (toLoad.length === 0) {
       return;
     }
-    for (const packageName of toLoad) {
-      iconCache.set(appIconCacheKey(onlineSerial, packageName), "");
+    for (const app of toLoad) {
+      iconCache.set(
+        appIconCacheKey(cacheDeviceKey, app.packageName, app.lastUpdateTime),
+        "",
+      );
     }
     const serial = onlineSerial;
     void Promise.all(
-      toLoad.map(async (packageName) => {
-        const cacheKey = appIconCacheKey(serial, packageName);
+      toLoad.map(async (app) => {
+        const cacheKey = appIconCacheKey(
+          cacheDeviceKey,
+          app.packageName,
+          app.lastUpdateTime,
+        );
         try {
-          iconCache.set(cacheKey, await getAppIcon(serial, packageName));
+          iconCache.set(cacheKey, await getAppIcon(serial, app.packageName));
         } catch {
           iconCache.set(cacheKey, "");
         }
@@ -247,7 +347,7 @@ export function PackageManagerPanel() {
         setIcons(new Map(iconCache));
       }
     });
-  }, [filtered, iconLoadMode, onlineSerial, visibleRangeKey, virtualItems]);
+  }, [cacheDeviceKey, filtered, iconLoadMode, onlineSerial, visibleRangeKey, virtualItems]);
 
   const canAct = online && Boolean(selectedPkg) && !acting;
 
@@ -331,7 +431,11 @@ export function PackageManagerPanel() {
           <div className="shrink-0 border-b border-warn/45 bg-warn-band px-3 py-2 text-[11px] text-warn">
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              <span className="min-w-0 flex-1">应用名称和版本读取失败，当前显示精简信息。</span>
+              <span className="min-w-0 flex-1">
+                {fallback.kind === "cache"
+                  ? "实时读取失败, 当前显示上次读取的数据."
+                  : "应用名称和版本读取失败, 当前显示精简信息."}
+              </span>
               <button
                 type="button"
                 onClick={() => setFallbackDetailsExpanded((expanded) => !expanded)}
@@ -407,8 +511,20 @@ export function PackageManagerPanel() {
                       <AppIcon
                         src={
                           app.icon ||
-                          icons.get(appIconCacheKey(onlineSerial, packageName)) ||
-                          iconCache.get(appIconCacheKey(onlineSerial, packageName))
+                          icons.get(
+                            appIconCacheKey(
+                              cacheDeviceKey,
+                              packageName,
+                              app.lastUpdateTime,
+                            ),
+                          ) ||
+                          iconCache.get(
+                            appIconCacheKey(
+                              cacheDeviceKey,
+                              packageName,
+                              app.lastUpdateTime,
+                            ),
+                          )
                         }
                       />
                       <span className="flex min-w-0 flex-col leading-[15px]">
@@ -440,8 +556,20 @@ export function PackageManagerPanel() {
               <AppIcon
                 src={
                   selectedApp.icon ||
-                  icons.get(appIconCacheKey(onlineSerial, selectedApp.packageName)) ||
-                  iconCache.get(appIconCacheKey(onlineSerial, selectedApp.packageName))
+                  icons.get(
+                    appIconCacheKey(
+                      cacheDeviceKey,
+                      selectedApp.packageName,
+                      selectedApp.lastUpdateTime,
+                    ),
+                  ) ||
+                  iconCache.get(
+                    appIconCacheKey(
+                      cacheDeviceKey,
+                      selectedApp.packageName,
+                      selectedApp.lastUpdateTime,
+                    ),
+                  )
                 }
                 size={38}
               />

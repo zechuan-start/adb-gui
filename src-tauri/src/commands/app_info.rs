@@ -308,7 +308,7 @@ fn resolve_app_info_dex_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-fn fnv1a_64(bytes: &[u8]) -> u64 {
+pub(super) fn fnv1a_64(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0xcbf29ce484222325_u64, |hash, byte| {
         (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
     })
