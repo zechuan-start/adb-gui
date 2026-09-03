@@ -1,14 +1,12 @@
 # Implement Plan: 设备列表合并同一设备的多传输连接
 
-分支：`claude/device-transport-merge`（从 `main` 开），**不要和
-`09-03-app-info-read-stability` 挤同一条分支**——两者会同时改 `src/lib/tauri.ts`
-与测试文件，同分支并行必然互踩。
+执行分支：当前集成分支 `claude/app-info-read-stability-tj25vt`。
+父任务已完成并归档，本任务与缓存任务在该分支按依赖顺序串行实施。
 
-与 `09-03-app-info-read-stability` **无代码依赖**（它只碰 `app_info.rs` /
-`PackageManager.tsx`），可以并行推进，不需要等它。
+`09-03-app-info-read-stability` 已完成并归档。
 
-反过来 `09-03-app-info-cache` **依赖本任务**：它的缓存键复用本任务在 `DeviceInfo`
-上加的 `device_id`。所以本任务的步骤 2、3 合入 `main` 之前，那个子任务不能开工。
+`09-03-app-info-cache` **依赖本任务**：它的缓存键复用本任务在 `DeviceInfo`
+上加的 `device_id`。所以本任务的步骤 2、3 完成并通过验证之前，那个子任务不能开工。
 
 > **规划复审已完成（2026-09-03）**：上一版产物里的矛盾已定位并修订，主要是
 > ①「组内排序 USB 优先」与测试用例「USB 离线时 primary 是 WiFi」互相打架、
@@ -17,25 +15,9 @@
 > 现在的规则是：**缓存不因状态失效（离线条目沿用身份）+ 组内排序先在线后 USB**。
 > 照现在的 `prd.md` / `design.md` / 本文件执行即可。
 >
-> **⚠️ 第二轮复审补出的两条待决（2026-09-03，尚未拍板）**
->
-> **待决 1 — 验收里的"自动"是笔误，还是真要做热插拔感知？**
-> `prd.md:110` 验收写「拔掉 USB 后，选中项**自动**落到 WiFi 那条」。
-> 但同一份 `prd.md:21-22` 已确认**设备列表没有轮询**（`listDevices()` 只在
-> `App.tsx:95` 启动、`TopBar.tsx:142` 手动刷新、`WifiConnect.tsx:57` 连接成功后调用），
-> 且 `prd.md:101` 的 Out of Scope 明确排除了"设备列表轮询/热插拔自动刷新"。
-> 拔线不点刷新，什么都不会发生——本文件验证计划第 2 条写的
-> 「拔掉 USB 线 → **点刷新**」才是与实现一致的那个。
-> 选项 A：改验收措辞为"刷新后落到 WiFi 那条"（只改 `prd.md:110`，范围不变）；
-> 选项 B：真的加轮询/热插拔感知，那要把它移出 Out of Scope，本任务范围显著变大。
->
-> **待决 2 — 同一设备三条及以上传输（多个 IP）怎么渲染？**
-> `prd.md:99` 的 Out of Scope 说「数据结构要支持 N 条，但 UI 只保证 USB + WiFi
-> 两种图标」，而 `design.md:100` 的 `transportKind` 只有 `"usb" | "network"`——
-> 同一台设备连了两个 IP 时会渲染出**两个一模一样的 WiFi 图标**，看着像 bug。
-> 选项 A：`TransportBadges` 按 kind 去重，只渲染一个 WiFi 图标
-> （由当前使用的那条决定亮暗）；选项 B：渲染 N 个，接受重复图标。
-> 定下来后写进 `design.md` 的 `TransportBadges` 一节，并补一条纯函数测试。
+> **第二轮待决项已解决（2026-09-03）**：仓库已有后端 3 秒设备轮询，
+> 因此保留拔线后的自动切换验收，不新增轮询；`TransportBadges` 按
+> `transportKind` 去重，多条网络传输只显示一个 WiFi 图标，并补纯函数测试。
 
 ---
 
@@ -67,7 +49,8 @@
 - 整组都不在线（只有一条离线 USB）→ `primary` 就是它，`activeTransports` 退化为它
 - **输出顺序保持各组首次出现的位置**（这条最容易漏，漏了体感很差）
 - `activeTransports` / `transportSummary`：双在线 → 两项 + "当前使用 USB"；
-  USB 离线 → 只剩 WiFi 一项，文案里不出现 USB
+  USB 离线 → 只剩 WiFi 一项，文案里不出现 USB；多个在线网络传输 →
+  只保留一个 WiFi 类型代表项，文案和徽标均不重复
 
 同文件扩展 `getPreferredSelectedDeviceSerial`，但不是只插一条 `device_id` 回退：
 先算 `mergeDevicesByIdentity(getSelectableDevices(devices))`，所有非 null 返回值都必须是
@@ -86,6 +69,9 @@
 `mergeDevicesByIdentity(getSelectableDevices(devices)).map(({ serial }) => serial)` 中；
 这正是 `getDevicePickerOptions` 的 option value 来源，直接守住
 “store 值与 picker option 一致”这条跨层不变量，不要让 store 测试反向依赖 React 组件。
+
+`setSelectedDevice` 同样要把用户请求的组内次传输归一到该组合并后的主 serial，
+同时保留单独成组的 USB `offline` / `unauthorized` 可显式选择行为；同步更新 store 测试。
 
 `pnpm test` 绿了再往下。此时还没有任何 UI 变化，可以安全提交一次。
 
@@ -111,9 +97,10 @@
    结束时**按"本次输出里出现过的 serial 集合"剪枝**——注意是"出现过"，
    不是"在线"。写成"在线集合"就等于让缓存在状态离开 `device` 时失效，
    USB 一掉线下拉就会从一条裂成两条，正好把本任务要修的现象重新制造出来。
-5. `list_devices` 改标 `#[tauri::command(async)]`：函数体保持同步、签名不变、
-   前端调用方式不变，只是让这批 getprop 离开主线程（见 `design.md`「解析与缓存」）。
-   其余同步命令本轮不动。
+5. 把同步读取下沉为 blocking helper；公开的 `list_devices` 改为异步命令，
+   用 `tauri::async_runtime::spawn_blocking` 执行整条 ADB 链，并在入口用进程级
+   async mutex 串行化轮询与主动刷新。`src-tauri/src/lib.rs` 的 `start_device_poll`
+   改为 await 该入口。前端调用方式不变，其余同步命令本轮不动。
 6. `parse_devices_output` 是纯函数且已有测试——它构造 `DeviceInfo` 的地方
    要补上 `device_id: None`，**现有测试的断言要跟着更新**。
    身份解析发生在 `parse_devices_output` 之外，保持这个纯函数依旧可测。
@@ -126,6 +113,9 @@
 
 `src/lib/tauri.ts` 的 `DeviceInfo`（:13-20）加 `device_id: string | null`。
 纯类型改动，无函数变化。
+同步补齐所有测试夹具中的 `device_id: null`，包括 `device.test.ts`、
+`store/device.test.ts`、`DevicePicker.test.ts`、`DeviceSpecStrip.test.ts` 和
+`StatusBanner.test.tsx`。
 
 ## 4. DevicePicker
 
@@ -148,8 +138,8 @@
 
 ## 5. DeviceSpecStrip
 
-`src/components/DeviceSpecStrip.tsx`：`getDeviceSpecStripModel` 加第三参数
-`transports: DeviceInfo[] = [device]`（**带默认值**，现有测试不受影响），
+`src/components/DeviceSpecStrip.tsx`：`getDeviceSpecStripModel` 加第三个可选参数
+`transports?: DeviceInfo[]`，在确认 `device` 非空后回退为 `[device]`，
 在 `serial` 那行之后插一行「连接方式」。
 
 接线在**组件内部**，不要改 `DeviceSpecStripProps`：`DeviceSpecStrip.tsx:113`
@@ -159,6 +149,7 @@
 （上一版这里只写了"调用方传入"，而唯一的调用点就在组件自己身上，会卡住执行。）
 
 `DeviceSpecStrip.test.ts` 补用例：单传输、双传输、双传输时标出当前使用的那条。
+完整详情同步改为 `lg:grid-cols-7`，避免第 7 项单独换行。
 
 ---
 
@@ -179,8 +170,8 @@ cd src-tauri && cargo clippy --all-targets -- -D warnings
 
 1. **合并生效**：一台手机同时接 USB 和 `adb connect`，设备下拉只出现一条，
    图标显示两种方式可用、当前是 USB。
-2. **无缝落到 WiFi**：在上一步状态下拔掉 USB 线 → 点刷新 → 选中项仍是这台设备、
-   走 WiFi，面板没有跳回"未选择设备"。
+2. **无缝落到 WiFi**：在上一步状态下拔掉 USB 线并等待下一轮 3 秒轮询 →
+   选中项仍是这台设备、走 WiFi，面板没有跳回"未选择设备"。
 3. **绝不误合并**（最严重的失败模式）：两台设备同时连着，
    最好是**同型号两台**，确认是两条而不是一条。
 4. **USB 变 `offline` 时仍合并**：这条真机上不好稳定构造（`adb devices` 里 USB 显示
@@ -217,11 +208,11 @@ cd src-tauri && cargo clippy --all-targets -- -D warnings
 ## Follow-up（`task.py start` 前需要确认）
 
 - [ ] 用户已阅读并认可 `prd.md` / `design.md` / 本文件（2026-09-03 复审版）
-- [ ] 本任务从 `main` 单开分支 `claude/device-transport-merge`，不与
-      `09-03-app-info-read-stability` 共用分支
+- [x] 本任务在当前集成分支串行实施，不创建额外分支或 worktree
 - [ ] 收起态图标：若实现时降级成"只在下拉项显示"，要把决定写回 `design.md`，
       不能默默留一个溢出的顶栏
 - [ ] 明确真机验证（尤其是同型号两台设备不误合并）由用户完成
-- [ ] 本任务合入 `main` 之后，`09-03-app-info-cache` 才能开工（它复用 `device_id`）；
+- [ ] 本任务在当前集成分支完成并通过验证之后，`09-03-app-info-cache` 才能开工
+      （它复用 `device_id`）；
       同时 `09-03-app-info-read-stability` 里"在两条 serial 之间切换"的真机验证
       要赶在本任务合入前做掉

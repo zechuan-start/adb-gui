@@ -56,9 +56,9 @@ fn resolve_device_id(app: &AppHandle, serial: &str, state: &str) -> Option<Strin
 路由器把这个 IP 重新分给另一台手机之后，同一个 serial 指向的就是**另一台设备**了。
 在线还吃缓存的话，新设备会顶着旧设备的身份被合并进旧设备那一条——
 **误合并是本任务最严重的失败模式**（用户会对着 A 设备操作 B 设备）。
-每次刷新多 N 次 getprop 换掉这个风险，很划算：设备列表**没有轮询**
-（`listDevices()` 只在 `App.tsx:95` 启动、`TopBar.tsx:142` 手动刷新、
-`WifiConnect.tsx:57` 连接后调用），而且失败不缓存，未授权设备被授权后自动就能解析出来。
+每次刷新多 N 次 getprop 换掉这个风险是可接受的，但设备列表实际存在后端 3 秒轮询：
+`src-tauri/src/lib.rs` 的 `start_device_poll` 会持续调用 `list_devices` 并发出
+`devices-updated`，`App.tsx` 订阅该事件。失败不缓存，未授权设备被授权后下一轮即可解析。
 
 缓存于是只剩一个用途：**让刚掉线的条目保住身份**。这类条目要么是 USB
 （serial 是设备自己的序列号，不会被别的设备复用），要么是离线网络条目
@@ -70,11 +70,13 @@ fn resolve_device_id(app: &AppHandle, serial: &str, state: &str) -> Option<Strin
 
 成本：每次 `list_devices` 对每台**在线**设备多一次 getprop（约 30–80ms）。
 
-但 `list_devices`（`device.rs:88`）是**同步命令**，Tauri 里非 `async` 的命令不会被放到
-独立线程上；现在它只发一次 `adb devices -l`，加上 N 次 getprop 后占用会明显变长。
-因此本任务把它标成 `#[tauri::command(async)]`（函数体保持同步，签名不变，
-前端调用方式不变），让它离开主线程。仓库里 `get_device_info` 这类同步命令
-本轮不动，只改这一个在启动路径上的。
+`list_devices` 当前是同步命令，而且后端轮询直接在 async runtime task 内调用它。
+新增 N 次 getprop 后，简单把命令改成 `async fn` 仍会在 runtime worker 上同步阻塞，
+也不能覆盖后端轮询入口。实现应把现有逻辑下沉到 blocking helper，公开的异步
+`list_devices` 用 `tauri::async_runtime::spawn_blocking` 执行整条 ADB 链；
+`start_device_poll` 改为 await 同一个异步入口。入口前用一把进程级 async mutex
+串行化整次读取，避免轮询、启动读取和手动刷新重叠时同时跑多组 getprop、交叉剪枝缓存。
+前端调用签名不变，仓库里 `get_device_info` 等其他同步命令本轮不动。
 
 ### 为什么是 ro.serialno
 
@@ -157,6 +159,10 @@ const mergedDevices = mergeDevicesByIdentity(selectableDevices);
 名字的推断，前者更可信。第 1 步不能写成“选中项仍在线就原样返回”，必须先映射到组；
 函数已经接收 `previousDevices`，不需要改签名。
 
+`setSelectedDevice` 的显式选择也必须遵守同一不变量：先在可选设备的合并结果中
+找到包含请求 serial 的组，再保存该组主 serial。这样仍允许用户选择单独成组的
+USB `offline` / `unauthorized` 条目，但不会把在线组内的次传输写进 store。
+
 必须单测两个方向：WiFi 已选中且仍在线 → USB 上线后归一到 USB；USB 消失或离线
 → 同组 WiFi 成为主传输并被选中。两种情况下返回值都必须能在
 `mergedDevices.map((item) => item.serial)` 中找到。
@@ -186,13 +192,17 @@ const mergedDevices = mergeDevicesByIdentity(selectableDevices);
 ```
 
 `TransportBadges`：lucide 的 `Usb` / `Wifi`，`h-3 w-3`，`flex items-center gap-1`。
-**当前使用的那条** `text-ink`，可用但未使用的 `text-ink3`。只有一种传输时只画一个。
+**当前使用的传输类型** `text-ink`，可用但未使用的类型 `text-ink3`。按
+`transportKind` 去重，同一设备有多个 WiFi serial 时只画一个 WiFi 图标；
+当前主传输属于该类型时该图标高亮。只有一种传输类型时只画一个。
 
 **画哪些传输**：只画组内 `state === "device"` 的传输；若整组都不在线
 （只可能是离线 / 未授权的 USB 条目独自成组），就画主传输那一条。
 理由是徽标要回答的是"现在能用哪几种连接"，把一条已经断掉的 USB 画成灰图标
 只会让用户以为还能切过去。`transportSummary` 的文字必须与画出来的徽标一致，
 两者由同一个 `activeTransports(merged)` 派生，不要各算各的。
+`activeTransports` 保留每种传输类型的第一条代表项并保持现有排序，
+因此徽标和可访问性文案不会因多个 IP 出现重复的 WiFi。
 
 宽度核算：状态标签「未授权」最宽约 34px，图标行 2×12+4=28px，
 右列取两者较大值约 34px；292px 菜单减去 padding 与左侧图标后，
@@ -232,9 +242,10 @@ const mergedDevices = mergeDevicesByIdentity(selectableDevices);
 
 ### DeviceSpecStrip
 
-`getDeviceSpecStripModel(device, deviceDetail)` 加第三个参数
-`transports: DeviceInfo[] = [device]`（带默认值，现有测试与调用点不受影响），
-在 `serial` 之后插一行。
+`getDeviceSpecStripModel(device, deviceDetail)` 加第三个可选参数
+`transports?: DeviceInfo[]`。通过 `if (!device) return null` 后再计算
+`const resolvedTransports = transports ?? [device]`，避免默认参数引用可空的 `device`
+造成 TypeScript 错误，并在 `serial` 之后插一行。
 
 接线位置说明：唯一的调用点在 `DeviceSpecStrip.tsx:125` 组件内部，不是外部传进来的。
 该组件已经从 store 取了 `devices`（`DeviceSpecStrip.tsx:113`），所以在组件里
@@ -242,6 +253,7 @@ const mergedDevices = mergeDevicesByIdentity(selectableDevices);
 找到所属的那一组，把 `merged?.transports ?? [device]` 传进去即可，
 不需要改 `DeviceSpecStripProps`，也不需要动父组件。合并结果用 `useMemo` 包一下，
 和 `DevicePicker.tsx:38-39` 现有的写法保持一致。
+完整详情由 6 项变为 7 项，桌面布局同步改为 `lg:grid-cols-7`，避免连接方式单独换行。
 
 插入的那一行：
 

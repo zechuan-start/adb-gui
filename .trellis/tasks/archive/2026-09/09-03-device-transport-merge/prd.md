@@ -18,9 +18,10 @@
   USB 与 WiFi 是两条完全不同的 serial，不在这个逻辑覆盖范围内。
 - **`DeviceInfo` 里没有任何可以判定"同一台物理设备"的字段**。`model` 不行
   （同型号两台会误合并），`alias_identity` 只对 mDNS 设备有值。
-- **设备列表没有轮询**：`listDevices()` 只在 App 启动（`App.tsx:95`）、
-  手动点刷新（`TopBar.tsx:142`）、WiFi 连接成功后（`WifiConnect.tsx:57`）调用。
-  所以在 `list_devices` 里为新出现的设备做一次 getprop 代价可忽略。
+- **设备列表已有轮询**：`src-tauri/src/lib.rs` 的 `start_device_poll` 每 3 秒调用一次
+  `list_devices` 并发出 `devices-updated`，`App.tsx` 订阅后写入 store；此外还有启动、
+  手动刷新和 WiFi 连接成功后的主动调用。因此新增的 getprop 链必须移出 async runtime
+  worker，并串行化整次设备列表读取，避免轮询与主动刷新重叠执行阻塞命令。
 - `selectedDevice` 是一个**裸 serial 字符串**，全应用所有面板都靠
   `getDeviceBySerial(devices, selectedDevice)` 拿设备再取 `.serial` 发命令。
   改成"设备组 ID"会波及十来个文件。
@@ -56,6 +57,8 @@
 
    边界（接受并记录）：身份只在本次进程运行内记住。App 启动时就已经离线的条目
    拿不到身份，按 Requirement 4 各自成条。
+   设备列表读取通过异步入口串行化，并用 blocking worker 执行整条同步 ADB 链，
+   后端 3 秒轮询和前端主动刷新共用这一入口。
 4. `device_id` 为 `null` 的条目**一律不参与合并**，按现状各自成条。
    拿不到身份就不猜——误合并两台设备比不合并严重得多。
 
@@ -71,6 +74,8 @@
    合并列表中某一项的主传输 serial。合并是展示层的事，不引入设备组 ID，
    不改动任何面板取 serial 的方式；`setDevices` 每次刷新都要把仍指向组内次传输的
    旧值归一到当前主传输，不能只在旧 serial 掉线或消失时才处理。
+   用户显式选择组内次传输时也必须保存该组主 serial；单独成组的 USB
+   `offline` / `unauthorized` 仍可按现有行为选中。
 8. 主传输变化时自动迁移选中项，不能变成"未选择设备"：既包括拔掉 USB 后从 USB
    落到同一 `device_id` 的在线 WiFi，也包括当前选中的 WiFi 仍在线、随后 USB 上线后
    按优先级归一到 USB。扩展 `getPreferredSelectedDeviceSerial` 现有的
@@ -93,12 +98,12 @@
 ## Out of Scope
 
 - **手动指定用哪条传输**。当前的自动优先级已经覆盖主要场景：
-  连上 WiFi → 合并进 USB 条目 → 拔掉 USB → 无缝落到 WiFi。
+  连上 WiFi → 合并进 USB 条目 → 拔掉 USB → 下一轮轮询无缝落到 WiFi。
   手动切换留作后续，本轮只保证信息可见。
 - 合并项在 UI 上展开查看各条传输明细。
-- 三条及以上传输（同一设备多个 IP）——数据结构要支持 N 条，
-  但 UI 只保证 USB + WiFi 两种图标的呈现。
-- 设备列表轮询/热插拔自动刷新（现状是手动刷新，本任务不改）。
+- 三条及以上传输（同一设备多个 IP）的逐条明细展示。数据结构支持 N 条，
+  UI 按 USB / WiFi 类型去重，同一种类型只显示一个图标。
+- 新增或调整设备列表轮询频率。沿用现有 3 秒轮询。
 - `list_devices` 之外的任何命令签名变更。
 
 ## Acceptance Criteria
@@ -119,6 +124,8 @@
 - [ ] 合并逻辑是纯函数并有单元测试，覆盖：单设备单传输、单设备双传输、
       两台设备各自双传输、`device_id` 为 null、
       **USB 离线 + WiFi 在线时主传输是 WiFi**、输出顺序保持首次出现位置。
+- [ ] 同组存在多个网络 serial 时数据层保留全部条目，但徽标与可访问性文案
+      只出现一次 WiFi；显式选择次传输后 store 仍保存该组主 serial。
 - [ ] 下拉行高仍是 `min-h-[52px]`、菜单宽仍是 `292px`，收起态在最窄
       190px 下不溢出、不破坏截断。
 - [ ] 键盘/读屏可用：仅靠 a11y label 就能知道连接方式，不依赖图标。
@@ -129,14 +136,17 @@
 - [x] 收起态到底放不放图标？→ **放**，只放当前使用的那一个，位置在状态方块之后、
       文字之前（决策与理由见 `design.md`「收起态」）。若实现时发现 190px 下确实挤坏了
       截断，允许降级成"只在下拉项里显示"，降级后必须把决定写回 `design.md`。
+- [x] 拔掉 USB 后是否需要新增热插拔轮询？→ **不需要**。仓库已有后端 3 秒轮询，
+      保留“自动切换”验收并复用现有事件链。
+- [x] 同一设备存在多个 WiFi 传输时如何显示？→ **按传输类型去重**。
+      数据层保留全部传输，UI 只显示一个 WiFi 图标，由当前主传输决定亮暗。
 
 ## Notes
 
-- **与 `09-03-app-info-read-stability` 无代码依赖**（那个任务只碰 `app_info.rs` /
-  `PackageManager.tsx`），可以并行推进。
+- `09-03-app-info-read-stability` 已在当前集成分支完成并归档。
 - **`09-03-app-info-cache` 依赖本任务**：它的缓存键复用本任务在 `DeviceInfo` 上加的
   `device_id`（不再自己发一次 `getprop ro.serialno`）。所以本任务的步骤 2、3
-  （Rust 身份字段 + 前端类型）必须先合入 `main`，那个子任务才能开工。
+  （Rust 身份字段 + 前端类型）必须先在当前集成分支完成并通过验证，那个子任务才能开工。
   这不影响本任务自身的独立性——它不依赖那两个任务的任何东西。
 - 本任务**不解决**并发问题：即使 UI 合并了，两条 serial 仍然存在（`adb devices`
   照旧返回两条，`list_devices` 不做后端合并），`09-03-app-info-read-stability`
