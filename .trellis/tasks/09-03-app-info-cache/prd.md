@@ -46,7 +46,9 @@
 - **没有 app 缓存目录的先例**：仓库只用过 `dirs::picture_dir()`（`screenshot.rs:64`）
   和 `dirs::document_dir()`（`bug_report.rs:299`、`logcat.rs:1214`），
   那些是"给用户看的产物"目录，不是缓存。本任务要新建这个约定。
-- `Cargo.toml` 无哈希/序列化以外的依赖，本任务同样不新增依赖。
+- **`Cargo.toml` 里没有任何哈希库**（现有依赖只有 serde / serde_json / tokio /
+  regex / base64 / dirs / log / chrono 及 tauri 插件）。所以设备键与超长包名的
+  哈希后缀要手写 FNV-1a 64（见 `design.md`），本任务不新增依赖。
 
 ## Requirements
 
