@@ -13,7 +13,7 @@
   "createdAt": "2026-09-03",
   "completedAt": null,
   "branch": "claude/app-info-read-stability-tj25vt",
-  "base_branch": "claude/app-info-read-stability-tj25vt",
+  "base_branch": "main",
   "worktree_path": null,
   "commit": null,
   "pr_url": null,

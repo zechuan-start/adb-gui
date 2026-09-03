@@ -6,7 +6,9 @@
 
 ```
 选中设备
-  ├─ getDeviceCacheKey(serial)          Rust: getprop ro.serialno → alias → serial
+  ├─ deviceCacheKey(device)             前端纯函数：device_id → alias_identity → serial
+  │                                     （device_id 由 09-03-device-transport-merge
+  │                                      放在 DeviceInfo 上，零 adb 往返）
   ├─ readAppInfoCache(deviceKey)        Rust: index.json + PNG → AppInfo[]（含 data URI）
   │    → 乐观首屏：立刻 setApps，同时把图标灌进内存 iconCache
   │
@@ -15,7 +17,8 @@
   │
   ├─ missingIconPackages(fresh, cached) 前端纯函数，按 (pkg, lastUpdateTime) 求差集
   │    ├─ 差集为空 → 完全不碰设备，结束
-  │    └─ 非空 → getInstalledAppIcons(serial, missing)   父任务契约，原样使用
+  │    └─ 非空 → 走父任务阶段 2 的分批调用 getInstalledAppIcons(serial, batch)
+  │              （50/批、批间守卫、超集即停），原样复用，不另写路径
   │
   └─ writeAppInfoCache(deviceKey, fresh, newIcons)
        Rust: 写新 PNG → 重写 index.json → 删掉 index 不再引用的 PNG
@@ -37,6 +40,10 @@
   index.json
   icons/<packageName>@<lastUpdateTime>.png
 ```
+
+路径里的 `<deviceKey>` 指 **`sanitize_device_key` 之后**的结果（前端传的是原始身份串，
+Rust 侧进门就 sanitize）。`index.json` 里的 `deviceKey` 字段存的也是这个安全化后的值，
+读回时可以顺手和目录名比对一次。
 
 `app_cache_dir` = `app.path().app_cache_dir()`（Tauri 2 的 `PathResolver`），
 实际落点形如 `~/Library/Caches/com.qi.adb-gui`（macOS）、
@@ -87,38 +94,54 @@ identifier 取自 `tauri.conf.json` 的 `com.qi.adb-gui`。
 
 ## 设备键
 
-```rust
-#[tauri::command]
-pub fn get_device_cache_key(app: AppHandle, serial: String) -> Result<String, String>
+**前端纯函数，不新增命令、不发 adb**：
+
+```ts
+// src/lib/device.ts
+export function deviceCacheKey(device: DeviceInfo): string;
+// device.device_id ?? device.alias_identity ?? device.serial
 ```
 
-解析顺序：`getprop ro.serialno` 非空 → 用它；否则 `alias_identity`（`device.rs:140`
-的 `mdns_alias_identity`）；否则 `serial`。
+`device_id` 由 `09-03-device-transport-merge` 放在 `DeviceInfo` 上
+（`list_devices` 时解析：`getprop ro.serialno` → `ro.boot.serialno`，
+在线条目每次刷新都实时解析，非在线条目沿用最近一次在线时的结果）。
+本任务直接用，不再自己发 getprop、不再有
+`get_device_cache_key` 命令——同一个属性读两遍、缓存两份、回退链还不一样，
+是纯粹的重复实现，也是同一台设备"UI 合并成一条"却"缓存存两份"的来源。
 
-`ro.serialno` 放第一位除了稳定，还有个额外好处：同一台设备无论插 USB 还是连 Wi-Fi，
+`device_id` 排第一位除了稳定，还有个额外好处：同一台设备无论插 USB 还是连 WiFi，
 都会落到**同一份缓存**上（同设备的应用集、locale、density 一致，缓存本就该共享）。
 用 serial 的话这两种连接方式会各存一份。
 
+拿不到 `device_id` 时（设备读不到 `ro.serialno` / `ro.boot.serialno`，
+或者它非在线且本次运行里从没在线过）退到 `alias_identity`，再退到 `serial`——
+退化的后果只是缓存分成两份，功能不受影响，不需要报错。
+
 ### 同时连接两种传输
 
-USB 与 Wi-Fi **同时**连着时，`adb devices` 会列出两条不同 serial
-（`device.rs:128-136` 的去重只处理 mDNS 端口别名，不合并这两条），
-它们解析出同一个 deviceKey → 共享同一个缓存目录。共享是对的，但带来两点：
+USB 与 WiFi **同时**连着时，`adb devices` 会列出两条不同 serial
+（`device.rs:128-136` 的去重只处理 mDNS 端口别名，不合并这两条；
+`09-03-device-transport-merge` 的合并只发生在展示层，后端仍是两条），
+它们派生出同一个 deviceKey → 共享同一个缓存目录。共享是对的，但带来两点：
 
 1. **写入必须按 deviceKey 加锁**。父任务的全局 helper 锁只覆盖 `app_process` 调用，
    `write_app_info_cache` 不在它下面。两条 serial 各自完成加载后并发写同一个目录，
    剪枝阶段可能删掉对方 index 刚引用的 PNG。后果不严重（读侧会把缺失的 PNG
    当成 miss 重取，自愈），但没有理由留着——加一把
-   `OnceLock<std::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>`
-   按 deviceKey 取锁即可。取外层锁拿到 `Arc` 后**立即释放外层**，再 await 内层，
-   不要跨 `await` 持有 `std::sync::MutexGuard`。
-2. **内存 iconCache 的键仍以 serial 打头**，所以在两条 serial 之间切换时，
-   内存缓存不命中，会走一次磁盘缓存读取——不发设备请求，代价只是几十毫秒的
-   PNG 读 + base64。可以接受。若想让切换也瞬时，把内存键的 `serial` 换成
-   `deviceKey`（那时 deviceKey 已经拿到并记住了）；**这是可选优化，不是验收项**，
-   别为它把 `loadApps` 的时序搞复杂。
+   `OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>>`（**全部是
+   `std::sync::Mutex`**）按 deviceKey 取锁即可：取外层锁拿到 `Arc` 后立即释放外层，
+   再锁内层。
+   缓存命令是**同步**的 `#[tauri::command] pub fn`、只做文件 I/O，
+   全程没有 `await`，所以不需要 `tokio::sync::Mutex`，也就没有"跨 await 持有
+   `std::sync::MutexGuard`"的问题。（初版把命令写成同步 `fn` 却要求 await
+   一把 `tokio::sync::Mutex`，那是写不出来的，已修正。）
+2. **内存 iconCache 的键改成以 deviceKey 打头**（不是 serial）。这不是可选优化：
+   `09-03-device-transport-merge` 会让主传输在 USB 掉线时自动落到 WiFi，
+   `selectedDevice` 那个裸 serial 会变，键里带 serial 的话内存缓存会整片失效、
+   白跑一轮磁盘读。deviceKey 在 `loadApps` 第 1 步就拿到了（纯函数，无异步），
+   拿它当键不会让时序变复杂。
 
-安全化：
+安全化（在 Rust 侧做，前端传原始身份串）：
 
 ```rust
 fn sanitize_device_key(raw: &str) -> String
@@ -133,22 +156,24 @@ fn sanitize_device_key(raw: &str) -> String
 
 新模块 `src-tauri/src/commands/app_info_cache.rs`，在 `lib.rs` 的 `invoke_handler` 注册。
 
+**两个命令，都是同步 `fn`**（只做文件 I/O，没有 `await`）：
+
 ```rust
 #[tauri::command]
-pub fn get_device_cache_key(app, serial) -> Result<String, String>
-
-#[tauri::command]
-pub fn read_app_info_cache(app, device_key: String) -> Result<Vec<AppInfo>, String>
+pub fn read_app_info_cache(app: AppHandle, device_key: String) -> Result<Vec<AppInfo>, String>
 // 无缓存/损坏/版本不符 → Ok(vec![])，绝不 Err
 
 #[tauri::command]
 pub fn write_app_info_cache(
-    app,
-    device_key: String,
-    apps: Vec<AppInfo>,          // 全量元数据，icon 字段忽略；同时是剪枝的全集
+    app: AppHandle,
+    device_key: String,           // 前端传来的原始身份串，函数内部再 sanitize
+    apps: Vec<AppInfo>,           // 全量元数据，icon 字段忽略；同时是剪枝的全集
     new_icons: Vec<AppIconEntry>, // 只有本轮新取到的图标
 ) -> Result<(), String>
 ```
+
+**没有 `get_device_cache_key`**：设备键由前端从 `DeviceInfo.device_id` 派生
+（见「设备键」）。
 
 `write` 只收新图标，不回传已缓存的那几 MB——否则每次打开面板都要把 8MB base64
 再从前端搬回 Rust。
@@ -204,23 +229,28 @@ export function missingIconPackages(fresh: AppInfo[], cachedIcons: Map<string, s
 ### 内存 iconCache 的键要统一
 
 `PackageManager.tsx:21` 现有的模块级 `iconCache` 键是 `serial\0packageName`。
-改成 `serial\0packageName\0lastUpdateTime`。
+改成 **`deviceKey\0packageName\0lastUpdateTime`**，两处都要改：
 
-这不只是为了对齐——现在这个键有个真实的小 bug：应用在面板开着的时候被更新了，
-内存里的旧图标会一直用下去。加上 `lastUpdateTime` 顺手修掉。
-降级路径的 `fallbackAppInfo` 把 `lastUpdateTime` 置 0，键变成 `serial\0pkg\00`，
+- `serial` → `deviceKey`：同一台设备的 USB / WiFi 两条传输共享内存缓存。
+  这条在 `09-03-device-transport-merge` 之后是必需的——主传输会在 USB 掉线时
+  自动落到 WiFi，`selectedDevice` 变了，键里带 serial 的话内存缓存整片失效。
+- 追加 `lastUpdateTime`：现在这个键有个真实的小 bug——应用在面板开着的时候被更新了，
+  内存里的旧图标会一直用下去。顺手修掉，也与磁盘缓存的失效键对齐。
+
+降级路径的 `fallbackAppInfo` 把 `lastUpdateTime` 置 0，键变成 `deviceKey\0pkg\00`，
 一致且无害。
 
 ### loadApps 流程
 
 在父任务两阶段的基础上插入缓存，**阶段 1 的地位不变**：
 
-1. `deviceKey = await getDeviceCacheKey(serial)`（每设备记住一次）
+1. `deviceKey = deviceCacheKey(device)`（**同步纯函数**，不是 await，也不需要记忆化）
 2. `readAppInfoCache(deviceKey)` → 非空则 `setApps(cached)`、灌 iconCache、
    `setLoading(false)`（首屏已经有东西可看了）
 3. `getInstalledApps(serial)` → `setApps(fresh)` **无条件覆盖**
 4. `missingIconPackages(fresh, cachedIcons)` → 空则跳过第 5 步
-5. `getInstalledAppIcons(serial, missing)` → 回填 iconCache
+5. 差集非空 → 走父任务阶段 2 的分批循环 `getInstalledAppIcons(serial, batch)`
+   （50/批、批间 requestId 守卫、超集即停），回填 iconCache
 6. `writeAppInfoCache(deviceKey, fresh, newIcons)`（不 await，失败只 `console.error`）
 
 **竞态守卫**（两条，都必须有）：
@@ -242,12 +272,16 @@ export function missingIconPackages(fresh: AppInfo[], cachedIcons: Map<string, s
 2. 图标失败静默降级，不弹 toast、不出黄条——缓存读写失败同样适用。
 3. `get_installed_apps` / `get_installed_app_icons` / `get_app_icon` /
    `list_packages` 的签名与行为不变。本任务只**增加**命令。
+4. 图标请求一律走父任务阶段 2 那条分批循环（50/批、批间守卫、超集即停），
+   本任务只改"这一轮要请求哪些包"，不改调用方式。
 
 ## 风险与回滚
 
-- 回滚粒度：不注册这三个命令、`loadApps` 去掉第 1/2/6 步即可，
+- 回滚粒度：不注册这**两个**命令、`loadApps` 去掉第 1/2/6 步即可，
   回到父任务交付的状态。不碰 `Main.java`，不需要重建 dex。
+  内存 `iconCache` 的键改造要一起回退（否则键里的 `deviceKey` 没人算）。
 - 需要重点 review：写入顺序（PNG → index → 剪枝，顺序错了会产生指向坏文件的 index）、
   `phase1DoneRef` 守卫（漏了就会出现"缓存赢了新数据"）、
   `sanitize_device_key` 的哈希后缀（漏了会让两台设备共用一个目录）、
-  以及 deviceKey 写锁（漏了在同设备双传输场景下会互相剪掉对方的 PNG）。
+  deviceKey 写锁（漏了在同设备双传输场景下会互相剪掉对方的 PNG）、
+  以及 `iconCache` 键改造的调用点（漏一个的症状是图标一直不显示且不报错）。

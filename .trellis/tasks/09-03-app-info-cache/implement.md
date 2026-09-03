@@ -1,24 +1,30 @@
 # Implement Plan: 应用信息本地缓存
 
-分支：`claude/app-info-read-stability-tj25vt`（与父任务同分支）
+分支：`claude/app-info-cache`，在下面三条门禁都进了 `main` 之后从 `main` 开。
 
 ## 开工前的门禁
 
-> **⚠️ 规划复审未完成**：用户已指出本任务的规划产物存在若干处矛盾，尚未定位与修订
-> （2026-09-03 记录）。开工前必须先和用户过一遍 `prd.md` / `design.md` / 本文件，
-> 修订完再动手。**不要带着已知矛盾开始实现**，也不要自行猜测该按哪一边执行。
-> 这不阻塞父任务 `09-03-app-info-read-stability`，那个可以照常推进。
+> **规划复审已完成（2026-09-03）**：上一版产物里的矛盾已定位并修订，主要是
+> ① 设备键自己发一遍 `getprop ro.serialno`，与 `09-03-device-transport-merge` 的
+> `device_id` 重复实现且回退链不一致；② 命令写成同步 `fn` 却要求 await 一把
+> `tokio::sync::Mutex`；③ PRD 结尾还写着"design/implement 待写"。
+> 现在的方案是：**设备键 = `DeviceInfo.device_id ?? alias_identity ?? serial`（前端纯函数）
+> + 两个同步命令 + `std::sync::Mutex` 写锁**。照现在的三份文档执行即可。
 
-父任务 `09-03-app-info-read-stability` 必须已完成，且下面两条**实际验证过**，
-不是"代码看起来支持"：
+下面三条必须**实际验证过**，不是"代码看起来支持"：
 
-- [ ] `get_installed_app_icons(serial, packages)` 的包名过滤在真机上生效
-      （父任务 `implement.md` 验证计划第 2 条最后一项：3 个包名调一次，
-      只返回 3 项且明显更快）
+- [ ] 父任务 `09-03-app-info-read-stability` 已完成，且
+      `get_installed_app_icons(serial, packages)` 的包名过滤在真机上生效
+      （父任务 `implement.md` 验证计划第 2 条）
 - [ ] `src-tauri/resources/app-info.dex` 已用 `build.sh` 重建并提交
+- [ ] `09-03-device-transport-merge` 的 Rust 身份字段已合入 `main`：
+      `DeviceInfo.device_id` 在前端拿得到
 
-第 2 条不满足的话，旧 dex 会忽略过滤返回全集——功能不坏，但**一点都不会变快**，
-本任务等于白做。两条不齐就停下来问，不要开工。
+第 2 条不满足的话，旧 dex 会忽略过滤返回全集——功能不坏（父任务的超集检测会兜住），
+但**一点都不会变快**，本任务等于白做。
+第 3 条不满足的话，`deviceCacheKey` 没有 `device_id` 可用，会退化成按 serial 分库，
+同一台设备的 USB / WiFi 各存一份，本任务的一半价值没了。
+三条不齐就停下来问，不要开工，更不要自己在本任务里再实现一遍 `ro.serialno` 解析。
 
 ---
 
@@ -29,7 +35,7 @@
 先把不碰文件系统的部分写完并测过：
 
 - `sanitize_device_key(raw: &str) -> String` —— 非法字符替换 + 截断 64 + `-<hash:08x>` 后缀。
-  测试：含 `:` 的 Wi-Fi serial、纯字母数字 serial、超长输入被截断、
+  测试：含 `:` 的 WiFi serial、纯字母数字 serial、超长输入被截断、
   **`192.168.1.5:5555` 与 `192.168.1.5_5555` 必须产出不同结果**（这是加哈希后缀的理由）。
 - `icon_file_name(package_name: &str, last_update_time: i64) -> String` ——
   正常返回 `<pkg>@<ts>.png`；总长超 200 时退化成 `<fnv1a_64(pkg):016x>@<ts>.png`。
@@ -57,14 +63,16 @@
    **任何路径都不返回 `Err`。**
 5. `write_app_info_cache`：顺序必须是 **写 PNG → 写 index.json → 剪枝**。
    `lastUpdateTime <= 0` 的应用跳过不缓存。非法 data URI 跳过该图标但不中断整次写入。
-6. `get_device_cache_key`：`getprop ro.serialno` → `alias_identity` → `serial`，
-   再过 `sanitize_device_key`。
+6. 两个命令都是**同步** `#[tauri::command] pub fn`，内部先把传进来的原始身份串
+   过一遍 `sanitize_device_key` 再拼路径。**不要新增 `get_device_cache_key`**
+   ——设备键由前端从 `DeviceInfo.device_id` 派生（步骤 3）。
 7. **按 deviceKey 的写锁**：`write_app_info_cache` 全程持有。同一台设备同时接
-   USB 和 Wi-Fi 时会有两条 serial 落到同一个缓存目录（见 `design.md`
+   USB 和 WiFi 时会有两条 serial 落到同一个缓存目录（见 `design.md`
    「同时连接两种传输」），父任务的全局 helper 锁覆盖不到这里。
-   外层 `std::sync::Mutex<HashMap<..>>` 取出 `Arc<tokio::sync::Mutex<()>>` 后
-   **立即释放外层**再 await 内层。
-8. `lib.rs` 的 `invoke_handler` 注册这三个命令。
+   `OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>>`，**内外层都是
+   `std::sync::Mutex`**：命令是同步的、只做文件 I/O，全程没有 `await`，
+   用不上 `tokio::sync::Mutex`。外层锁取出 `Arc` 后立即释放，再锁内层。
+8. `lib.rs` 的 `invoke_handler` 注册这**两个**命令。
 
 文件系统测试参照 `device_files.rs:804-834` 的写法（`std::env::temp_dir()` +
 pid + 纳秒时间戳建目录，用完 `remove_dir_all`），不引入 tempfile 依赖。
@@ -75,6 +83,12 @@ pid + 纳秒时间戳建目录，用完 `remove_dir_all`），不引入 tempfile
 （本模块大量使用"吞掉错误返回默认值"的写法，要确认它在项目里的既有表达方式）。
 
 ## 3. 前端纯函数
+
+`src/lib/device.ts` 加 `deviceCacheKey(device)`（`device_id ?? alias_identity ?? serial`），
+`src/lib/device.test.ts` 补测试：三级回退各一条、
+**同一台设备的 USB 条目与 WiFi 条目（serial 不同、`device_id` 相同）得到同一个键**。
+放 `device.ts` 而不是 `appInfo.ts`，因为它的输入是 `DeviceInfo`，
+和 `getDeviceBySerial` / `mergeDevicesByIdentity` 是同一族。
 
 `src/lib/appInfo.ts` 加 `appIconKey` 与 `missingIconPackages`，
 `src/lib/appInfo.test.ts` 补测试。至少覆盖 PRD 验收条件点名的三种变更：
@@ -87,17 +101,22 @@ pid + 纳秒时间戳建目录，用完 `remove_dir_all`），不引入 tempfile
 
 ## 4. 前端桥接层
 
-`src/lib/tauri.ts` 加 `getDeviceCacheKey` / `readAppInfoCache` / `writeAppInfoCache`
-三个函数，紧邻 `getInstalledAppIcons`。
+`src/lib/tauri.ts` 加 `readAppInfoCache` / `writeAppInfoCache` 两个函数，
+紧邻 `getInstalledAppIcons`。（没有 `getDeviceCacheKey`——设备键是前端纯函数。）
 
 ## 5. 前端面板接线
 
 `src/components/PackageManager.tsx`：
 
-1. `iconCache` 的键从 `serial\0packageName` 改成 `serial\0packageName\0lastUpdateTime`。
+1. `iconCache` 的键从 `serial\0packageName` 改成
+   **`deviceKey\0packageName\0lastUpdateTime`**（两处都要改，理由见 `design.md`
+   「内存 iconCache 的键要统一」：`selectedDevice` 会在主传输 USB→WiFi 切换时变，
+   键里带 serial 会让内存缓存整片失效）。
    `appIconCacheKey` 辅助函数同步改签名——**所有调用点都要跟着改**，
    漏一个就会读不到刚写进去的图标。改之前先 `grep -n "appIconCacheKey" src/`。
-2. `loadApps` 按 `design.md`「loadApps 流程」的 6 步接线。
+2. `loadApps` 按 `design.md`「loadApps 流程」的 6 步接线。第 1 步的
+   `deviceCacheKey(device)` 是同步纯函数，不要写成 `await`，也不需要 state 缓存。
+   第 5 步复用父任务阶段 2 的分批循环，只把"请求哪些包"换成差集。
 3. 加 `phase1DoneRef`：阶段 1 已返回时丢弃迟到的缓存结果。
    这条漏了就会出现"缓存赢了新数据"，是 PRD 验收条件点名的失败模式。
 4. 第 6 步 `writeAppInfoCache` 不 await，失败只 `console.error`，不弹 toast。
@@ -130,15 +149,22 @@ pnpm build
 4. **首屏不被缓存赢**：在有缓存的设备上打开面板，确认最终显示的是新数据。
 5. **损坏恢复**：手动删掉 `index.json`、写坏它、删掉某个 PNG，
    三种情况各打开一次面板——都要能正常加载，不弹错、不出黄条。
-6. **多设备隔离**：两台设备各自缓存互不影响；用 Wi-Fi 连接（serial 含 `:`）
+6. **多设备隔离**：两台设备各自缓存互不影响；用 WiFi 连接（serial 含 `:`）
    确认缓存目录名合法且能建出来。
-7. **USB / Wi-Fi 同设备，先后连接**：同一台设备分别用 USB 和 Wi-Fi 连接，
-   确认走的是同一份缓存（这是 `ro.serialno` 排第一位的收益；
-   若该设备读不到 `ro.serialno`，会退化成两份缓存，属于预期行为，记录即可）。
-8. **USB / Wi-Fi 同设备，同时连接**：两种方式同时连上，`adb devices` 出现两条 serial，
-   在两条之间反复切换选中。确认：两条走同一份缓存目录、切换不产生重复的全量图标读取、
-   缓存目录没有被剪坏（`index.json` 引用的 PNG 都还在）。
-   这条验的是 deviceKey 写锁；顺带也覆盖父任务全局 helper 锁的同一场景。
+7. **USB / WiFi 同设备，先后连接**：同一台设备分别用 USB 和 WiFi 连接，
+   确认走的是同一份缓存目录，且第二次连接时**不重新拉全量图标**
+   （这是 `device_id` 排第一位的收益；若该设备读不到 `device_id`，
+   会退化成按 serial 存两份，属于预期行为，记录即可）。
+8. **USB / WiFi 同设备，同时连接**：两种方式同时连上，`adb devices` 出现两条 serial。
+   `09-03-device-transport-merge` 合入后下拉里只剩合并后的一条，**没法再从 UI 上
+   在两条之间切换**，所以这条这样验：
+   - 主路径：拔掉 USB → 刷新 → 主传输落到 WiFi → 打开应用面板，
+     确认**内存 iconCache 仍然命中**（图标立刻在，不重新请求），
+     缓存目录仍是同一个。这条验的正是"内存键用 deviceKey 而不是 serial"。
+   - 写锁：合并之后两条 serial 同时写缓存的概率很低，但锁很便宜、留着防御。
+     真要构造，临时把 `DevicePicker` 换回 `getSelectableDevices`
+     （父任务验证计划第 4 条同样的临时改法），在两条之间反复切换，
+     确认缓存目录没被剪坏（`index.json` 引用的 PNG 都还在）。
 
 ### 回归观察点
 
@@ -148,8 +174,8 @@ pnpm build
 
 ## 风险点 / 回滚
 
-- 回滚：不注册三个命令 + `loadApps` 去掉第 1/2/6 步，即回到父任务的状态。
-  不碰 `Main.java`，不需要重建 dex。
+- 回滚：不注册这两个命令 + `loadApps` 去掉第 1/2/6 步 + `iconCache` 键改回去，
+  即回到父任务的状态。不碰 `Main.java`，不需要重建 dex。
 - 最容易写错的三处：写入顺序（PNG → index → 剪枝）、`phase1DoneRef` 守卫、
   `sanitize_device_key` 的哈希后缀。
 - `iconCache` 键改造要 grep 全部调用点，漏一个的症状是"图标一直不显示"
@@ -157,6 +183,6 @@ pnpm build
 
 ## Follow-up（`task.py start` 前需要确认）
 
-- [ ] 上方两条开工门禁均已满足
-- [ ] 用户已阅读并认可 `prd.md` / `design.md` / 本文件
+- [ ] 上方**三条**开工门禁均已满足（父任务过滤生效 + dex 已重建 + `device_id` 已合入）
+- [ ] 用户已阅读并认可 `prd.md` / `design.md` / 本文件（2026-09-03 复审版）
 - [ ] 明确真机验证由用户完成，会话内只保证纯函数与类型检查

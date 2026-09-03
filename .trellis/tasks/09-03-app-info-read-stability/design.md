@@ -5,13 +5,18 @@
 ```
 前端 PackageManagerPanel.loadApps()
   ├─ 阶段 1（阻塞渲染）: getInstalledApps(serial)
-  │    Rust get_installed_apps  --no-icons   超时 45s  重试 1 次
+  │    Rust get_installed_apps  --no-icons   超时 45s
   │    → Vec<AppInfo>（icon 字段全为空串）→ 立即 setApps + 关 loading
   │
-  └─ 阶段 2（后台，不阻塞）: getInstalledAppIcons(serial)
-       Rust get_installed_app_icons  --icons-only  超时 90s  重试 1 次
-       ├─ 成功 → 回填 iconCache + setIcons，iconMode = "bulk-done"
-       └─ 失败 → 静默 iconMode = "lazy"，启用既有的可见区逐包 get_app_icon
+  └─ 阶段 2（后台，不阻塞）: 把阶段 1 的包名按 50 一批，顺序调用
+       getInstalledAppIcons(serial, batch)
+       Rust get_installed_app_icons  --icons-only <pkg...>   超时 90s / 批
+       ├─ 每批成功 → 回填 iconCache + setIcons（图标渐进出现）
+       ├─ 某批返回了请求集之外的包名（旧 dex 忽略过滤）→ 全部收下并停止后续批次
+       ├─ 全部批次完成 → iconMode = "bulk-done"
+       └─ 任一批失败 → 已回填的保留，其余静默 iconMode = "lazy"，
+                        启用既有的可见区逐包 get_app_icon
+       每批发出前都要过 requestId 守卫：切设备后不再发下一批。
 
 Rust 两条命令共用一层封装 run_app_info_helper(app, serial, mode)：
   1. 取全局锁（一把 tokio::sync::Mutex，所有设备所有调用串行 —— 见「全局串行化」）
@@ -86,6 +91,8 @@ export async function getInstalledAppIcons(
 **调用方必须容忍返回的是请求集的超集**：旧 dex 会忽略过滤参数返回全部图标。
 按 `packageName` 索引写入缓存即可，多出来的条目无害，不要断言
 `result.length === packages.length`。
+更进一步：出现超集就意味着"设备上的 dex 不认过滤"，此时应当**停止后续批次**
+（见「前端设计」的超集检测）——这既是兼容，也是性能保护。
 
 ## Rust 侧设计
 
@@ -96,9 +103,17 @@ const PAYLOAD_SENTINEL: &str = "--ADBGUI-APPINFO-V1--";
 const REMOTE_DEX_DIR: &str = "/data/local/tmp";
 const REMOTE_DEX_PREFIX: &str = "adb-gui-app-info-";   // 完整名: <prefix><hash16>.dex
 const METADATA_TIMEOUT: Duration = Duration::from_secs(45);
-const ICONS_TIMEOUT: Duration = Duration::from_secs(90);
+const ICONS_TIMEOUT: Duration = Duration::from_secs(90);   // 单批预算，不是整轮回填
 const PUSH_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// `app_process` 超时后置位；下一次调用强制重推 dex 并清零。
+/// 进程级（与全局锁同粒度），被别的 serial 消费掉也无害——只是多推一次 5KB。
+static FORCE_PUSH_NEXT: AtomicBool = AtomicBool::new(false);
 ```
+
+`ICONS_TIMEOUT` 之所以还留 90s：新 dex 下单批 50 个图标只要几秒，预算宽松不花钱；
+而旧 dex 会忽略过滤，第一批就是一次全量渲染，需要这个预算才不至于直接超时。
+注意**超时预算不等于持锁时长**——持锁时长是实际耗时，分批之后正常路径就是几秒。
 
 `REMOTE_DEX_PATH` 常量删除。注意旧的固定路径
 `/data/local/tmp/adb-gui-app-info.dex` 会作为历史残留留在用户设备上（几 KB），
@@ -134,11 +149,16 @@ fn build_helper_command(remote: &str, mode: HelperMode, filter: &[String]) -> St
 - `build_helper_command`：
   `CLASSPATH=<remote> app_process <dir> com.adbgui.appinfo.Main <mode.arg()> <pkg...>`，
   包名之间空格分隔。因为已经做过字符集白名单，这里不需要引号。
-- 分批在 `get_installed_app_icons` 这一层做：过滤集为空 → 单次无过滤调用；
-  非空 → 按 `ICON_FILTER_BATCH` 切块，**顺序**执行（不要并发，全局锁本来就
-  会把它们串起来，并发只会制造锁竞争），结果拼接后返回。
-  任何一批失败即整体 `Err`——图标是尽力而为的，部分成功的语义会让调用方缓存进
-  一个不完整的状态，不值得。
+- **主分批者是前端**（见「前端设计」）：它拿着阶段 1 的包名列表，按 50 一批调用，
+  每批之间可以过 requestId 守卫、可以停止。Rust 侧不知道用户切没切设备，做不到这点。
+- Rust 侧的分批是**防御性**的：`get_installed_app_icons` 收到超过
+  `ICON_FILTER_BATCH` 的过滤集时自己切块、**顺序**执行（不要并发，全局锁本来就
+  会把它们串起来，并发只会制造锁竞争），结果拼接后返回；
+  过滤集为空 → 单次无过滤调用。
+  一次调用内部的任何一批失败即整体 `Err`——图标是尽力而为的，
+  部分成功的语义会让调用方缓存进一个不完整的状态，不值得。
+  （注意这里说的是"一次命令调用内部"。前端多批之间是独立调用，
+  某一批失败不影响前面已经回填的图标，见「前端设计」。）
 
 这三个函数都是纯函数，必须有单元测试：合法/非法包名、去重、空输入、
 恰好等于批大小、批大小 +1、命令串拼装结果。
@@ -156,7 +176,7 @@ fn helper_lock() -> &'static tokio::sync::Mutex<()> {
 项目未引入 `once_cell`，用标准库的 `std::sync::OnceLock` 即可，无新依赖。
 一把锁，不需要 HashMap，也就没有"跨 await 持有 std MutexGuard"的坑。
 
-**为什么必须是全局锁**：一台设备可以同时通过 USB 和 Wi-Fi 连接，
+**为什么必须是全局锁**：一台设备可以同时通过 USB 和 WiFi 连接，
 `adb devices` 会列出两条不同 serial（`device.rs:128-136` 的去重只处理 mDNS
 端口别名，不合并这两条），但它们指向**同一台设备上的同一个**远程 dex 路径——
 路径由 dex 内容哈希决定，与 serial 无关。per-serial 锁锁不住彼此：
@@ -164,7 +184,23 @@ fn helper_lock() -> &'static tokio::sync::Mutex<()> {
 双双 push，后者截断前者正在执行的 dex → dex verify 崩溃 → 非零退出不重试 → 黄条。
 那就是本节要修的 bug 换个入口重现。
 
-代价接近零：面板永远只加载当前选中的那一台设备，本就不存在多设备并发加载。
+**代价不是零，必须正视**：阶段 2 是不 await 的后台调用，所以"只加载当前选中设备"
+并不成立——用户在图标回填跑着的时候切到另一台设备，新设备的阶段 1 就会卡在
+`helper_lock().lock().await` 上，而这个等待发生在超时预算之外，UI 只会一直转圈。
+这是本设计自己制造的并发，不能用"面板只加载一台设备"糊过去。
+
+压住它靠两条，缺一不可：
+
+1. **阶段 2 按包名分批**（50/批）。持锁时长从"渲染全部图标"（几十秒）降到
+   "渲染 50 个图标"（几秒），新设备的元数据最多等一批。
+2. **前端切设备后不再发送后续批次**（requestId 守卫）。已经发出去的那一批
+   无法取消，所以第 1 条决定了最坏等待。
+
+残留代价：**旧 dex** 忽略过滤，第一批就是一次全量渲染，这一批跑完之前锁放不开
+（最坏接近 `ICONS_TIMEOUT`）。重建 dex 后消失，接受并记录。
+不为它引入取消机制（在 Rust 侧杀子进程 / generation 计数）——那要新增同步原语，
+复杂度和出错面都高于它能省下的那点等待。
+
 将来真需要并发加载多设备，改成"远程路径按调用唯一化 + 用完清理"，
 不要退回 per-serial。
 
@@ -192,10 +228,11 @@ fn ensure_dex_pushed(app, serial, local_path, bytes_len, remote_path, force)
 行为：
 
 1. `force == false` 时先探测：`adb -s <serial> shell ls -l <remote>`（带 `PUSH_TIMEOUT`）。
-   从输出里解析出字节数，与本地 `bytes_len` 相等 → 直接返回 `Ok(())`，跳过 push。
+   从输出里解析出字节数，与本地 `bytes_len` 相等 → **返回 `Ok(false)`**（跳过 push）。
    解析失败/文件不存在/命令失败 → 一律当作"需要 push"，不视为错误。
 2. 执行 `adb -s <serial> push <local> <remote>`，用 `prepare_async_command` +
-   `tokio::time::timeout(PUSH_TIMEOUT, ...)`。失败或超时 → `Err`。
+   `tokio::time::timeout(PUSH_TIMEOUT, ...)`，成功 → **返回 `Ok(true)`**；
+   失败或超时 → `Err`。
 
 `ls -l` 的输出格式在各 ROM 上有差异，因此解析必须写成"尽力而为"：
 按空白切分，取**第一个能解析成 u64 且等于 bytes_len 的字段**即算命中。
@@ -230,19 +267,20 @@ async fn run_app_info_helper<T>(app, serial, mode) -> Result<Vec<T>, String>
 
 ```
 _guard = helper_lock().lock().await          // 全局锁，与 serial 无关
+force_push = FORCE_PUSH_NEXT.swap(false)     // 上一次超时留下的标志，消费掉
 for attempt in 0..=1 {
-    force_push = attempt > 0;
     pushed_fresh = match ensure_dex_pushed(..., force_push) {
         Ok(pushed) => pushed,
-        Err(_) if attempt == 0 => continue,       // push 失败 → 重试
+        Err(_) if attempt == 0 => { force_push = true; continue; }  // push 失败 → 重试
         Err(e)                 => return Err(e),
     };
     spawn app_process, timeout(mode.timeout())
-      ├ 超时      → attempt==0 ? continue : return Err("... timed out ...")
-      ├ 非零退出  → if !pushed_fresh && attempt == 0 {
-      │                continue          // 跑的是跳过 push 的旧文件 → 强制重推再试一次
+      ├ 超时      → FORCE_PUSH_NEXT.store(true);        // 下次（用户点「重试」）强制重推
+      │             return Err("... timed out ...")     // 本轮不自动重试
+      ├ 非零退出  → if !pushed_fresh {
+      │                force_push = true; continue;   // 跑的是跳过 push 的旧文件 → 重推再试
       │             } else {
-      │                return Err(ROM 不兼容)   // 刚推的新文件还失败 → 重试无意义
+      │                return Err(ROM 不兼容)          // 刚推的新文件还失败 → 重试无意义
       │             }
       └ 成功      → return parse_helper_output(stdout)
                      （解析失败也直接 return Err，不重试）
@@ -250,9 +288,17 @@ for attempt in 0..=1 {
 ```
 
 要点：
-- 重试触发条件共三条：**超时**、**push 失败**、
+- 重试触发条件共**两条**：**push 失败**、
   以及**"跳过了 push 的那一轮"非零退出**（损坏 dex 自愈）。
   JSON 解析失败不重试。
+- **超时不自动重试**（规划期修订，原方案会重试）。原因：超时基本是"这台设备 /
+  这个 dex 就是慢"，重推一次不会更快，只会让用户等两个超时预算才看到黄条
+  ——旧 dex 路径尤其明显（45s 变 90s）。取而代之的是置 `FORCE_PUSH_NEXT`：
+  用户点黄条上的「重试」时那一轮会强制重推，从而覆盖"损坏 dex 把进程挂住"
+  这种少数情况。**这与下面的非零退出自愈是两条独立路径，不要合并实现**：
+  挂住 → 靠标志 + 用户重试；非零退出 → 同一轮内自动重推重试。
+- 循环最多两轮，第二轮 `force_push` 必为 `true`，所以 `pushed_fresh` 必为 `true`，
+  非零退出必然 `return Err`，不会死循环。
 - **损坏 dex 自愈**是这里最容易被漏掉的一条。`ensure_dex_pushed` 靠 `ls` 的字节数
   判断能否跳过 push，而字节数相同不代表内容没坏（进程被杀留下的半截文件、
   文件系统损坏、被别的东西覆写）。若非零退出就一律判 ROM 不兼容，
@@ -260,8 +306,7 @@ for attempt in 0..=1 {
   没有任何路径能让它恢复。所以必须区分"跑的是旧文件"和"跑的是刚推的新文件"。
 - 反过来，`pushed_fresh == true` 时非零退出**立刻**返回错误，即使还在 attempt 0。
   文件是新的，再推一次只是让用户多等一倍。
-- 重试时 `force_push = true`，所以第二轮的 `pushed_fresh` 必然是 `true`，
-  第二次非零退出必然走到 `return Err`，不会死循环。
+- 超时那条错误文案要让用户知道"可以点重试"，因为下一轮会强制重推。
 - ROM 不兼容那条错误信息里带上"dex 为本轮新推送"的说明，
   这样用户看到「详情」时能区分"文件坏了"和"这台设备真的不支持"。
 - 错误信息必须包含 `adb_output_error(&output)`（即 stderr），A5 的「详情」依赖它。
@@ -376,11 +421,30 @@ const [iconMode, setIconMode] = useState<IconMode>("bulk-pending");
    然后 **不 await** 地发起阶段 2
 3. 失败：`setFallback({ reason: String(bulkError) })`，走现有 `listPackages` 降级，
    `setIconMode("lazy")`
-4. 阶段 2 `getInstalledAppIcons(serial)`（**本轮不传 packages，即取全部**）：
-   成功则写入模块级 `iconCache` 并 `setIcons(new Map(iconCache))`、
-   `setIconMode("bulk-done")`；失败则 `setIconMode("lazy")`（**不弹 toast、不显示黄条**——
-   图标缺失会由懒加载补上，不是需要用户知晓的降级）。
-   写入时按返回项的 `packageName` 逐条索引，不要假设返回集与请求集一一对应。
+4. 阶段 2：把阶段 1 结果的包名按 `ICON_BATCH_SIZE = 50` 切块，`for` 循环**顺序
+   await** 每一批 `getInstalledAppIcons(serial, batch)`：
+   - 每批发出前先过 requestId 守卫，不匹配就直接 return（切设备后不再发下一批）。
+   - 每批返回后按 `packageName` 逐条写入模块级 `iconCache`，
+     再 `setIcons(new Map(iconCache))` —— 图标一批一批地出现。
+   - **超集检测**：这一批返回的条目里出现了 `batch` 之外的包名，说明设备上是旧 dex
+     （忽略过滤、返回全集）。把它们全部收下，然后 `setIconMode("bulk-done")` 并
+     **跳出循环**，不要再发后续批次——否则每一批都会让旧 dex 重跑一次全量渲染。
+   - 全部批次跑完 → `setIconMode("bulk-done")`。
+   - 任一批抛错 → `setIconMode("lazy")` 并跳出（**不弹 toast、不显示黄条**——
+     图标缺失会由懒加载补上，不是需要用户知晓的降级）。已回填的图标留在 `iconCache`
+     里，懒加载 effect 只会去取还没有的那些，天然不重复。
+
+   切块用一个纯函数（放 `src/lib/appInfo.ts`，配 `appInfo.test.ts`）：
+   `chunkPackages(names: string[], size: number): string[][]`。
+   超集判断同样抽成纯函数：`hasUnrequestedPackages(entries, requested)`。
+
+   **分批的代价，明确记账**：每一批都是一次独立的命令调用，各自要走一次
+   `ensure_dex_pushed` 的 `ls` 探测（约 30–80ms）和一次 `app_process` 冷启动
+   （约 0.5–1s）。300 个应用 = 6 批，合计比"一次全量"多几秒的图标总时长。
+   用这几秒换"切设备不卡"和"图标渐进出现"，值得。
+   **不要**为了省掉重复探测在 Rust 里加"本进程已确认过这个 remote 存在"的缓存：
+   那正好抹掉损坏 dex 自愈所依赖的判据（`pushed_fresh`），
+   会让一台设备重新变成永久卡黄条。
 
 每一步回写 state 前都要 `if (loadRequestRef.current !== requestId) return;`，
 阶段 2 尤其重要——它的生命周期比阶段 1 长得多，切设备后极易回写到错误的设备上。
@@ -409,7 +473,7 @@ const [iconMode, setIconMode] = useState<IconMode>("bulk-pending");
 | Rust | dex | 结果 |
 |---|---|---|
 | 新 | 新 | 元数据快速返回，图标后台回填 —— 目标状态 |
-| 新 | **旧（仓库现状）** | 旧 dex 忽略 `--no-icons`，输出全量且无 sentinel；`extract_payload` 回退整体解析 → **仍然可用**，只是元数据阶段仍需渲染图标（慢，但 45s 预算比原来的 15s 宽松）。阶段 2 `--icons-only` 及其后面的包名参数同样被忽略，返回全量数组：`AppIconEntry` 靠 serde 忽略多余字段能解析，返回的是请求集的**超集** → 调用方按 packageName 索引写入，也能用 |
+| 新 | **旧（仓库现状）** | 旧 dex 忽略 `--no-icons`，输出全量且无 sentinel；`extract_payload` 回退整体解析 → **仍然可用**，只是元数据阶段仍需渲染图标（慢，但 45s 预算比原来的 15s 宽松；超时不再自动重试，所以最坏等待就是这 45s）。阶段 2 第一批的 `--icons-only <pkg...>` 同样被忽略，返回全量数组：`AppIconEntry` 靠 serde 忽略多余字段能解析，返回的是请求集的**超集** → 调用方收下全部并**停止后续批次**，图标一次就齐了 |
 | 旧 | 新 | 不会发生（同包发布） |
 
 第 2 行是本任务能否安全落地的关键。**代码写完必须真的用仓库现有的 dex 跑一次**，
@@ -422,7 +486,10 @@ const [iconMode, setIconMode] = useState<IconMode>("bulk-pending");
   （45s 预算、并发保护、重试、错误可见）。
 - 回滚粒度：Java、Rust、前端三部分互不依赖，可单独回退。前端回退只需把
   `fallback`/`iconMode` 改回 boolean 并恢复单段式 `loadApps`。
-- 需要重点 review：`run_app_info_helper` 的重试分支——分错的两个方向都有代价，
-  过度重试让用户等两倍时间，漏了"跳过 push 那轮非零退出要重推"则会让一台设备
-  永久卡在黄条上，后者更严重。另一处是
-  以及阶段 2 的 `requestId` 守卫（漏了会串设备）。
+- 需要重点 review 三处：
+  1. `run_app_info_helper` 的失败分类——分错的两个方向都有代价：把超时也拿去自动重试
+     会让用户等两倍时间才看到黄条，而漏了"跳过 push 那轮非零退出要强制重推"
+     会让一台设备永久卡在黄条上，后者更严重。
+  2. 阶段 2 的 `requestId` 守卫（漏了会把 A 设备的图标画到 B 设备上），
+     以及"切设备后不再发下一批"（漏了会让新设备的元数据一直等在锁上）。
+  3. 超集检测（漏了旧 dex 会把全量渲染跑 N 遍，比不分批还慢）。

@@ -31,24 +31,50 @@ pub struct DeviceInfo {
 ### 解析与缓存
 
 ```rust
+/// 每条 serial **最近一次在线时**解析到的身份。只为非在线条目服务，
+/// 在线条目一律现场重新解析（理由见下）。std::sync::Mutex 即可。
 static DEVICE_ID_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 
-fn resolve_device_id(app: &AppHandle, serial: &str) -> Option<String>
+fn resolve_device_id(app: &AppHandle, serial: &str, state: &str) -> Option<String>
 ```
 
-- 只对 `state == "device"` 的条目解析。其余一律 `None`——unauthorized/offline
-  根本读不到属性，猜不得。
-- 顺序：`getprop ro.serialno` → 空则 `getprop ro.boot.serialno` → 都空则 `None`。
-  读到的值 trim 后为空串也算 `None`。
-- **只缓存成功结果，不缓存失败**。失败不缓存意味着设备重新授权后下次刷新就能拿到，
-  自愈；代价是失败的设备每次刷新多一次 getprop——而设备列表**没有轮询**
-  （`listDevices()` 只在 `App.tsx:95` 启动、`TopBar.tsx:142` 手动刷新、
-  `WifiConnect.tsx:57` 连接后调用），所以这个代价是可忽略的。
-- 每次 `list_devices` 结束时剪掉缓存里不在当前在线 serial 集合中的条目，
-  这样设备拔了再插、或重新授权，都会重新解析。
+规则只有三条，按条目的状态分：
 
-启动成本：首次列出 N 台在线设备会多 N 次 getprop（每次约 30–80ms）。
-无轮询，所以只在启动和手动刷新时发生。可接受。
+- **`state == "device"`（在线）→ 每次都实际 getprop 解析**，不读缓存；
+  成功则写入/覆盖缓存，失败则不写缓存、本条返回 `None`。
+- **非在线（offline / unauthorized）→ 不发 getprop，只读缓存**：命中就用，
+  没有就 `None`。所以 `device_id` **非 null 并不蕴含在线**——USB 条目掉成 `offline`
+  时会沿用它在线时解析到的身份，继续和 WiFi 那条合并成一条。如果这里让它掉回
+  `None`，下拉会在拔线的一瞬间从一条裂成两条，正好是本任务要消除的现象。
+- **剪枝只看"这条 serial 还在不在 `adb devices` 的输出里"**，不看状态：
+  每次 `list_devices` 结束时删掉缓存中不在本次输出 serial 集合里的条目。
+
+解析顺序：`getprop ro.serialno` → 空则 `getprop ro.boot.serialno` → 都空则 `None`。
+读到的值 trim 后为空串也算 `None`。
+
+**为什么在线条目不吃缓存**（这条别"优化"掉）：网络条目的 serial 是 `IP:PORT`，
+路由器把这个 IP 重新分给另一台手机之后，同一个 serial 指向的就是**另一台设备**了。
+在线还吃缓存的话，新设备会顶着旧设备的身份被合并进旧设备那一条——
+**误合并是本任务最严重的失败模式**（用户会对着 A 设备操作 B 设备）。
+每次刷新多 N 次 getprop 换掉这个风险，很划算：设备列表**没有轮询**
+（`listDevices()` 只在 `App.tsx:95` 启动、`TopBar.tsx:142` 手动刷新、
+`WifiConnect.tsx:57` 连接后调用），而且失败不缓存，未授权设备被授权后自动就能解析出来。
+
+缓存于是只剩一个用途：**让刚掉线的条目保住身份**。这类条目要么是 USB
+（serial 是设备自己的序列号，不会被别的设备复用），要么是离线网络条目
+（`isSelectableDevice` 根本不显示它），所以不存在上面那种张冠李戴。
+
+边界（接受并记录）：身份只活在本次进程运行内。App 启动时某条 USB 就已经是
+`offline` / `unauthorized`，那它这一轮拿不到身份，按"null 不合并"各自成条。
+这比"猜"安全，也不会比改动前更差。
+
+成本：每次 `list_devices` 对每台**在线**设备多一次 getprop（约 30–80ms）。
+
+但 `list_devices`（`device.rs:88`）是**同步命令**，Tauri 里非 `async` 的命令不会被放到
+独立线程上；现在它只发一次 `adb devices -l`，加上 N 次 getprop 后占用会明显变长。
+因此本任务把它标成 `#[tauri::command(async)]`（函数体保持同步，签名不变，
+前端调用方式不变），让它离开主线程。仓库里 `get_device_info` 这类同步命令
+本轮不动，只改这一个在启动路径上的。
 
 ### 为什么是 ro.serialno
 
@@ -75,19 +101,31 @@ export function transportKind(device: DeviceInfo): TransportKind;
 export function mergeDevicesByIdentity(devices: DeviceInfo[]): MergedDevice[];
 ```
 
+**输入是 `getSelectableDevices(devices)` 的结果，不是原始 `devices`。**
+可见性规则（在线的、或非网络的）本任务一条都不改，合并只是把已经会显示的条目
+收拢成一条。这也意味着组内唯一可能的非在线成员是 **离线 / 未授权的 USB 条目**
+（离线的网络条目本来就不显示）。
+
 算法：
 
 1. `device_id` 为 `null` 的条目**各自成为单传输的 `MergedDevice`**，不参与分组。
    拿不到身份就不猜——误合并两台设备远比不合并严重。
 2. 其余按 `device_id` 分组。
-3. 组内传输排序：USB（`is_network === false`）在前，网络在后；
-   同类之间在线在前；再按原数组下标保持稳定。
+3. 组内传输排序，两级，**顺序不能对调**：
+   1. **在线优先**：`state === "device"` 在前。
+   2. **USB 优先**：`is_network === false` 在前。
+   3. 都相同则按原数组下标保持稳定。
+
+   先在线后 USB 的理由：USB 掉成 `offline`、WiFi 还在线时，主传输必须是那条真能
+   发命令的 WiFi。反过来排的话，`selectedDevice` 会指向一条发什么都失败的死 serial，
+   而这正是 Requirement 8「主传输断开时无缝落到另一条」要避免的。
 4. `primary = transports[0]`，`serial = primary.serial`。
 5. **输出顺序按各组在原数组中首次出现的位置**，不要重排——
    否则插拔一次线，整个下拉的顺序就跳一次。
 
-`device_id` 非 null 蕴含 `state === "device"`（Rust 侧的不变量），
-所以分组时不需要再判一次状态。这条不变量写进 `device.ts` 的注释里。
+注意：**`device_id` 非 null 不蕴含在线**（见上方「解析与缓存」——离线 USB 会沿用
+缓存里的身份）。所以第 3 步的"在线优先"是真的会被用到的分支，不是死代码；
+分组和排序都必须自己判状态，不要假设组内全员在线。这句话写进 `device.ts` 的注释里。
 
 ### 选中项回退
 
@@ -137,6 +175,12 @@ export function mergeDevicesByIdentity(devices: DeviceInfo[]): MergedDevice[];
 `TransportBadges`：lucide 的 `Usb` / `Wifi`，`h-3 w-3`，`flex items-center gap-1`。
 **当前使用的那条** `text-ink`，可用但未使用的 `text-ink3`。只有一种传输时只画一个。
 
+**画哪些传输**：只画组内 `state === "device"` 的传输；若整组都不在线
+（只可能是离线 / 未授权的 USB 条目独自成组），就画主传输那一条。
+理由是徽标要回答的是"现在能用哪几种连接"，把一条已经断掉的 USB 画成灰图标
+只会让用户以为还能切过去。`transportSummary` 的文字必须与画出来的徽标一致，
+两者由同一个 `activeTransports(merged)` 派生，不要各算各的。
+
 宽度核算：状态标签「未授权」最宽约 34px，图标行 2×12+4=28px，
 右列取两者较大值约 34px；292px 菜单减去 padding 与左侧图标后，
 左列仍有 200px 以上，`truncate` 照常工作。
@@ -162,7 +206,8 @@ export function mergeDevicesByIdentity(devices: DeviceInfo[]): MergedDevice[];
 
 - `getDevicePickerOptions` 的 `label`（下拉的 a11y 文本）追加连接方式描述：
   `` `${型号}, ${serial}, ${状态}, ${transportSummary(merged)}` ``
-- `transportSummary`：单传输 → `"USB 连接"` / `"WiFi 连接"`；
+- `transportSummary`：基于与徽标同一份 `activeTransports(merged)`。
+  单传输 → `"USB 连接"` / `"WiFi 连接"`；
   多传输 → `"USB 和 WiFi 连接, 当前使用 USB"`。
 - 图标本体 `aria-hidden`，语义由外层的 `sr-only` 文本承担
   （参照 `PackageManager.tsx:236` 已有的 `sr-only` 写法）。
@@ -176,7 +221,16 @@ export function mergeDevicesByIdentity(devices: DeviceInfo[]): MergedDevice[];
 
 `getDeviceSpecStripModel(device, deviceDetail)` 加第三个参数
 `transports: DeviceInfo[] = [device]`（带默认值，现有测试与调用点不受影响），
-在 `serial` 之后插一行：
+在 `serial` 之后插一行。
+
+接线位置说明：唯一的调用点在 `DeviceSpecStrip.tsx:125` 组件内部，不是外部传进来的。
+该组件已经从 store 取了 `devices`（`DeviceSpecStrip.tsx:113`），所以在组件里
+`mergeDevicesByIdentity(getSelectableDevices(devices))` 之后按 `device.serial`
+找到所属的那一组，把 `merged?.transports ?? [device]` 传进去即可，
+不需要改 `DeviceSpecStripProps`，也不需要动父组件。合并结果用 `useMemo` 包一下，
+和 `DevicePicker.tsx:38-39` 现有的写法保持一致。
+
+插入的那一行：
 
 ```ts
 { key: "transport", label: "连接方式", value: "USB 和 WiFi (当前 USB)" }
@@ -195,9 +249,11 @@ export function mergeDevicesByIdentity(devices: DeviceInfo[]): MergedDevice[];
 - 回滚：`DevicePicker` 改回直接用 `getSelectableDevices`，
   `mergeDevicesByIdentity` 留着不调用即可。Rust 的 `device_id` 字段是纯增量，
   留着无害。
-- 最容易出错的两处：合并后的**输出顺序**（没保持首次出现顺序的话，
-  插拔一次线整个下拉就重排一次，体感很差），
-  以及 `getPreferredSelectedDeviceSerial` 里 `device_id` 要从 `previousDevices`
-  取（当前列表里那条已经没了）。
+- 最容易出错的三处：合并后的**输出顺序**（没保持首次出现顺序的话，
+  插拔一次线整个下拉就重排一次，体感很差）；
+  `getPreferredSelectedDeviceSerial` 里 `device_id` 要从 `previousDevices`
+  取（当前列表里那条已经没了）；
+  以及**组内排序的两级顺序**——写成"USB 优先 → 在线优先"的话，
+  USB 掉线时主传输会指向一条发什么都失败的死 serial。
 - 误合并是本任务最严重的失败模式：会让用户对着 A 设备操作 B 设备。
   所以 `device_id` 为 null 一律不合并，宁可多一条也不能合错。
