@@ -67,11 +67,14 @@
    （`is_network == false`），最后按原数组下标保持稳定。
    两级顺序不能对调：USB 掉成 `offline`、WiFi 仍在线时，主传输必须是那条真的能发
    命令的 WiFi，而不是排在前面的死 USB。
-7. `selectedDevice` **仍然是裸 serial 字符串**，就是主传输的 serial。
-   合并是展示层的事，不引入设备组 ID，不改动任何面板取 serial 的方式。
-8. 主传输断开时（例如拔掉 USB 线），选中项自动落到同一 `device_id` 的
-   另一条在线传输上，不能变成"未选择设备"。
-   扩展 `getPreferredSelectedDeviceSerial` 现有的 `alias_identity` 回退逻辑。
+7. `selectedDevice` **仍然是裸 serial 字符串**，并且只要非 null，就必须等于当前
+   合并列表中某一项的主传输 serial。合并是展示层的事，不引入设备组 ID，
+   不改动任何面板取 serial 的方式；`setDevices` 每次刷新都要把仍指向组内次传输的
+   旧值归一到当前主传输，不能只在旧 serial 掉线或消失时才处理。
+8. 主传输变化时自动迁移选中项，不能变成"未选择设备"：既包括拔掉 USB 后从 USB
+   落到同一 `device_id` 的在线 WiFi，也包括当前选中的 WiFi 仍在线、随后 USB 上线后
+   按优先级归一到 USB。扩展 `getPreferredSelectedDeviceSerial` 现有的
+   `alias_identity` 回退逻辑，并保证它只返回合并列表里真实存在的主 serial。
 
 ### UI
 
@@ -102,6 +105,8 @@
 
 - [ ] 同一台设备同时接 USB 和 WiFi 时，设备下拉只出现**一条**，
       条目上能看出两种连接方式都可用、且当前用的是 USB。
+- [ ] 先只有 WiFi 并选中它，再接入同一设备的 USB；即使原 WiFi serial 仍在线，
+      `selectedDevice` 也会在刷新时归一到 USB 主 serial，且它始终对应下拉中的 option。
 - [ ] 拔掉 USB 后，选中项自动落到 WiFi 那条，面板不中断、不回到"未选择设备"。
 - [ ] 两台**不同**设备（哪怕同型号）绝不会被合并。
 - [ ] unauthorized / offline **且本次运行里从没在线过**的条目（`device_id` 为 null）

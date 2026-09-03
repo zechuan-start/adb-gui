@@ -131,10 +131,11 @@ USB 与 WiFi **同时**连着时，`adb devices` 会列出两条不同 serial
    `OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>>`（**全部是
    `std::sync::Mutex`**）按 deviceKey 取锁即可：取外层锁拿到 `Arc` 后立即释放外层，
    再锁内层。
-   缓存命令是**同步**的 `#[tauri::command] pub fn`、只做文件 I/O，
-   全程没有 `await`，所以不需要 `tokio::sync::Mutex`，也就没有"跨 await 持有
-   `std::sync::MutexGuard`"的问题。（初版把命令写成同步 `fn` 却要求 await
-   一把 `tokio::sync::Mutex`，那是写不出来的，已修正。）
+   缓存命令的**函数体是同步 `fn`**，所以锁仍用 `std::sync::Mutex`；命令入口标成
+   `#[tauri::command(async)]`，由 Tauri 把整段同步文件 I/O 放到后台线程执行。
+   函数体全程没有 `await`，不存在跨 await 持有 `std::sync::MutexGuard` 的问题。
+   （初版把命令写成同步 `fn` 却要求 await 一把 `tokio::sync::Mutex`，那是写不出来的；
+   单纯改成普通同步 command 又会让批量 PNG I/O 占住主线程。现在两边都已明确。）
 2. **内存 iconCache 的键改成以 deviceKey 打头**（不是 serial）。这不是可选优化：
    `09-03-device-transport-merge` 会让主传输在 USB 掉线时自动落到 WiFi，
    `selectedDevice` 那个裸 serial 会变，键里带 serial 的话内存缓存会整片失效、
@@ -156,14 +157,15 @@ fn sanitize_device_key(raw: &str) -> String
 
 新模块 `src-tauri/src/commands/app_info_cache.rs`，在 `lib.rs` 的 `invoke_handler` 注册。
 
-**两个命令，都是同步 `fn`**（只做文件 I/O，没有 `await`）：
+**两个命令的函数体都是同步 `fn`，入口都标 `async`**：函数体不引入异步文件 I/O，
+但由 Tauri 将整段工作移出主线程，避免一次读取数百个 PNG 时冻结界面。
 
 ```rust
-#[tauri::command]
+#[tauri::command(async)]
 pub fn read_app_info_cache(app: AppHandle, device_key: String) -> Result<Vec<AppInfo>, String>
 // 无缓存/损坏/版本不符 → Ok(vec![])，绝不 Err
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn write_app_info_cache(
     app: AppHandle,
     device_key: String,           // 前端传来的原始身份串，函数内部再 sanitize
@@ -192,16 +194,43 @@ pub fn write_app_info_cache(
 
 ### 写
 
-顺序**必须**是：先写全部 PNG，再写 `index.json`，最后剪枝。
+写入前先在 deviceKey 锁内尽力读取旧 `index.json`，建立
+`(packageName, lastUpdateTime) -> iconFile` 映射。旧 index 不存在、版本不符或解析失败
+就当空映射；绝不能因为旧缓存坏了阻断本次写入。
+
+新 index **只以本次 `apps` 为全集**，逐条按以下唯一规则决定 `iconFile`：
+
+1. `lastUpdateTime <= 0` → 不写入 index，也不落盘图标。
+2. `new_icons` 中有该包且 data URI 校验通过 → 写新的 PNG，引用按当前
+   `(packageName, lastUpdateTime)` 生成的文件名。
+3. 否则，旧映射中有完全相同的 `(packageName, lastUpdateTime)`，且对应 PNG 存在、
+   PNG 魔数有效 → 原样保留旧 `iconFile` 引用。
+4. 其余情况 → `iconFile = ""`，下次读取后会再次进入图标请求集。
+
+这样 `new_icons` 只需携带本轮 miss 的少量图标；缓存命中的旧图标不会从前端搬回 Rust，
+也不会在重写 index 时丢失。包被卸载或 `lastUpdateTime` 改变时不会命中旧映射，
+旧文件会在最后的剪枝阶段删除。
+
+整体顺序**必须**是：写本轮新增 PNG → 生成包含“新图标 + 仍有效旧引用”的完整
+`index.json` → 替换 index → 按新 index 引用集合剪枝。
 
 - 崩在 PNG 阶段 → 留下孤儿 PNG，index 还是旧的，缓存仍然自洽，孤儿下次被剪掉。
 - 反过来先写 index 的话，崩溃会留下一个指向不存在/写了一半的 PNG 的 index。
 
-`index.json` 用临时文件 + `fs::rename` 原子替换。
+`index.json` 的跨平台替换规则固定为：
+
+- 先把完整 JSON 写到**同目录**唯一临时文件。
+- Unix：`fs::rename(temp, index)`，覆盖现有目标且保持原子替换。
+- Windows：标准库 `fs::rename` 不能可靠覆盖现有目标；目标存在时先删除旧
+  `index.json`（`NotFound` 视为无需删除），再 `fs::rename(temp, index)`。
+  两步之间若进程崩溃，下一次读取会把“index 缺失”
+  当作缓存 miss 并全量重建——缓存可丢弃，因此接受这个短暂空窗，不宣称 Windows 原子。
+- 任一步失败都尽力删除临时文件并返回 `Err`；前端只记 `console.error`，不影响列表。
 
 > 不复用 `device_files.rs:587` 的 `replace_download_target`：那个带"备份原文件并在
 > 失败时恢复"的语义和面向用户的中文错误串，是为下载场景写的。缓存写失败的正确反应
-> 是丢弃重来，不是恢复。在本模块内写一个十几行的 `write_atomic` 更诚实。
+> 是丢弃重来，不是恢复。在本模块内写一个小型 `replace_cache_index`，并用 `#[cfg]`
+> 把 Unix 与 Windows 的替换步骤明确分开。
 
 `new_icons` 的 data URI 校验：必须以 `data:image/png;base64,` 开头、能 base64 解码、
 解码后前 4 字节是 PNG 魔数。**不合格的条目跳过该图标，不让整次写入失败**。
@@ -224,7 +253,9 @@ export function missingIconPackages(fresh: AppInfo[], cachedIcons: Map<string, s
 ```
 
 `missingIconPackages`：对每个 `fresh` 项算 `appIconKey`，不在 `cachedIcons` 里的
-收集包名；跳过 `lastUpdateTime <= 0` 的项（与 Rust 侧的不缓存规则对称）；结果去重。
+收集包名；`lastUpdateTime <= 0` 的项**无条件收集**，因为它不能持久化、每轮都需要
+实时图标。结果按包名去重。这里不能“与 Rust 不缓存规则对称地跳过”：跳过会让
+成功路径既不走批量图标，也不启用失败态懒加载，最终永久显示占位图标。
 
 ### 内存 iconCache 的键要统一
 
@@ -281,6 +312,8 @@ export function missingIconPackages(fresh: AppInfo[], cachedIcons: Map<string, s
   回到父任务交付的状态。不碰 `Main.java`，不需要重建 dex。
   内存 `iconCache` 的键改造要一起回退（否则键里的 `deviceKey` 没人算）。
 - 需要重点 review：写入顺序（PNG → index → 剪枝，顺序错了会产生指向坏文件的 index）、
+  重写 index 时是否保留了旧缓存里仍然匹配的图标引用、
+  Windows 的 remove-then-rename 是否只用于可丢弃的 cache index、
   `phase1DoneRef` 守卫（漏了就会出现"缓存赢了新数据"）、
   `sanitize_device_key` 的哈希后缀（漏了会让两台设备共用一个目录）、
   deviceKey 写锁（漏了在同设备双传输场景下会互相剪掉对方的 PNG）、

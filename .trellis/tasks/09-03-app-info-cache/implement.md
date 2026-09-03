@@ -9,7 +9,8 @@
 > `device_id` 重复实现且回退链不一致；② 命令写成同步 `fn` 却要求 await 一把
 > `tokio::sync::Mutex`；③ PRD 结尾还写着"design/implement 待写"。
 > 现在的方案是：**设备键 = `DeviceInfo.device_id ?? alias_identity ?? serial`（前端纯函数）
-> + 两个同步命令 + `std::sync::Mutex` 写锁**。照现在的三份文档执行即可。
+> + 两个 `#[tauri::command(async)]` 命令（函数体仍为同步文件 I/O）
+> + `std::sync::Mutex` 写锁**。照现在的三份文档执行即可。
 
 下面三条必须**实际验证过**，不是"代码看起来支持"：
 
@@ -55,29 +56,42 @@
 1. `CachedApp` 结构体（`AppInfo` 去掉 `icon`、加 `iconFile`）+ `CacheIndex`
    （`version` / `deviceKey` / `updatedAt` / `apps`），`serde(rename_all = "camelCase")`。
 2. `cache_root(app) -> Result<PathBuf, String>`：`app.path().app_cache_dir()?.join("app-info")`。
-3. `write_atomic(path, bytes) -> std::io::Result<()>`：临时文件 + `fs::rename`。
-   十几行，写在本模块内。**不要复用 `device_files.rs:587` 的 `replace_download_target`**
-   —— 那个带备份/恢复语义和面向用户的中文错误串，是下载场景的，缓存写失败应该丢弃重来。
+3. `replace_cache_index(temp, index) -> std::io::Result<()>`：临时文件与目标放在同一目录，
+   Unix 直接 `fs::rename` 原子覆盖；Windows 在目标存在时先删旧 `index.json`
+   （`NotFound` 忽略）再 `fs::rename`，其他错误均清理临时文件并返回。Windows
+   两步之间崩溃导致 index 缺失是允许的
+   缓存降级，下一轮按 miss 重建。用显式 `#[cfg]` 分支，不要假设所有平台的
+   `fs::rename` 都能覆盖已有目标。**不要复用 `device_files.rs:587` 的
+   `replace_download_target`**——那个带备份/恢复语义和面向用户的中文错误串，
+   是下载场景的，缓存写失败应该丢弃重来。
 4. `read_app_info_cache`：按 `design.md`「读」的两级失败模型实现。
    index 坏/版本不符 → 删整个设备目录 + 返回 `Ok(vec![])`；单个 PNG 坏 → 该条 `icon` 置空。
    **任何路径都不返回 `Err`。**
-5. `write_app_info_cache`：顺序必须是 **写 PNG → 写 index.json → 剪枝**。
-   `lastUpdateTime <= 0` 的应用跳过不缓存。非法 data URI 跳过该图标但不中断整次写入。
-6. 两个命令都是**同步** `#[tauri::command] pub fn`，内部先把传进来的原始身份串
-   过一遍 `sanitize_device_key` 再拼路径。**不要新增 `get_device_cache_key`**
-   ——设备键由前端从 `DeviceInfo.device_id` 派生（步骤 3）。
+5. `write_app_info_cache`：持锁后先容错读取旧 index，并按
+   `(packageName, lastUpdateTime)` 建旧 `iconFile` 映射；新 index 只以本次全量 `apps`
+   为准。某项有合法 `new_icons` 时写新 PNG；没有新图标时，仅当旧 key 精确匹配且
+   旧 PNG 仍存在、魔数正确才继承旧 `iconFile`，否则留空。这样只更新一个图标或
+   `new_icons = []` 都不会误剪其他缓存命中。`lastUpdateTime <= 0` 的应用既不进入
+   index，也不落盘。非法 data URI 跳过该图标但不中断整次写入。
+   总顺序必须是 **写新 PNG → 写包含“新引用 + 保留旧引用”的完整 index → 剪枝**；
+   已卸载或时间戳变化的旧 key 不会进入新 index，对应文件最后自然被删。
+6. 两个命令入口都是 **`#[tauri::command(async)] pub fn`**，函数体仍保持同步并且
+   没有 `await`，由 Tauri 把批量 PNG 文件 I/O 放到后台线程。内部先把传进来的
+   原始身份串过一遍 `sanitize_device_key` 再拼路径。**不要新增
+   `get_device_cache_key`**——设备键由前端从 `DeviceInfo.device_id` 派生（步骤 3）。
 7. **按 deviceKey 的写锁**：`write_app_info_cache` 全程持有。同一台设备同时接
    USB 和 WiFi 时会有两条 serial 落到同一个缓存目录（见 `design.md`
    「同时连接两种传输」），父任务的全局 helper 锁覆盖不到这里。
    `OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>>`，**内外层都是
-   `std::sync::Mutex`**：命令是同步的、只做文件 I/O，全程没有 `await`，
+   `std::sync::Mutex`**：命令函数体是同步的、只做文件 I/O，全程没有 `await`，
    用不上 `tokio::sync::Mutex`。外层锁取出 `Arc` 后立即释放，再锁内层。
 8. `lib.rs` 的 `invoke_handler` 注册这**两个**命令。
 
 文件系统测试参照 `device_files.rs:804-834` 的写法（`std::env::temp_dir()` +
 pid + 纳秒时间戳建目录，用完 `remove_dir_all`），不引入 tempfile 依赖。
 至少覆盖：写入后读回一致、index 版本不符时目录被清、单个 PNG 被删后只丢那一个图标、
-剪枝真的删掉了不再引用的文件。
+剪枝真的删掉了不再引用的文件、第二次 `new_icons = []` 仍保留所有精确命中的旧图标、
+只更新一个图标时其他旧图标引用不丢、目标 index 已存在时替换成功（覆盖对应平台分支）。
 
 动手前读 `.trellis/spec/backend/directory-structure.md` 与 `error-handling.md`
 （本模块大量使用"吞掉错误返回默认值"的写法，要确认它在项目里的既有表达方式）。
@@ -97,7 +111,7 @@ pid + 纳秒时间戳建目录，用完 `remove_dir_all`），不引入 tempfile
 - 卸载一个应用 → 差集不含它（且它不在 fresh 里，写回时自然被剪枝）
 - 更新一个应用（`lastUpdateTime` 变化）→ 只有它进差集
 - 全部命中 → 差集为空
-- `lastUpdateTime <= 0` 的项被跳过
+- `lastUpdateTime <= 0` 的项即使缓存映射里有同 key 也**无条件进入差集**，每轮实时请求
 
 ## 4. 前端桥接层
 
@@ -176,8 +190,11 @@ pnpm build
 
 - 回滚：不注册这两个命令 + `loadApps` 去掉第 1/2/6 步 + `iconCache` 键改回去，
   即回到父任务的状态。不碰 `Main.java`，不需要重建 dex。
-- 最容易写错的三处：写入顺序（PNG → index → 剪枝）、`phase1DoneRef` 守卫、
+- 最容易写错的四处：写入时漏掉仍精确匹配的旧 `iconFile` 引用、
+  `lastUpdateTime <= 0` 被错误当成命中、`phase1DoneRef` 守卫、
   `sanitize_device_key` 的哈希后缀。
+- index 替换必须区分平台：Unix 依赖同目录 rename 的原子覆盖；Windows 接受
+  remove-then-rename 的短暂缺口，并把失败统一降级成下轮重建。
 - `iconCache` 键改造要 grep 全部调用点，漏一个的症状是"图标一直不显示"
   且没有任何报错，很难查。
 

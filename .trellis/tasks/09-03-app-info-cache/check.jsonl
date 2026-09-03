@@ -3,3 +3,4 @@
 {"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "复查前端改动符合 TypeScript strict 与禁用写法清单"}
 {"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复查是否重复实现了已有的 iconCache 逻辑，以及 diff 逻辑有没有被复制到多处"}
 {"file": ".trellis/tasks/09-03-app-info-read-stability/prd.md", "reason": "复查本任务没有回退父任务已确立的不变量：元数据永远全量读、图标失败静默降级"}
+{"file": ".trellis/tasks/09-03-app-info-cache/design.md", "reason": "复查写入会保留仍匹配的旧图标引用、lastUpdateTime <= 0 每轮请求但不落盘、Unix/Windows 替换语义和 async 命令入口均按设计实现"}

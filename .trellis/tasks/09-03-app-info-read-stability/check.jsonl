@@ -1,5 +1,5 @@
 {"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "复查 app_info.rs 是否触碰禁用写法，以及 cargo clippy 是否零告警"}
-{"file": ".trellis/spec/backend/error-handling.md", "reason": "复查重试分类是否正确：只有超时和 push 失败重试，app_process 非零退出与 JSON 解析失败不重试"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "复查重试分类与 PRD 一致：push 失败自动重试；app_process 超时仅置 FORCE_PUSH_NEXT 并返回；跳过 push 后非零退出强制重推一次；新推 dex 仍非零或 JSON 解析失败则不重试"}
 {"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "复查前端改动是否符合 TypeScript strict 与禁用写法清单"}
 {"file": ".trellis/spec/frontend/state-management.md", "reason": "复查 fallback/iconMode 两个新状态的放置位置与既有 Zustand/局部 state 划分约定是否一致"}
 {"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复查三种 helper 模式的字段拼装是否被复制成三份，以及是否重复实现了已有的图标懒加载逻辑"}

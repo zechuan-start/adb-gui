@@ -127,26 +127,39 @@ export function mergeDevicesByIdentity(devices: DeviceInfo[]): MergedDevice[];
 缓存里的身份）。所以第 3 步的"在线优先"是真的会被用到的分支，不是死代码；
 分组和排序都必须自己判状态，不要假设组内全员在线。这句话写进 `device.ts` 的注释里。
 
-### 选中项回退
+### 选中项归一化与回退
 
-`getPreferredSelectedDeviceSerial`（`device.ts:44-77`）在现有的 `alias_identity`
-回退**之前**插入一条：选中的 serial 已经不在列表里时，取 `previousDevices` 里
-那条的 `device_id`，找当前列表中同 `device_id` 的在线条目。
+`getPreferredSelectedDeviceSerial`（`device.ts:44-77`）不能只在旧 serial 掉线或消失时
+回退。刷新后旧 serial 可能仍在线、但已经变成合并组的次传输：例如先用 WiFi，
+再接入优先级更高的 USB。此时若直接“在线就保持”，store 会保留 WiFi serial，
+而 `DevicePicker` 只有 USB 主 serial 的 option，选中值与下拉立刻失配。
 
-回退链最终是：
+函数签名不变，但内部先计算：
 
-1. 选中项仍在线 → 保持
-2. **同 `device_id` 的在线条目**（新增）
-3. 同 `alias_identity` 的在线条目（现状）
-4. 第一个在线的
-5. 选中项若仍可选
-6. 第一个可选的
+```ts
+const selectableDevices = getSelectableDevices(devices);
+const mergedDevices = mergeDevicesByIdentity(selectableDevices);
+```
+
+此后任何非 null 返回值都必须是 `mergedDevices[*].serial`。归一化 / 回退链为：
+
+1. 当前选中的 serial 属于某个合并组，且该组主传输在线 → 返回**该组主 serial**。
+   这一步既保留已经正确的主 serial，也把仍在线的次传输归一到主传输。
+2. 从 `previousDevices` 找旧选中条目的 `device_id`，找到当前同身份且主传输在线的组
+   → 返回该组主 serial。
+3. 从当前或旧选中条目取 `alias_identity`，找到当前含同 alias 在线传输的组
+   → 返回该组主 serial。
+4. 第一个主传输在线的合并组 → 返回其主 serial。
+5. 当前选中的 serial 若仍属于某个可选但整组离线的合并组 → 返回该组主 serial。
+6. 第一个合并组 → 返回其主 serial；没有组才返回 `null`。
 
 第 2 步放在第 3 步之前：`device_id` 是设备真实身份，`alias_identity` 只是 mDNS
-名字的推断，前者更可信。函数已经接收 `previousDevices` 参数，正是为这类场景准备的，
-不需要改签名。
+名字的推断，前者更可信。第 1 步不能写成“选中项仍在线就原样返回”，必须先映射到组；
+函数已经接收 `previousDevices`，不需要改签名。
 
-这条覆盖的就是验收里那个场景：拔掉 USB → 选中项自动落到 WiFi，面板不中断。
+必须单测两个方向：WiFi 已选中且仍在线 → USB 上线后归一到 USB；USB 消失或离线
+→ 同组 WiFi 成为主传输并被选中。两种情况下返回值都必须能在
+`mergedDevices.map((item) => item.serial)` 中找到。
 
 ## UI
 
@@ -249,8 +262,9 @@ export function mergeDevicesByIdentity(devices: DeviceInfo[]): MergedDevice[];
 - 回滚：`DevicePicker` 改回直接用 `getSelectableDevices`，
   `mergeDevicesByIdentity` 留着不调用即可。Rust 的 `device_id` 字段是纯增量，
   留着无害。
-- 最容易出错的三处：合并后的**输出顺序**（没保持首次出现顺序的话，
+- 最容易出错的四处：合并后的**输出顺序**（没保持首次出现顺序的话，
   插拔一次线整个下拉就重排一次，体感很差）；
+  `getPreferredSelectedDeviceSerial` 不能对仍在线的次传输原样早退；
   `getPreferredSelectedDeviceSerial` 里 `device_id` 要从 `previousDevices`
   取（当前列表里那条已经没了）；
   以及**组内排序的两级顺序**——写成"USB 优先 → 在线优先"的话，

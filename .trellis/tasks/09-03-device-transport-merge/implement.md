@@ -49,9 +49,23 @@
 - `activeTransports` / `transportSummary`：双在线 → 两项 + "当前使用 USB"；
   USB 离线 → 只剩 WiFi 一项，文案里不出现 USB
 
-同文件扩展 `getPreferredSelectedDeviceSerial`：在 `alias_identity` 回退之前插入
-`device_id` 回退，`device_id` 从 `previousDevices` 里的那条取（当前列表里已经没了）。
-补测试：选中的 USB 条目消失、同 `device_id` 的 WiFi 在线 → 落到 WiFi。
+同文件扩展 `getPreferredSelectedDeviceSerial`，但不是只插一条 `device_id` 回退：
+先算 `mergeDevicesByIdentity(getSelectableDevices(devices))`，所有非 null 返回值都必须是
+某个合并项的主 serial。完整顺序照 `design.md`「选中项归一化与回退」实现，特别注意
+不能保留“当前 raw serial 在线就直接返回”的旧逻辑。`device_id` 回退从
+`previousDevices` 里的旧选中项取身份，`alias_identity` 回退也要映射回所属组的主 serial。
+
+`src/lib/device.test.ts` 至少补：
+
+- 选中的 USB 消失或离线、同 `device_id` 的 WiFi 在线 → 返回 WiFi 主 serial
+- 先选中 WiFi，随后同组 USB 上线且两条都在线 → 即使 WiFi 仍在线，也返回 USB 主 serial
+- alias 回退、首个在线回退、整组离线回退返回的都是合并项主 serial
+
+`src/store/device.test.ts` 再补一条贯穿 `setDevices` 的场景：WiFi-only 时选中 WiFi，
+刷新为同设备 USB + WiFi 后 store 自动变成 USB，并断言该值存在于
+`mergeDevicesByIdentity(getSelectableDevices(devices)).map(({ serial }) => serial)` 中；
+这正是 `getDevicePickerOptions` 的 option value 来源，直接守住
+“store 值与 picker option 一致”这条跨层不变量，不要让 store 测试反向依赖 React 组件。
 
 `pnpm test` 绿了再往下。此时还没有任何 UI 变化，可以安全提交一次。
 
@@ -174,9 +188,9 @@ cd src-tauri && cargo clippy --all-targets -- -D warnings
 
 - 回滚：`DevicePicker` 改回直接用 `getSelectableDevices` 即可；
   Rust 的 `device_id` 是纯增量字段，留着无害。
-- 最容易写错的三处：合并结果的**输出顺序**（没保持首次出现顺序 → 插拔一次线
-  下拉就重排）、`getPreferredSelectedDeviceSerial` 里 `device_id` 要从
-  `previousDevices` 取、以及 `parse_devices_output` 现有测试的断言更新。
+- 最容易写错的四处：合并结果的**输出顺序**（没保持首次出现顺序 → 插拔一次线
+  下拉就重排）、`getPreferredSelectedDeviceSerial` 不能对仍在线的次传输原样早退、
+  `device_id` 回退要从 `previousDevices` 取、以及 `parse_devices_output` 现有测试的断言更新。
 - 误合并会让用户对着 A 设备操作 B 设备，是本任务最严重的失败模式。
   实现时守住"`device_id` 为 null 一律不合并"，宁可多一条。
 
