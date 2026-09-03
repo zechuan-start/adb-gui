@@ -41,6 +41,11 @@ export interface AppInfo {
   apkSize: number;
 }
 
+export interface AppIconEntry {
+  packageName: string;
+  icon: string;
+}
+
 export interface LogcatLine {
   time: string;
   level: LogLevel;
@@ -355,6 +360,13 @@ export async function listPackages(serial: string): Promise<string[]> {
 
 export async function getInstalledApps(serial: string): Promise<AppInfo[]> {
   return invoke<AppInfo[]>("get_installed_apps", { serial });
+}
+
+export async function getInstalledAppIcons(
+  serial: string,
+  packages?: string[],
+): Promise<AppIconEntry[]> {
+  return invoke<AppIconEntry[]>("get_installed_app_icons", { serial, packages });
 }
 
 export async function getAppIcon(serial: string, pkg: string): Promise<string> {

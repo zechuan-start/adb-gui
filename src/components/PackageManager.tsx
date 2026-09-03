@@ -1,24 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Box, Play, RefreshCw, Search, Square, Trash2 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { appDisplayName, fallbackAppInfo, filterAppInfo, sortAppInfo } from "@/lib/appInfo";
+import {
+  appDisplayName,
+  chunkPackages,
+  fallbackAppInfo,
+  filterAppInfo,
+  hasUnrequestedPackages,
+  sortAppInfo,
+} from "@/lib/appInfo";
 import { getDeviceBySerial, isOnlineDevice } from "@/lib/device";
 import { formatDeviceFileSize, formatDeviceModifiedAt } from "@/lib/deviceFiles";
 import {
   clearAppData,
   forceStopApp,
   getAppIcon,
+  getInstalledAppIcons,
   getInstalledApps,
   launchApp,
   listPackages,
   uninstallApp,
 } from "@/lib/tauri";
-import type { AppInfo } from "@/lib/tauri";
+import type { AppIconEntry, AppInfo } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { useDeviceStore } from "@/store/device";
 import { useFeedbackStore } from "@/store/feedback";
 
 const iconCache = new Map<string, string>();
+const ICON_BATCH_SIZE = 50;
+
+type FallbackState = { reason: string } | null;
+type IconLoadMode = "bulk-pending" | "bulk-done" | "lazy";
 
 function appIconCacheKey(serial: string, packageName: string): string {
   return `${serial}\0${packageName}`;
@@ -66,7 +78,9 @@ export function PackageManagerPanel() {
   const showToast = useFeedbackStore((state) => state.showToast);
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [loading, setLoading] = useState(false);
-  const [fallbackMode, setFallbackMode] = useState(false);
+  const [fallback, setFallback] = useState<FallbackState>(null);
+  const [fallbackDetailsExpanded, setFallbackDetailsExpanded] = useState(false);
+  const [iconLoadMode, setIconLoadMode] = useState<IconLoadMode>("bulk-pending");
   const [search, setSearch] = useState("");
   const [selectedPkg, setSelectedPkg] = useState("");
   const [confirmAction, setConfirmAction] = useState<DestructiveAction | null>(null);
@@ -84,7 +98,9 @@ export function PackageManagerPanel() {
     const serial = onlineSerial;
     const requestId = ++loadRequestRef.current;
     setLoading(true);
-    setFallbackMode(false);
+    setFallback(null);
+    setFallbackDetailsExpanded(false);
+    setIconLoadMode("bulk-pending");
     try {
       const nextApps = sortAppInfo(await getInstalledApps(serial));
       if (loadRequestRef.current !== requestId) {
@@ -94,15 +110,58 @@ export function PackageManagerPanel() {
       setSelectedPkg((current) =>
         current && nextApps.some((app) => app.packageName === current) ? current : "",
       );
+
+      const packages = nextApps.map((app) => app.packageName);
+      if (packages.length === 0) {
+        setIconLoadMode("bulk-done");
+      } else {
+        void (async () => {
+          for (const batch of chunkPackages(packages, ICON_BATCH_SIZE)) {
+            if (loadRequestRef.current !== requestId) {
+              return;
+            }
+            let entries: AppIconEntry[];
+            try {
+              entries = await getInstalledAppIcons(serial, batch);
+            } catch (error) {
+              console.error("Failed to load an application icon batch", error);
+              if (loadRequestRef.current === requestId) {
+                setIconLoadMode("lazy");
+              }
+              return;
+            }
+
+            if (loadRequestRef.current !== requestId) {
+              return;
+            }
+            for (const entry of entries) {
+              iconCache.set(appIconCacheKey(serial, entry.packageName), entry.icon);
+            }
+            setIcons(new Map(iconCache));
+            if (hasUnrequestedPackages(entries, batch)) {
+              setIconLoadMode("bulk-done");
+              return;
+            }
+          }
+
+          if (loadRequestRef.current === requestId) {
+            setIconLoadMode("bulk-done");
+          }
+        })();
+      }
     } catch (bulkError) {
       console.error("Failed to load structured application info", bulkError);
+      if (loadRequestRef.current !== requestId) {
+        return;
+      }
+      setFallback({ reason: String(bulkError) });
+      setIconLoadMode("lazy");
       try {
         const nextApps = sortAppInfo((await listPackages(serial)).map(fallbackAppInfo));
         if (loadRequestRef.current !== requestId) {
           return;
         }
         setApps(nextApps);
-        setFallbackMode(true);
         setSelectedPkg((current) =>
           current && nextApps.some((app) => app.packageName === current) ? current : "",
         );
@@ -124,7 +183,9 @@ export function PackageManagerPanel() {
       setApps([]);
       setSelectedPkg("");
       setConfirmAction(null);
-      setFallbackMode(false);
+      setFallback(null);
+      setFallbackDetailsExpanded(false);
+      setIconLoadMode("bulk-pending");
       setLoading(false);
       return;
     }
@@ -156,9 +217,10 @@ export function PackageManagerPanel() {
     .join("\0");
 
   useEffect(() => {
-    if (!onlineSerial || !fallbackMode) {
+    if (!onlineSerial || iconLoadMode !== "lazy") {
       return;
     }
+    const requestId = loadRequestRef.current;
     const toLoad = virtualItems
       .map((item) => filtered[item.index]?.packageName)
       .filter((packageName): packageName is string => Boolean(packageName))
@@ -180,8 +242,12 @@ export function PackageManagerPanel() {
           iconCache.set(cacheKey, "");
         }
       }),
-    ).then(() => setIcons(new Map(iconCache)));
-  }, [fallbackMode, filtered, onlineSerial, visibleRangeKey, virtualItems]);
+    ).then(() => {
+      if (loadRequestRef.current === requestId) {
+        setIcons(new Map(iconCache));
+      }
+    });
+  }, [filtered, iconLoadMode, onlineSerial, visibleRangeKey, virtualItems]);
 
   const canAct = online && Boolean(selectedPkg) && !acting;
 
@@ -261,10 +327,35 @@ export function PackageManagerPanel() {
           </span>
         </div>
 
-        {fallbackMode && (
-          <div className="flex shrink-0 items-center gap-2 border-b border-warn/45 bg-warn-band px-3 py-2 text-[11px] text-warn">
-            <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            <span>应用名称和版本读取失败，当前显示精简信息。</span>
+        {fallback && (
+          <div className="shrink-0 border-b border-warn/45 bg-warn-band px-3 py-2 text-[11px] text-warn">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 flex-1">应用名称和版本读取失败，当前显示精简信息。</span>
+              <button
+                type="button"
+                onClick={() => setFallbackDetailsExpanded((expanded) => !expanded)}
+                className="h-6 shrink-0 border border-warn/45 px-2 font-data text-[10px] hover:bg-hover"
+              >
+                {fallbackDetailsExpanded ? "收起详情" : "查看详情"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void loadApps()}
+                disabled={loading}
+                className="h-6 shrink-0 border border-warn/45 px-2 font-data text-[10px] hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                重试
+              </button>
+            </div>
+            {fallbackDetailsExpanded && (
+              <div
+                className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-all border-t border-warn/30 pt-2 font-data text-[10px] leading-4"
+                title={fallback.reason}
+              >
+                {fallback.reason}
+              </div>
+            )}
           </div>
         )}
 

@@ -1,4 +1,4 @@
-import type { AppInfo } from "@/lib/tauri";
+import type { AppIconEntry, AppInfo } from "@/lib/tauri";
 
 const APP_NAME_COLLATOR = new Intl.Collator("zh-CN", {
   numeric: true,
@@ -39,4 +39,24 @@ export function filterAppInfo(apps: AppInfo[], query: string): AppInfo[] {
       appDisplayName(app).toLocaleLowerCase().includes(normalized) ||
       app.packageName.toLocaleLowerCase().includes(normalized),
   );
+}
+
+export function chunkPackages(packages: string[], size: number): string[][] {
+  if (!Number.isInteger(size) || size <= 0) {
+    throw new RangeError("Package chunk size must be a positive integer.");
+  }
+
+  const chunks: string[][] = [];
+  for (let index = 0; index < packages.length; index += size) {
+    chunks.push(packages.slice(index, index + size));
+  }
+  return chunks;
+}
+
+export function hasUnrequestedPackages(
+  entries: AppIconEntry[],
+  requestedPackages: string[],
+): boolean {
+  const requested = new Set(requestedPackages);
+  return entries.some((entry) => !requested.has(entry.packageName));
 }

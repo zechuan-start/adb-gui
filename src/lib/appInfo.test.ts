@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { appDisplayName, fallbackAppInfo, filterAppInfo, sortAppInfo } from "@/lib/appInfo";
+import {
+  appDisplayName,
+  chunkPackages,
+  fallbackAppInfo,
+  filterAppInfo,
+  hasUnrequestedPackages,
+  sortAppInfo,
+} from "@/lib/appInfo";
 import type { AppInfo } from "@/lib/tauri";
 
 function app(overrides: Partial<AppInfo>): AppInfo {
@@ -57,5 +64,49 @@ describe("appInfo", () => {
     expect(filterAppInfo(apps, "NOTES").map((item) => item.packageName)).toEqual([
       "com.example.notes",
     ]);
+  });
+
+  it("chunks package names without mutating the input", () => {
+    const packages = ["a", "b", "c", "d", "e"];
+    expect(chunkPackages(packages, 2)).toEqual([["a", "b"], ["c", "d"], ["e"]]);
+    expect(chunkPackages(["a", "b", "c", "d"], 2)).toEqual([["a", "b"], ["c", "d"]]);
+    expect(packages).toEqual(["a", "b", "c", "d", "e"]);
+    expect(chunkPackages([], 1)).toEqual([]);
+    expect(() => chunkPackages(packages, 0)).toThrow(RangeError);
+    expect(() => chunkPackages(packages, -1)).toThrow(RangeError);
+    expect(() => chunkPackages(packages, 1.5)).toThrow(RangeError);
+  });
+
+  it("detects icon entries outside the requested batch", () => {
+    const requested = ["com.example.one", "com.example.two"];
+    expect(
+      hasUnrequestedPackages(
+        [
+          { packageName: "com.example.one", icon: "" },
+          { packageName: "com.example.two", icon: "" },
+        ],
+        requested,
+      ),
+    ).toBe(false);
+    expect(
+      hasUnrequestedPackages(
+        [{ packageName: "com.example.one", icon: "data:image/png;base64,AAAA" }],
+        requested,
+      ),
+    ).toBe(false);
+    expect(
+      hasUnrequestedPackages(
+        [
+          { packageName: "com.example.one", icon: "" },
+          { packageName: "com.example.two", icon: "" },
+          { packageName: "com.other.app", icon: "" },
+        ],
+        requested,
+      ),
+    ).toBe(true);
+    expect(hasUnrequestedPackages([], [])).toBe(false);
+    expect(hasUnrequestedPackages([{ packageName: "com.other.app", icon: "" }], [])).toBe(
+      true,
+    );
   });
 });
