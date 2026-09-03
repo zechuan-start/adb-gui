@@ -1,6 +1,7 @@
 # Implement Plan: 应用信息本地缓存
 
-分支：`claude/app-info-cache`，在下面三条门禁都进了 `main` 之后从 `main` 开。
+执行分支：当前集成分支 `claude/app-info-read-stability-tj25vt`，在下面三条门禁
+均在该分支满足后开始。
 
 ## 开工前的门禁
 
@@ -12,17 +13,9 @@
 > + 两个 `#[tauri::command(async)]` 命令（函数体仍为同步文件 I/O）
 > + `std::sync::Mutex` 写锁**。照现在的三份文档执行即可。
 >
-> **⚠️ 第二轮复审补出的一条待决（2026-09-03，尚未拍板）——
-> 乐观首屏已画出好数据、随后阶段 1 失败了怎么办？**
-> `design.md`「loadApps 流程」第 2 步命中缓存后会 `setApps(cached)` + `setLoading(false)`，
-> 第 3 步写的是 `getInstalledApps(serial)` → `setApps(fresh)` **无条件覆盖**——
-> 但没写第 3 步**抛异常**的分支。按父任务现有流程，那里会回退到
-> `listPackages` + `fallbackAppInfo`，于是用户眼睁睁看着屏幕上完整的列表
-> （名称/版本/图标俱全）被换成裸包名 + 黄条，**比不做缓存还糟**。
-> 选项 A：保留缓存数据不覆盖，只加黄条并注明"数据来自上次读取"；
-> 选项 B：照旧降级（承认缓存可能过期，宁可少显示也不显示旧的）。
-> 定下来后要同时写进 `design.md`「loadApps 流程」和本文件第 5 节。
-> 在此之前不要动第 5 节的接线。
+> **第二轮待决项已解决（2026-09-03）**：乐观首屏已显示时若阶段 1 失败，
+> 保留缓存列表并显示“实时读取失败, 当前显示上次读取的数据”黄条；没有缓存时
+> 才沿用父任务的裸包名降级路径。缓存读写自身失败仍保持静默。
 
 下面三条必须**实际验证过**，不是"代码看起来支持"：
 
@@ -30,7 +23,7 @@
       `get_installed_app_icons(serial, packages)` 的包名过滤在真机上生效
       （父任务 `implement.md` 验证计划第 2 条）
 - [ ] `src-tauri/resources/app-info.dex` 已用 `build.sh` 重建并提交
-- [ ] `09-03-device-transport-merge` 的 Rust 身份字段已合入 `main`：
+- [ ] `09-03-device-transport-merge` 的 Rust 身份字段已在当前集成分支完成并通过验证：
       `DeviceInfo.device_id` 在前端拿得到
 
 第 2 条不满足的话，旧 dex 会忽略过滤返回全集——功能不坏（父任务的超集检测会兜住），
@@ -47,7 +40,8 @@
 
 先把不碰文件系统的部分写完并测过：
 
-- `sanitize_device_key(raw: &str) -> String` —— 非法字符替换 + 截断 64 + `-<hash:08x>` 后缀。
+- `sanitize_device_key(raw: &str) -> String` —— 非法字符替换 + 截断 64 + 完整
+  `-<hash:016x>` 后缀。不能只取低 32 位，已存在可构造碰撞。
   测试：含 `:` 的 WiFi serial、纯字母数字 serial、超长输入被截断、
   **`192.168.1.5:5555` 与 `192.168.1.5_5555` 必须产出不同结果**（这是加哈希后缀的理由）。
 - `icon_file_name(package_name: &str, last_update_time: i64) -> String` ——
@@ -76,8 +70,11 @@
    `fs::rename` 都能覆盖已有目标。**不要复用 `device_files.rs:587` 的
    `replace_download_target`**——那个带备份/恢复语义和面向用户的中文错误串，
    是下载场景的，缓存写失败应该丢弃重来。
-4. `read_app_info_cache`：按 `design.md`「读」的两级失败模型实现。
+4. `read_app_info_cache`：按 `design.md`「读」的两级失败模型实现，并与写命令共用
+   deviceKey 锁，避免把尚未提交 index 的写入目录误删。
    index 坏/版本不符 → 删整个设备目录 + 返回 `Ok(vec![])`；单个 PNG 坏 → 该条 `icon` 置空。
+   `iconFile` 必须与按该条 package/time 重新生成的安全文件名完全一致，拒绝绝对路径、
+   `..` 和路径分隔；不可信路径只让该图标 miss，绝不读取缓存目录外文件。
    **任何路径都不返回 `Err`。**
 5. `write_app_info_cache`：持锁后先容错读取旧 index，并按
    `(packageName, lastUpdateTime)` 建旧 `iconFile` 映射；新 index 只以本次全量 `apps`
@@ -124,6 +121,7 @@ pid + 纳秒时间戳建目录，用完 `remove_dir_all`），不引入 tempfile
 - 更新一个应用（`lastUpdateTime` 变化）→ 只有它进差集
 - 全部命中 → 差集为空
 - `lastUpdateTime <= 0` 的项即使缓存映射里有同 key 也**无条件进入差集**，每轮实时请求
+- 缓存 key 存在但图标值为空串时仍进入差集
 
 ## 4. 前端桥接层
 
@@ -143,9 +141,15 @@ pid + 纳秒时间戳建目录，用完 `remove_dir_all`），不引入 tempfile
 2. `loadApps` 按 `design.md`「loadApps 流程」的 6 步接线。第 1 步的
    `deviceCacheKey(device)` 是同步纯函数，不要写成 `await`，也不需要 state 缓存。
    第 5 步复用父任务阶段 2 的分批循环，只把"请求哪些包"换成差集。
-3. 加 `phase1DoneRef`：阶段 1 已返回时丢弃迟到的缓存结果。
-   这条漏了就会出现"缓存赢了新数据"，是 PRD 验收条件点名的失败模式。
+3. 缓存读取与阶段 1 并发。每次 `loadApps` 使用请求局部的 `phase1Done` 标志：
+   阶段 1 已返回时丢弃迟到缓存的 UI 回写，但仍可读取其图标映射参与差集。
+   不要使用跨请求共享的 boolean ref。
 4. 第 6 步 `writeAppInfoCache` 不 await，失败只 `console.error`，不弹 toast。
+5. 阶段 1 失败时先判断本轮是否已成功显示缓存：命中则保留缓存并显示“上次读取”
+   黄条、切到 lazy 图标模式，且不做 diff、批量图标请求或缓存写入；未命中才调用
+   `listPackages` 走精简信息降级。两条路径都保留现有重试按钮。
+6. `FallbackState` 使用可区分 `cache` / `packages` 的联合类型，避免缓存列表显示
+   “精简信息”文案。`deviceKey` 必须参与 `loadApps` 依赖，写缓存前再次检查 requestId。
 
 读 `.trellis/spec/frontend/hook-guidelines.md` 与 `state-management.md` 再动手。
 
@@ -203,7 +207,7 @@ pnpm build
 - 回滚：不注册这两个命令 + `loadApps` 去掉第 1/2/6 步 + `iconCache` 键改回去，
   即回到父任务的状态。不碰 `Main.java`，不需要重建 dex。
 - 最容易写错的四处：写入时漏掉仍精确匹配的旧 `iconFile` 引用、
-  `lastUpdateTime <= 0` 被错误当成命中、`phase1DoneRef` 守卫、
+  `lastUpdateTime <= 0` 被错误当成命中、请求局部 `phase1Done` 守卫、
   `sanitize_device_key` 的哈希后缀。
 - index 替换必须区分平台：Unix 依赖同目录 rename 的原子覆盖；Windows 接受
   remove-then-rename 的短暂缺口，并把失败统一降级成下轮重建。

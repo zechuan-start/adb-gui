@@ -59,7 +59,7 @@ identifier 取自 `tauri.conf.json` 的 `com.qi.adb-gui`。
 ```json
 {
   "version": 1,
-  "deviceKey": "0123456789abcdef-1f2e3d4c",
+  "deviceKey": "0123456789abcdef-1f2e3d4c5b6a7980",
   "updatedAt": 1756800000000,
   "apps": [
     {
@@ -146,10 +146,11 @@ USB 与 WiFi **同时**连着时，`adb devices` 会列出两条不同 serial
 
 ```rust
 fn sanitize_device_key(raw: &str) -> String
-// 形如 <把 [^A-Za-z0-9._-] 替换成 '_' 后截断到 64 字符>-<fnv1a_64(raw):08x 取低 8 位十六进制>
+// 形如 <把 [^A-Za-z0-9._-] 替换成 '_' 后截断到 64 字符>-<fnv1a_64(raw):016x>
 ```
 
-必须带哈希后缀：`192.168.1.5:5555` 和 `192.168.1.5_5555` 单纯替换后会撞成同一个目录名。
+必须带完整 64 位哈希后缀：`192.168.1.5:5555` 和 `192.168.1.5_5555`
+单纯替换后会撞成同一个目录名；只取低 32 位也已有可构造碰撞，不能满足设备隔离要求。
 `fnv1a_64` 直接复用父任务在 `app_info.rs` 里实现的那个（`pub(super)` 或提到
 `commands/mod.rs`），**不要复制一份**。
 
@@ -182,9 +183,15 @@ pub fn write_app_info_cache(
 
 ### 读
 
+读写使用同一把 deviceKey 锁。否则首次写入已经创建目录但尚未提交 `index.json` 时，
+并发读会把它当成坏缓存删除；Windows 的 remove-then-rename 空窗也有同样风险。
+
 1. `index.json` 读不到 / 解析失败 / `version != 1` → 返回 `Ok(vec![])`，
    并**顺手删掉整个设备目录**（下次从干净状态开始）。删除失败也不 Err。
-2. 逐条读 `icons/<iconFile>`：文件不存在、读失败、或**前 4 字节不是 `\x89PNG`**
+2. `iconFile` 必须等于根据该条 `packageName` 与 `lastUpdateTime` 重新计算出的安全文件名；
+   不匹配、包含路径分隔或无法安全归一化时只把该条视为 miss，绝不跟随缓存索引里的
+   任意路径。随后逐条读 `icons/<iconFile>`：文件不存在、读失败、或
+   **前 4 字节不是 `\x89PNG`**
    → 这一条的 `icon` 置空串（下一轮自然会被当成 miss 重新请求），
    **不作废整份缓存**。
 3. 合格的 PNG → `data:image/png;base64,...`，编码方式与 `app_icon.rs:31` 一致。
@@ -252,8 +259,8 @@ export function appIconKey(packageName: string, lastUpdateTime: number): string
 export function missingIconPackages(fresh: AppInfo[], cachedIcons: Map<string, string>): string[]
 ```
 
-`missingIconPackages`：对每个 `fresh` 项算 `appIconKey`，不在 `cachedIcons` 里的
-收集包名；`lastUpdateTime <= 0` 的项**无条件收集**，因为它不能持久化、每轮都需要
+`missingIconPackages`：对每个 `fresh` 项算 `appIconKey`，在 `cachedIcons` 中不存在
+或对应值为空串时收集包名；`lastUpdateTime <= 0` 的项**无条件收集**，因为它不能持久化、每轮都需要
 实时图标。结果按包名去重。这里不能“与 Rust 不缓存规则对称地跳过”：跳过会让
 成功路径既不走批量图标，也不启用失败态懒加载，最终永久显示占位图标。
 
@@ -276,24 +283,35 @@ export function missingIconPackages(fresh: AppInfo[], cachedIcons: Map<string, s
 在父任务两阶段的基础上插入缓存，**阶段 1 的地位不变**：
 
 1. `deviceKey = deviceCacheKey(device)`（**同步纯函数**，不是 await，也不需要记忆化）
-2. `readAppInfoCache(deviceKey)` → 非空则 `setApps(cached)`、灌 iconCache、
-   `setLoading(false)`（首屏已经有东西可看了）
-3. `getInstalledApps(serial)` → `setApps(fresh)` **无条件覆盖**
+2. 启动 `readAppInfoCache(deviceKey)` 与阶段 1 的 `getInstalledApps(serial)`；
+   缓存先返回且非空时 `setApps(cached)`、灌 iconCache、`setLoading(false)`
+   （首屏已经有东西可看了）
+3. `getInstalledApps(serial)` → `setApps(fresh)` **无条件覆盖**；若调用失败且第 2 步
+   已命中缓存，则保留缓存列表，设置降级状态并明确标注“当前显示上次读取的数据”，
+   不再调用 `listPackages` 覆盖成裸包名。只有没有可用缓存时才走父任务原有降级路径。
 4. `missingIconPackages(fresh, cachedIcons)` → 空则跳过第 5 步
 5. 差集非空 → 走父任务阶段 2 的分批循环 `getInstalledAppIcons(serial, batch)`
    （50/批、批间 requestId 守卫、超集即停），回填 iconCache
 6. `writeAppInfoCache(deviceKey, fresh, newIcons)`（不 await，失败只 `console.error`）
 
-**竞态守卫**（两条，都必须有）：
+**竞态守卫**（三条，都必须有）：
 
 - 父任务的 `loadRequestRef` 守卫照旧，每次回写 state 前检查。
-- 额外一条：缓存读可能比阶段 1 **还慢**（冷磁盘 + 快设备）。用一个
-  `phase1DoneRef` 标记，阶段 1 已返回时直接丢弃缓存结果——
-  绝不允许缓存数据覆盖新数据。这是 PRD 验收条件里点名的那条。
+- 缓存读可能比阶段 1 **还慢**（冷磁盘 + 快设备）。每次 `loadApps` 调用使用
+  **请求局部**的 `phase1Done` 标志，阶段 1 已返回时禁止缓存结果再回写 UI；
+  不得使用跨请求共享的 boolean ref，否则旧请求会误标记新请求已完成。
+- `deviceKey` 必须参与 `loadApps` 的依赖与请求身份判断。即使 serial 没变，
+  在线设备重新解析出的 `device_id` 变化也必须切换缓存库。
 
 第 2 步的 `setLoading(false)` 有个副作用：用户会先看到旧列表再看到新列表。
 两者通常完全一致（没装卸应用时），差异出现时也是 2 秒内静默替换。
 不加"更新中"指示——那会让常态（无变化）也显得在闪。
+
+阶段 1 失败时的黄条复用父任务现有 `fallback.reason` 与重试入口，但文案必须区分：
+有缓存时说明“实时读取失败, 当前显示上次读取的数据”；无缓存时才说明“当前显示精简信息”。
+缓存读写自身失败仍保持静默，不得触发黄条。
+有缓存的失败路径将图标模式切到 `lazy`，允许空缺图标沿用逐包懒加载；
+由于没有新鲜元数据全集, 不做差集、不批量取图标、也不写磁盘缓存。
 
 ## 与父任务不变量的关系
 
@@ -314,7 +332,7 @@ export function missingIconPackages(fresh: AppInfo[], cachedIcons: Map<string, s
 - 需要重点 review：写入顺序（PNG → index → 剪枝，顺序错了会产生指向坏文件的 index）、
   重写 index 时是否保留了旧缓存里仍然匹配的图标引用、
   Windows 的 remove-then-rename 是否只用于可丢弃的 cache index、
-  `phase1DoneRef` 守卫（漏了就会出现"缓存赢了新数据"）、
+  请求局部 `phase1Done` 守卫（漏了就会出现"缓存赢了新数据"）、
   `sanitize_device_key` 的哈希后缀（漏了会让两台设备共用一个目录）、
   deviceKey 写锁（漏了在同设备双传输场景下会互相剪掉对方的 PNG）、
   以及 `iconCache` 键改造的调用点（漏一个的症状是图标一直不显示且不报错）。
