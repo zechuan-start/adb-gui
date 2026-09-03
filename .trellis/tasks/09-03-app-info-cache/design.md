@@ -95,9 +95,28 @@ pub fn get_device_cache_key(app: AppHandle, serial: String) -> Result<String, St
 解析顺序：`getprop ro.serialno` 非空 → 用它；否则 `alias_identity`（`device.rs:140`
 的 `mdns_alias_identity`）；否则 `serial`。
 
-`ro.serialno` 放第一位除了稳定，还有个额外好处：同一台设备今天插 USB、
-明天连 Wi-Fi，会落到**同一份缓存**上（同设备的 locale/density 一致，缓存本就该共享）。
+`ro.serialno` 放第一位除了稳定，还有个额外好处：同一台设备无论插 USB 还是连 Wi-Fi，
+都会落到**同一份缓存**上（同设备的应用集、locale、density 一致，缓存本就该共享）。
 用 serial 的话这两种连接方式会各存一份。
+
+### 同时连接两种传输
+
+USB 与 Wi-Fi **同时**连着时，`adb devices` 会列出两条不同 serial
+（`device.rs:128-136` 的去重只处理 mDNS 端口别名，不合并这两条），
+它们解析出同一个 deviceKey → 共享同一个缓存目录。共享是对的，但带来两点：
+
+1. **写入必须按 deviceKey 加锁**。父任务的全局 helper 锁只覆盖 `app_process` 调用，
+   `write_app_info_cache` 不在它下面。两条 serial 各自完成加载后并发写同一个目录，
+   剪枝阶段可能删掉对方 index 刚引用的 PNG。后果不严重（读侧会把缺失的 PNG
+   当成 miss 重取，自愈），但没有理由留着——加一把
+   `OnceLock<std::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>`
+   按 deviceKey 取锁即可。取外层锁拿到 `Arc` 后**立即释放外层**，再 await 内层，
+   不要跨 `await` 持有 `std::sync::MutexGuard`。
+2. **内存 iconCache 的键仍以 serial 打头**，所以在两条 serial 之间切换时，
+   内存缓存不命中，会走一次磁盘缓存读取——不发设备请求，代价只是几十毫秒的
+   PNG 读 + base64。可以接受。若想让切换也瞬时，把内存键的 `serial` 换成
+   `deviceKey`（那时 deviceKey 已经拿到并记住了）；**这是可选优化，不是验收项**，
+   别为它把 `loadApps` 的时序搞复杂。
 
 安全化：
 
@@ -230,4 +249,5 @@ export function missingIconPackages(fresh: AppInfo[], cachedIcons: Map<string, s
   回到父任务交付的状态。不碰 `Main.java`，不需要重建 dex。
 - 需要重点 review：写入顺序（PNG → index → 剪枝，顺序错了会产生指向坏文件的 index）、
   `phase1DoneRef` 守卫（漏了就会出现"缓存赢了新数据"）、
-  以及 `sanitize_device_key` 的哈希后缀（漏了会让两台设备共用一个目录）。
+  `sanitize_device_key` 的哈希后缀（漏了会让两台设备共用一个目录）、
+  以及 deviceKey 写锁（漏了在同设备双传输场景下会互相剪掉对方的 PNG）。

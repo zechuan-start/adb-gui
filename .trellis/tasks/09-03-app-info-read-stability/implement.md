@@ -43,8 +43,10 @@
 1. 删除 `REMOTE_DEX_PATH` / `APP_PROCESS_COMMAND` / `APP_PROCESS_TIMEOUT` 常量，
    替换为 `design.md`「模块常量」一节列出的那组。
 2. 加 `HelperMode` 枚举与 `AppIconEntry` 结构体（**不要加 `deny_unknown_fields`**）。
-3. 加 per-serial 锁：`std::sync::OnceLock<std::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>`。
-   注意不要跨 `await` 持有 `std::sync::MutexGuard`（clippy 会报，也是真 bug）。
+3. 加**全局**锁：`static HELPER_LOCK: OnceLock<tokio::sync::Mutex<()>>`。
+   一把锁，不是 per-serial、不是 HashMap——见 `design.md`「全局串行化」：
+   同一台设备同时接 USB 和 Wi-Fi 时会有两条不同 serial 指向同一个远程 dex 路径，
+   per-serial 锁保护不了。
 4. `ensure_dex_pushed(app, serial, local_path, bytes_len, remote_path, force)`：
    `force == false` 时先 `adb -s <serial> shell ls -l <remote>` 探测 + `parse_ls_size_matches`；
    命中则跳过。push 改成 `prepare_async_command` + `timeout(PUSH_TIMEOUT)`，
@@ -147,9 +149,13 @@ pnpm build                          # tsc + vite build
      3 个包名调一次 `get_installed_app_icons`，确认只返回 3 项且耗时明显短于全量。
      这一条挂了子任务就没法开工，务必在本任务收尾时验掉。
 3. 并发验证：快速连点「刷新」5 次、以及在加载中途切换设备，确认不再出现黄条。
-4. 降级路径验证：临时把 `resources/app-info.dex` 改名制造失败，确认黄条出现、
+4. **同设备双传输并发**（这条是全局锁存在的理由，务必验）：
+   同一台手机同时用 USB 线和 `adb connect` 连上，`adb devices` 会出现两条 serial。
+   在其中一条加载途中立刻切到另一条，反复几次，确认不出黄条。
+   改成 per-serial 锁的话这里必然复现 dex 被截断。
+5. 降级路径验证：临时把 `resources/app-info.dex` 改名制造失败，确认黄条出现、
    「详情」能看到具体错误、「重试」按钮可用、图标退回逐包懒加载仍能显示。
-5. 有条件的话找一台老设备或深度定制 ROM，确认 C9 的第 2 级回退真的会被走到
+6. 有条件的话找一台老设备或深度定制 ROM，确认 C9 的第 2 级回退真的会被走到
    （stderr 里能看到第 1 级的 stack trace）。
 
 ### 回归观察点

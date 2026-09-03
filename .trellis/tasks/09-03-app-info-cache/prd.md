@@ -80,6 +80,10 @@
 11. 设备键必须做文件名安全化（Wi-Fi serial 含 `:`，Windows 文件名非法），
     且安全化后不能产生碰撞。
 12. 设备键**不含** locale / density（Open Questions 已决策：接受图标偏差）。
+13. 同一台设备**同时**通过 USB 与 Wi-Fi 连接时会有两条不同 serial，
+    但解析出**同一个** deviceKey（`ro.serialno` 与传输方式无关）→ 共享同一个缓存目录。
+    这是正确且期望的（同一台物理设备，同样的应用集、locale、density），
+    但 `write_app_info_cache` 必须按 deviceKey 加写锁，两条 serial 的写入不得并发。
 
 > **对 Requirement 10 的修订（规划期决定，早于实现）**：初版写的是"合并进
 > `device_info.rs` 现有的那批 getprop，不新增往返"。改掉了。
@@ -111,6 +115,8 @@
 - [ ] 缓存目录被删除 / 文件被写坏 / JSON 非法时，列表仍能正常加载
       （静默退化为全量取图标），不弹错、不出黄条。
 - [ ] 两台设备的缓存互不影响；Wi-Fi 设备（serial 含 `:`）的缓存目录名合法。
+- [ ] 同一台设备同时接 USB 和 Wi-Fi 时，两条 serial 落到同一份缓存；
+      在两条之间反复切换不会损坏缓存，也不会出现重复的全量图标读取。
 - [ ] 不新增 Rust / npm 依赖；`cargo test`、`pnpm test`、`pnpm build` 通过。
 
 ## Open Questions（已全部决策完毕）

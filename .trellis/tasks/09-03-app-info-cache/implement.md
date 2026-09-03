@@ -54,7 +54,12 @@
    `lastUpdateTime <= 0` 的应用跳过不缓存。非法 data URI 跳过该图标但不中断整次写入。
 6. `get_device_cache_key`：`getprop ro.serialno` → `alias_identity` → `serial`，
    再过 `sanitize_device_key`。
-7. `lib.rs` 的 `invoke_handler` 注册这三个命令。
+7. **按 deviceKey 的写锁**：`write_app_info_cache` 全程持有。同一台设备同时接
+   USB 和 Wi-Fi 时会有两条 serial 落到同一个缓存目录（见 `design.md`
+   「同时连接两种传输」），父任务的全局 helper 锁覆盖不到这里。
+   外层 `std::sync::Mutex<HashMap<..>>` 取出 `Arc<tokio::sync::Mutex<()>>` 后
+   **立即释放外层**再 await 内层。
+8. `lib.rs` 的 `invoke_handler` 注册这三个命令。
 
 文件系统测试参照 `device_files.rs:804-834` 的写法（`std::env::temp_dir()` +
 pid + 纳秒时间戳建目录，用完 `remove_dir_all`），不引入 tempfile 依赖。
@@ -122,9 +127,13 @@ pnpm build
    三种情况各打开一次面板——都要能正常加载，不弹错、不出黄条。
 6. **多设备隔离**：两台设备各自缓存互不影响；用 Wi-Fi 连接（serial 含 `:`）
    确认缓存目录名合法且能建出来。
-7. **USB / Wi-Fi 同设备**：同一台设备分别用 USB 和 Wi-Fi 连接，
+7. **USB / Wi-Fi 同设备，先后连接**：同一台设备分别用 USB 和 Wi-Fi 连接，
    确认走的是同一份缓存（这是 `ro.serialno` 排第一位的收益；
    若该设备读不到 `ro.serialno`，会退化成两份缓存，属于预期行为，记录即可）。
+8. **USB / Wi-Fi 同设备，同时连接**：两种方式同时连上，`adb devices` 出现两条 serial，
+   在两条之间反复切换选中。确认：两条走同一份缓存目录、切换不产生重复的全量图标读取、
+   缓存目录没有被剪坏（`index.json` 引用的 PNG 都还在）。
+   这条验的是 deviceKey 写锁；顺带也覆盖父任务全局 helper 锁的同一场景。
 
 ### 回归观察点
 

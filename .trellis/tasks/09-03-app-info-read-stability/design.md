@@ -14,7 +14,7 @@
        └─ 失败 → 静默 iconMode = "lazy"，启用既有的可见区逐包 get_app_icon
 
 Rust 两条命令共用一层封装 run_app_info_helper(app, serial, mode)：
-  1. 取 per-serial 锁（tokio::sync::Mutex，同 serial 串行）
+  1. 取全局锁（一把 tokio::sync::Mutex，所有设备所有调用串行 —— 见「全局串行化」）
   2. ensure_dex_pushed()：远程名带内容哈希，ls 命中且 size 一致 → 跳过 push
   3. adb exec-out sh -c 'CLASSPATH=<remote> app_process /data/local/tmp Main <mode>'
   4. extract_payload(stdout)：定位最后一次 sentinel，取其后内容解析
@@ -135,7 +135,7 @@ fn build_helper_command(remote: &str, mode: HelperMode, filter: &[String]) -> St
   `CLASSPATH=<remote> app_process <dir> com.adbgui.appinfo.Main <mode.arg()> <pkg...>`，
   包名之间空格分隔。因为已经做过字符集白名单，这里不需要引号。
 - 分批在 `get_installed_app_icons` 这一层做：过滤集为空 → 单次无过滤调用；
-  非空 → 按 `ICON_FILTER_BATCH` 切块，**顺序**执行（不要并发，per-serial 锁本来就
+  非空 → 按 `ICON_FILTER_BATCH` 切块，**顺序**执行（不要并发，全局锁本来就
   会把它们串起来，并发只会制造锁竞争），结果拼接后返回。
   任何一批失败即整体 `Err`——图标是尽力而为的，部分成功的语义会让调用方缓存进
   一个不完整的状态，不值得。
@@ -143,18 +143,32 @@ fn build_helper_command(remote: &str, mode: HelperMode, filter: &[String]) -> St
 这三个函数都是纯函数，必须有单元测试：合法/非法包名、去重、空输入、
 恰好等于批大小、批大小 +1、命令串拼装结果。
 
-### per-serial 串行化
+### 全局串行化（**不是** per-serial）
 
 ```rust
-static HELPER_LOCKS: Lazy<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>
+static HELPER_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+
+fn helper_lock() -> &'static tokio::sync::Mutex<()> {
+    HELPER_LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+}
 ```
 
-项目未引入 `once_cell`，用 `std::sync::OnceLock<std::sync::Mutex<HashMap<..>>>`
-（标准库，无新依赖）。取锁流程：短暂锁住外层 `std::sync::Mutex` 取出/插入该 serial
-的 `Arc<tokio::sync::Mutex<()>>`，**立即释放外层锁**，再 `.lock().await` 内层。
-不要跨 `await` 持有 `std::sync::MutexGuard`。
+项目未引入 `once_cell`，用标准库的 `std::sync::OnceLock` 即可，无新依赖。
+一把锁，不需要 HashMap，也就没有"跨 await 持有 std MutexGuard"的坑。
 
-作用域：`get_installed_apps` 和 `get_installed_app_icons` 都在同一把 serial 锁下，
+**为什么必须是全局锁**：一台设备可以同时通过 USB 和 Wi-Fi 连接，
+`adb devices` 会列出两条不同 serial（`device.rs:128-136` 的去重只处理 mDNS
+端口别名，不合并这两条），但它们指向**同一台设备上的同一个**远程 dex 路径——
+路径由 dex 内容哈希决定，与 serial 无关。per-serial 锁锁不住彼此：
+在其中一条加载途中切到另一条，两次 `ls` 探测都发生在任何一次 push 完成之前，
+双双 push，后者截断前者正在执行的 dex → dex verify 崩溃 → 非零退出不重试 → 黄条。
+那就是本节要修的 bug 换个入口重现。
+
+代价接近零：面板永远只加载当前选中的那一台设备，本就不存在多设备并发加载。
+将来真需要并发加载多设备，改成"远程路径按调用唯一化 + 用完清理"，
+不要退回 per-serial。
+
+作用域：`get_installed_apps` 和 `get_installed_app_icons` 都在这把锁下，
 所以阶段 1 与阶段 2 天然串行，元数据一定先于图标返回。
 
 ### dex 内容哈希与推送
