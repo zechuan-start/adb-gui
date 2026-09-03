@@ -76,8 +76,18 @@
 ### 设备键
 
 10. 设备键优先用稳定标识，退化顺序：`ro.serialno` → `alias_identity` → `serial`。
-    读 `ro.serialno` 合并进 `device_info.rs` 现有的那批 `getprop`，不新增往返。
-11. 设备键必须做文件名安全化（Wi-Fi serial 含 `:`，Windows 文件名非法）。
+    用**独立命令**读，不并进 `device_info.rs`——见下方修订说明。
+11. 设备键必须做文件名安全化（Wi-Fi serial 含 `:`，Windows 文件名非法），
+    且安全化后不能产生碰撞。
+12. 设备键**不含** locale / density（Open Questions 已决策：接受图标偏差）。
+
+> **对 Requirement 10 的修订（规划期决定，早于实现）**：初版写的是"合并进
+> `device_info.rs` 现有的那批 getprop，不新增往返"。改掉了。
+> `get_device_info` 返回的 `DeviceDetail` 是设备详情面板的 UI 结构体，
+> 为了省一次 getprop 往返而让应用管理面板去依赖它、并往里加一个 UI 用不到的
+> `serialno` 字段，耦合代价高于一次约 30–80ms 的 getprop——而这个面板本来就要做
+> dex push 探测和两次 `app_process` 调用，多一次 getprop 是噪声。
+> 改为在缓存模块里放一个独立的 `get_device_cache_key` 命令，前端每次选中设备调一次并记住。
 
 ## Out of Scope
 
@@ -103,15 +113,14 @@
 - [ ] 两台设备的缓存互不影响；Wi-Fi 设备（serial 含 `:`）的缓存目录名合法。
 - [ ] 不新增 Rust / npm 依赖；`cargo test`、`pnpm test`、`pnpm build` 通过。
 
-## Open Questions
+## Open Questions（已全部决策完毕）
 
-- [ ] locale / density 变化后缓存的图标会偏（元数据不受影响，因为每次全量读）。
-      因为统一缩到 96×96，视觉影响很小。两个选项：(a) 接受，
-      (b) 把 locale + density 拼进设备键，换语言/改显示大小后全量重刷一次。
-      **倾向 (a)**，但需要用户拍板——这决定设备键的形状，要在 `design.md` 之前定。
-- [ ] 缓存文件形态：倾向 `index.json` + 每图标一个 PNG 文件
-      （避免为 2 个图标重写 8MB 大 JSON，且省掉 base64 的 33% 开销），
-      但需要在 `design.md` 里对比确认后落定。
+- [x] locale / density 变化后图标会偏怎么办？→ **接受偏差**。图标统一缩到 96×96，
+      换系统语言或改显示大小后的视觉影响很小。设备键因此**不含** locale/density。
+      元数据不受影响（每次全量读）。用户若真遇到图标不对，删缓存目录即可重建。
+- [x] 缓存文件形态？→ **`index.json` + 每个图标一个 PNG 文件**。
+      避免为 2 个图标重写整个 8MB JSON，省掉 base64 的 33% 开销，
+      淘汰退化成删文件。返回给前端时再编码成 data URI。
 
 ## Notes
 
