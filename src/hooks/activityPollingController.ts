@@ -15,7 +15,7 @@ export interface ActivityPollingControllerDependencies {
 
 export interface ActivityPollingController {
   run: () => void;
-  refresh: () => void;
+  refresh: () => Promise<void>;
   dispose: () => void;
 }
 
@@ -30,6 +30,12 @@ export function createActivityPollingController(
   let inFlight = false;
   let refreshQueued = false;
   let scheduleHandle: number | null = null;
+  let activeRefreshWaiters: Array<() => void> = [];
+  let queuedRefreshWaiters: Array<() => void> = [];
+
+  function resolveRefreshWaiters(waiters: Array<() => void>): void {
+    waiters.forEach((resolve) => resolve());
+  }
 
   function cancelScheduledRefresh(): void {
     if (scheduleHandle !== null) {
@@ -58,6 +64,8 @@ export function createActivityPollingController(
       return;
     }
     inFlight = true;
+    activeRefreshWaiters = queuedRefreshWaiters;
+    queuedRefreshWaiters = [];
     const activityRequest = (async () => {
       try {
         const activity = await dependencies.loadActivity(serial);
@@ -91,6 +99,9 @@ export function createActivityPollingController(
       await Promise.allSettled([activityRequest, processRequest]);
     } finally {
       inFlight = false;
+      const completedRefreshWaiters = activeRefreshWaiters;
+      activeRefreshWaiters = [];
+      resolveRefreshWaiters(completedRefreshWaiters);
       if (!disposed && refreshQueued) {
         refreshQueued = false;
         void refreshNow();
@@ -110,10 +121,17 @@ export function createActivityPollingController(
     },
     refresh: () => {
       if (disposed) {
-        return;
+        return Promise.resolve();
       }
       cancelScheduledRefresh();
-      void refreshNow();
+      return new Promise<void>((resolve) => {
+        queuedRefreshWaiters.push(resolve);
+        if (inFlight) {
+          refreshQueued = true;
+          return;
+        }
+        void refreshNow();
+      });
     },
     dispose: () => {
       if (disposed) {
@@ -122,6 +140,10 @@ export function createActivityPollingController(
       disposed = true;
       refreshQueued = false;
       cancelScheduledRefresh();
+      resolveRefreshWaiters(activeRefreshWaiters);
+      resolveRefreshWaiters(queuedRefreshWaiters);
+      activeRefreshWaiters = [];
+      queuedRefreshWaiters = [];
     },
   };
 }

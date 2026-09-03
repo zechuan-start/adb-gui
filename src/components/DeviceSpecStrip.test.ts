@@ -126,6 +126,35 @@ describe("getDeviceSpecStripModel", () => {
     expect(getDeviceSpecStripModel(null, detailState())).toBeNull();
   });
 
+  it("shows the hardware serial instead of the WiFi transport address", () => {
+    const wifi = device("device", {
+      serial: "192.168.8.9:39235",
+      transport: "tcpip",
+      is_network: true,
+      device_id: "275179f2",
+    });
+
+    const model = getDeviceSpecStripModel(
+      wifi,
+      detailState({ serial: wifi.serial, detail: detail() }),
+    );
+
+    expect(itemValues(model).serial).toBe("275179f2");
+  });
+
+  it("falls back to the ADB transport serial when the hardware serial is unavailable", () => {
+    const unauthorizedWifi = device("unauthorized", {
+      serial: "192.168.8.9:39235",
+      transport: "tcpip",
+      is_network: true,
+      device_id: null,
+    });
+
+    const model = getDeviceSpecStripModel(unauthorizedWifi, detailState());
+
+    expect(itemValues(model).serial).toBe("192.168.8.9:39235");
+  });
+
   it("shows all merged transports and marks the current USB transport", () => {
     const usb = device();
     const wifi = device("device", {

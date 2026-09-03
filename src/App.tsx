@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   AppWindow,
   ArrowLeftRight,
@@ -72,6 +72,7 @@ function WorkspacePane({ id, activePane, children }: WorkspacePaneProps) {
 function App() {
   const activityControllerRef = useRef<ActivityPollingController | null>(null);
   const processGenerationRef = useRef(0);
+  const [activityRefreshing, setActivityRefreshing] = useState(false);
   const activePane = useUiStore((state) => state.activePane);
   const logcatVisible = useUiStore((state) => state.logOpenByPane[activePane]);
   const devices = useDeviceStore((state) => state.devices);
@@ -120,7 +121,12 @@ function App() {
   }, [setAdbInfo, setDevices, showToast]);
 
   const refreshCurrentActivity = useCallback(() => {
-    activityControllerRef.current?.refresh();
+    const controller = activityControllerRef.current;
+    if (!controller) {
+      return;
+    }
+    setActivityRefreshing(true);
+    void controller.refresh().then(() => setActivityRefreshing(false));
   }, []);
 
   useEffect(() => {
@@ -194,7 +200,10 @@ function App() {
         <WorkspacePane id="tools" activePane={activePane}>
           <div className="h-full min-h-0 overflow-y-auto px-[18px] pb-6 pt-4">
             <div className="space-y-4">
-              <DeviceSpecStrip onRefreshActivity={refreshCurrentActivity} />
+              <DeviceSpecStrip
+                activityRefreshing={activityRefreshing}
+                onRefreshActivity={refreshCurrentActivity}
+              />
               <div className="grid grid-cols-[repeat(auto-fill,minmax(min(240px,100%),1fr))] gap-3.5">
                 <ToolModule icon={<Camera />} title="截图" reference="A-01">
                   <ScreenshotTool />

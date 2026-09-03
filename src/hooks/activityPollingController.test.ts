@@ -58,15 +58,41 @@ describe("activityPollingController", () => {
     });
 
     controller.run();
-    controller.refresh();
-    controller.refresh();
+    const firstRefresh = controller.refresh();
+    const secondRefresh = controller.refresh();
+    let manualRefreshSettled = false;
+    void Promise.all([firstRefresh, secondRefresh]).then(() => {
+      manualRefreshSettled = true;
+    });
     expect(loadActivity).toHaveBeenCalledTimes(1);
 
     first.resolve("first");
     await flushMicrotasks();
     expect(loadActivity).toHaveBeenCalledTimes(2);
+    expect(manualRefreshSettled).toBe(false);
     second.resolve("second");
-    await flushMicrotasks();
+    await Promise.all([firstRefresh, secondRefresh]);
+    expect(manualRefreshSettled).toBe(true);
+  });
+
+  it("settles active and queued manual refreshes when disposed", async () => {
+    const activity = deferred<string>();
+    const controller = createActivityPollingController("device-a", {
+      loadActivity: () => activity.promise,
+      schedule: vi.fn(() => 1),
+      cancelSchedule: vi.fn(),
+      onActivity: vi.fn(),
+      onError: vi.fn(),
+    });
+
+    const activeRefresh = controller.refresh();
+    const queuedRefresh = controller.refresh();
+    controller.dispose();
+
+    await expect(Promise.all([activeRefresh, queuedRefresh])).resolves.toEqual([
+      undefined,
+      undefined,
+    ]);
   });
 
   it("rejects late success and failure callbacks after disposal", async () => {

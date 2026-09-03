@@ -10,6 +10,7 @@ import {
   transportKind,
   transportLabel,
 } from "@/lib/device";
+import { cn } from "@/lib/utils";
 import {
   useDeviceStore,
   type DeviceDetailState,
@@ -41,7 +42,7 @@ export function getDeviceSpecStripModel(
   const serialItem: DeviceSpecItem = {
     key: "serial",
     label: "序列号",
-    value: device.serial,
+    value: device.device_id ?? device.serial,
   };
   const transportItem: DeviceSpecItem = {
     key: "transport",
@@ -124,10 +125,14 @@ export function getForegroundActivityLabel(
 }
 
 interface DeviceSpecStripProps {
+  activityRefreshing: boolean;
   onRefreshActivity: () => void;
 }
 
-export function DeviceSpecStrip({ onRefreshActivity }: DeviceSpecStripProps) {
+export function DeviceSpecStrip({
+  activityRefreshing,
+  onRefreshActivity,
+}: DeviceSpecStripProps) {
   const devices = useDeviceStore((state) => state.devices);
   const selectedDevice = useDeviceStore((state) => state.selectedDevice);
   const deviceDetail = useDeviceStore((state) => state.deviceDetail);
@@ -192,12 +197,15 @@ export function DeviceSpecStrip({ onRefreshActivity }: DeviceSpecStripProps) {
         <button
           type="button"
           onClick={onRefreshActivity}
-          disabled={!onlineSerial}
+          disabled={!onlineSerial || activityRefreshing}
           className="flex h-7 w-7 shrink-0 items-center justify-center border border-rule text-ink2 hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
-          title="刷新前台 Activity"
-          aria-label="刷新前台 Activity"
+          title={activityRefreshing ? "正在刷新前台 Activity" : "刷新前台 Activity"}
+          aria-label={activityRefreshing ? "正在刷新前台 Activity" : "刷新前台 Activity"}
+          aria-busy={activityRefreshing}
         >
-          <RefreshCw className="h-3.5 w-3.5" />
+          <RefreshCw
+            className={cn("h-3.5 w-3.5", activityRefreshing && "animate-spin")}
+          />
         </button>
       </dl>
     </section>
