@@ -3,7 +3,21 @@ use tauri::AppHandle;
 use super::device::run_adb_with_serial;
 
 #[tauri::command]
-pub fn install_apk(app: AppHandle, serial: String, apk_path: String) -> Result<String, String> {
+pub async fn install_apk(
+    app: AppHandle,
+    serial: String,
+    apk_path: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || install_apk_blocking(app, serial, apk_path))
+        .await
+        .map_err(|error| format!("Failed to run APK install worker: {error}"))?
+}
+
+fn install_apk_blocking(
+    app: AppHandle,
+    serial: String,
+    apk_path: String,
+) -> Result<String, String> {
     let output = run_adb_with_serial(&app, &serial, &["install", "-r", "-t", &apk_path])?;
     if output.contains("Success") {
         Ok("Success".to_string())
