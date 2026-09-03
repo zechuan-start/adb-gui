@@ -178,7 +178,18 @@ fn fnv1a_64(bytes: &[u8]) -> u64   // offset basis 0xcbf29ce484222325, prime 0x1
 fn remote_dex_path(hash: u64) -> String  // format!("{REMOTE_DEX_DIR}/{REMOTE_DEX_PREFIX}{hash:016x}.dex")
 ```
 
-`ensure_dex_pushed(app, serial, local_path, bytes_len, remote_path, force) -> Result<(), String>`：
+```rust
+/// Ok(true)  = 本轮真的执行了 push
+/// Ok(false) = 大小命中，跳过了 push（设备上是一个「没验证过内容」的旧文件）
+fn ensure_dex_pushed(app, serial, local_path, bytes_len, remote_path, force)
+    -> Result<bool, String>
+```
+
+**返回值不是可有可无的**：重试策略要靠它区分"跑的是刚推的新文件"还是
+"跑的是跳过 push 的旧文件"，见下方「重试策略」。`force == true` 时必然返回
+`Ok(true)`。
+
+行为：
 
 1. `force == false` 时先探测：`adb -s <serial> shell ls -l <remote>`（带 `PUSH_TIMEOUT`）。
    从输出里解析出字节数，与本地 `bytes_len` 相等 → 直接返回 `Ok(())`，跳过 push。
@@ -218,22 +229,41 @@ async fn run_app_info_helper<T>(app, serial, mode) -> Result<Vec<T>, String>
 伪流程：
 
 ```
-lock = serial_lock(serial).await
+_guard = helper_lock().lock().await          // 全局锁，与 serial 无关
 for attempt in 0..=1 {
     force_push = attempt > 0;
-    ensure_dex_pushed(..., force_push)  → push 失败且 attempt==0 → continue（重试）
-                                        → push 失败且 attempt==1 → return Err
+    pushed_fresh = match ensure_dex_pushed(..., force_push) {
+        Ok(pushed) => pushed,
+        Err(_) if attempt == 0 => continue,       // push 失败 → 重试
+        Err(e)                 => return Err(e),
+    };
     spawn app_process, timeout(mode.timeout())
       ├ 超时      → attempt==0 ? continue : return Err("... timed out ...")
-      ├ 非零退出  → return Err（不重试：ROM 不兼容重试也没用，只会让用户多等一倍）
+      ├ 非零退出  → if !pushed_fresh && attempt == 0 {
+      │                continue          // 跑的是跳过 push 的旧文件 → 强制重推再试一次
+      │             } else {
+      │                return Err(ROM 不兼容)   // 刚推的新文件还失败 → 重试无意义
+      │             }
       └ 成功      → return parse_helper_output(stdout)
                      （解析失败也直接 return Err，不重试）
 }
 ```
 
 要点：
-- 只有**超时**和 **push 失败**重试；`app_process` 非零退出、JSON 解析失败都不重试。
-- 重试时 `force_push = true`，覆盖"设备上的 dex 被写坏但 size 恰好一致"这种情况。
+- 重试触发条件共三条：**超时**、**push 失败**、
+  以及**"跳过了 push 的那一轮"非零退出**（损坏 dex 自愈）。
+  JSON 解析失败不重试。
+- **损坏 dex 自愈**是这里最容易被漏掉的一条。`ensure_dex_pushed` 靠 `ls` 的字节数
+  判断能否跳过 push，而字节数相同不代表内容没坏（进程被杀留下的半截文件、
+  文件系统损坏、被别的东西覆写）。若非零退出就一律判 ROM 不兼容，
+  这台设备会**永久**停在黄条上——每次调用都跳过 push、每次都拿同一个坏文件去跑，
+  没有任何路径能让它恢复。所以必须区分"跑的是旧文件"和"跑的是刚推的新文件"。
+- 反过来，`pushed_fresh == true` 时非零退出**立刻**返回错误，即使还在 attempt 0。
+  文件是新的，再推一次只是让用户多等一倍。
+- 重试时 `force_push = true`，所以第二轮的 `pushed_fresh` 必然是 `true`，
+  第二次非零退出必然走到 `return Err`，不会死循环。
+- ROM 不兼容那条错误信息里带上"dex 为本轮新推送"的说明，
+  这样用户看到「详情」时能区分"文件坏了"和"这台设备真的不支持"。
 - 错误信息必须包含 `adb_output_error(&output)`（即 stderr），A5 的「详情」依赖它。
   stderr 可能很长（Java 侧每个失败字段一行），Rust 侧截断到 4000 字节再返回，
   抽成 `truncate_detail(&str, max) -> String` 纯函数并测试。
@@ -392,5 +422,7 @@ const [iconMode, setIconMode] = useState<IconMode>("bulk-pending");
   （45s 预算、并发保护、重试、错误可见）。
 - 回滚粒度：Java、Rust、前端三部分互不依赖，可单独回退。前端回退只需把
   `fallback`/`iconMode` 改回 boolean 并恢复单段式 `loadApps`。
-- 需要重点 review：`run_app_info_helper` 的重试分支（错误分类错了会让用户等两倍时间），
+- 需要重点 review：`run_app_info_helper` 的重试分支——分错的两个方向都有代价，
+  过度重试让用户等两倍时间，漏了"跳过 push 那轮非零退出要重推"则会让一台设备
+  永久卡在黄条上，后者更严重。另一处是
   以及阶段 2 的 `requestId` 守卫（漏了会串设备）。

@@ -47,12 +47,17 @@
    一把锁，不是 per-serial、不是 HashMap——见 `design.md`「全局串行化」：
    同一台设备同时接 USB 和 Wi-Fi 时会有两条不同 serial 指向同一个远程 dex 路径，
    per-serial 锁保护不了。
-4. `ensure_dex_pushed(app, serial, local_path, bytes_len, remote_path, force)`：
-   `force == false` 时先 `adb -s <serial> shell ls -l <remote>` 探测 + `parse_ls_size_matches`；
-   命中则跳过。push 改成 `prepare_async_command` + `timeout(PUSH_TIMEOUT)`，
+4. `ensure_dex_pushed(...) -> Result<bool, String>` —— **返回值是"本轮是否真的推了"**，
+   不是 `()`。`force == false` 时先 `adb -s <serial> shell ls -l <remote>` 探测 +
+   `parse_ls_size_matches`，命中则跳过并返回 `Ok(false)`；实际推了返回 `Ok(true)`；
+   `force == true` 必然返回 `Ok(true)`。
+   push 改成 `prepare_async_command` + `timeout(PUSH_TIMEOUT)`，
    不再走同步的 `run_adb_with_serial`。
 5. `run_app_info_helper<T: DeserializeOwned>(app, serial, mode) -> Result<Vec<T>, String>`：
-   按 `design.md`「重试策略」的伪流程实现。**只有超时和 push 失败重试**。
+   按 `design.md`「重试策略」的伪流程实现。重试触发条件是**三条**：超时、push 失败、
+   以及**跳过了 push 的那一轮非零退出**（损坏 dex 自愈——漏了这条，
+   设备上一旦有个大小对但内容坏的 dex，这台设备就永久卡在黄条上）。
+   `pushed_fresh == true` 时非零退出立刻返回错误，不重试。
    子进程沿用现有的 `wait_with_output()`，不要改成手动读单管道。
 6. 两个 `#[tauri::command]`：
    - `get_installed_apps(app, serial) -> Result<Vec<AppInfo>, String>`（`HelperMode::Metadata`）
@@ -153,9 +158,17 @@ pnpm build                          # tsc + vite build
    同一台手机同时用 USB 线和 `adb connect` 连上，`adb devices` 会出现两条 serial。
    在其中一条加载途中立刻切到另一条，反复几次，确认不出黄条。
    改成 per-serial 锁的话这里必然复现 dex 被截断。
-5. 降级路径验证：临时把 `resources/app-info.dex` 改名制造失败，确认黄条出现、
+5. **损坏 dex 自愈**（这条能人工精确构造，务必验）：
+   先正常加载一次，让设备上有了 `/data/local/tmp/adb-gui-app-info-<hash>.dex`。
+   然后在设备上把它替换成**同样字节数但内容无效**的文件，例如
+   `adb shell "head -c $(stat -c %s <path>) /dev/urandom > <path>"`
+   （或读出大小后用 `dd` 写等长随机数据）。
+   再点刷新：`ls` 大小命中 → 跳过 push → `app_process` 非零退出 →
+   **应当自动强制重推并成功**，用户看不到黄条。
+   若这里出现黄条，说明自愈分支没实现或分错了，这台设备之后每次刷新都会失败。
+6. 降级路径验证：临时把 `resources/app-info.dex` 改名制造失败，确认黄条出现、
    「详情」能看到具体错误、「重试」按钮可用、图标退回逐包懒加载仍能显示。
-6. 有条件的话找一台老设备或深度定制 ROM，确认 C9 的第 2 级回退真的会被走到
+7. 有条件的话找一台老设备或深度定制 ROM，确认 C9 的第 2 级回退真的会被走到
    （stderr 里能看到第 1 级的 stack trace）。
 
 ### 回归观察点
@@ -166,8 +179,12 @@ pnpm build                          # tsc + vite build
 ## 风险点 / 回滚
 
 - Java、Rust、前端三部分互不依赖，可单独回退。
-- 最容易写错的两处：`run_app_info_helper` 的重试错误分类（分错会让用户等两倍时间），
-  以及阶段 2 图标回填的 `requestId` 守卫（漏了会把 A 设备的图标画到 B 设备上）。
+- 最容易写错的两处：
+  1. `run_app_info_helper` 的重试错误分类。两个方向的代价不对称：过度重试只是
+     让用户等两倍时间；而漏掉"跳过 push 那轮非零退出要强制重推"，会让一台设备
+     **永久**卡在黄条上——每次都跳过 push、每次都跑同一个坏文件，没有任何路径能恢复。
+     后者严重得多。
+  2. 阶段 2 图标回填的 `requestId` 守卫（漏了会把 A 设备的图标画到 B 设备上）。
 - 若真机验证发现轻量 Context 路径不可用，删掉第 2 级回退即可，不影响其余改动。
 
 ## Follow-up（`task.py start` 前需要确认）
