@@ -18,7 +18,9 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "09-03-app-info-cache"
+  ],
   "parent": null,
   "relatedFiles": [],
   "notes": "",

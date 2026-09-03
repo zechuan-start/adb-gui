@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "复查缓存读写的 Rust 代码是否触碰禁用写法，clippy 是否零告警"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "复查所有缓存失败路径都是静默退化，没有任何一条会阻断列表加载或弹错"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "复查前端改动符合 TypeScript strict 与禁用写法清单"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复查是否重复实现了已有的 iconCache 逻辑，以及 diff 逻辑有没有被复制到多处"}
+{"file": ".trellis/tasks/09-03-app-info-read-stability/prd.md", "reason": "复查本任务没有回退父任务已确立的不变量：元数据永远全量读、图标失败静默降级"}

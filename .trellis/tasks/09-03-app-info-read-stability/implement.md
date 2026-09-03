@@ -29,6 +29,10 @@
 - `truncate_detail(detail: &str, max: usize) -> String` —— 超长时截断并加尾注
   （如 `…(truncated)`）。测试：短串原样返回、长串被截断、**按字符边界截断不能 panic**
   （用含中文/emoji 的输入测）。
+- `is_safe_package_name(name: &str) -> bool` / `sanitize_package_filter(&[String]) -> Vec<String>`
+  / `build_helper_command(remote, mode, filter) -> String` —— 见 `design.md`
+  「包名过滤与分批」。测试：合法包名、含 `;`/空格/`$` 的非法名被拒、去重、
+  顺序稳定、空输入、命令串拼装结果（有过滤 / 无过滤两种）。
 
 先跑一次 `cd src-tauri && cargo test` 确认这一层全绿，再往下走。
 
@@ -50,7 +54,11 @@
    子进程沿用现有的 `wait_with_output()`，不要改成手动读单管道。
 6. 两个 `#[tauri::command]`：
    - `get_installed_apps(app, serial) -> Result<Vec<AppInfo>, String>`（`HelperMode::Metadata`）
-   - `get_installed_app_icons(app, serial) -> Result<Vec<AppIconEntry>, String>`（`HelperMode::Icons`）
+   - `get_installed_app_icons(app, serial, packages: Option<Vec<String>>)
+     -> Result<Vec<AppIconEntry>, String>`（`HelperMode::Icons`）
+     —— `None` / 空数组 → 单次无过滤调用；非空 → `sanitize_package_filter` 后按
+     `ICON_FILTER_BATCH` 顺序分批，结果拼接。任一批失败即整体 `Err`。
+     过滤后为空但原始输入非空 → 直接 `Err`，不要退化成取全部。
 7. `src-tauri/src/lib.rs:207` 之后注册 `commands::app_info::get_installed_app_icons`。
 
 读一遍 `.trellis/spec/backend/error-handling.md` 和 `quality-guidelines.md` 再动手。
@@ -88,7 +96,9 @@
 
 1. `SENTINEL` 常量 + 显式构造的 `PrintStream`（`BufferedOutputStream` + `FileDescriptor.out`，
    UTF-8），输出 `SENTINEL\n` + JSON，finally 里 flush stdout 与 stderr。
-2. `Mode` 枚举 + `parseMode(String[] args)`，**未知参数忽略**。
+2. `Mode` 枚举 + `parseArgs(String[] args)`：未知的 `--xxx` 忽略，裸 token 收集为
+   `HashSet<String>` 包名过滤集，默认 `FULL`。主循环在 `FLAG_SYSTEM` 判断后加
+   过滤跳过；过滤集里设备上不存在的包名静默跳过，不报错。
 3. `METADATA_ONLY` 路径完全不触碰 `getApplicationIcon` / Bitmap / PNG 压缩；
    `ICONS_ONLY` 只输出 `packageName` + `icon`。
 4. `createSystemContext()` 两级回退（C9），两级失败都 `printStackTrace(System.err)`。
@@ -102,8 +112,8 @@
 ## 6. 文档
 
 `src-tauri/resources/README.txt` 的 "App information helper" 段落补一句：
-dex 与 Rust 侧共享 `--ADBGUI-APPINFO-V1--` sentinel 和 `--no-icons` / `--icons-only`
-参数契约，改动契约需同时更新两侧并重建 dex。
+dex 与 Rust 侧共享 `--ADBGUI-APPINFO-V1--` sentinel、`--no-icons` / `--icons-only`
+模式参数以及 `--icons-only` 后可选的包名过滤，改动契约需同时更新两侧并重建 dex。
 
 ---
 
@@ -133,6 +143,9 @@ pnpm build                          # tsc + vite build
    - 元数据阶段耗时（**记录下来**——这个数字决定 B6 流式方案要不要做）
    - 应用名/版本/安装时间/APK 大小是否正确
    - 图标是否在元数据渲染后几秒内整体回填
+   - **包名过滤真的生效**（子任务 `09-03-app-info-cache` 依赖这条）：临时用
+     3 个包名调一次 `get_installed_app_icons`，确认只返回 3 项且耗时明显短于全量。
+     这一条挂了子任务就没法开工，务必在本任务收尾时验掉。
 3. 并发验证：快速连点「刷新」5 次、以及在加载中途切换设备，确认不再出现黄条。
 4. 降级路径验证：临时把 `resources/app-info.dex` 改名制造失败，确认黄条出现、
    「详情」能看到具体错误、「重试」按钮可用、图标退回逐包懒加载仍能显示。

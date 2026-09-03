@@ -1,0 +1,6 @@
+{"file": ".trellis/tasks/09-03-app-info-read-stability/design.md", "reason": "父任务定义的 sentinel、模式参数、包名过滤与分批契约是本任务的直接依赖，动手前必须读"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "缓存读写要新建 Rust 模块，且仓库此前没有 app 缓存目录的先例，需要确认模块放置约定"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "缓存失败必须静默退化而非向上传播错误，需要确认这类'可忽略错误'在项目里的既有写法"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "乐观首屏引入'缓存数据先于真实数据'的状态，需对齐既有的 Zustand/局部 state 划分"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "首屏与 reconcile 两段数据流的 effect 依赖和守卫写法需对齐既有 hook 约定"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "缓存键跨 Rust 存储层与前端渲染层，属于该指南点名的多层数据流场景"}

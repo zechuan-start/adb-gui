@@ -41,12 +41,17 @@ sentinel 常量：`--ADBGUI-APPINFO-V1--`，Rust 与 Java 各自持有同一个�
 | 参数 | 输出 | 调用方 |
 |---|---|---|
 | `--no-icons` | 全部元数据字段，`icon` 恒为 `""` | `get_installed_apps` |
-| `--icons-only` | 每项仅 `packageName` + `icon` | `get_installed_app_icons` |
+| `--icons-only [pkg...]` | 每项仅 `packageName` + `icon`；给了包名则只处理这些包 | `get_installed_app_icons` |
 | 无参 / 未知参数 | 全量（元数据 + 图标），即当前行为 | 旧 dex 兼容路径 |
 
-参数解析规则：遍历 `args`，命中 `--no-icons` 或 `--icons-only` 则设定模式，
-**其余一律忽略**（不报错、不退出）。这条是旧 dex 兼容的基础——旧 dex 根本不读
-`args`，收到新参数时自然按"全量"处理。
+参数解析规则：遍历 `args`，命中 `--no-icons` 或 `--icons-only` 则设定模式；
+以 `--` 开头的其余 token **一律忽略**（不报错、不退出）；不以 `--` 开头的 token
+收集为包名过滤集。这条是旧 dex 兼容的基础——旧 dex 根本不读 `args`，
+收到任何新参数都自然按"全量"处理。
+
+过滤语义：过滤集为空 → 处理全部第三方应用（冷启动路径）。过滤集非空 →
+只处理 `getInstalledApplications` 结果中包名命中过滤集的项；**过滤集里设备上
+不存在的包名直接跳过，不报错**（调用方的缓存可能滞后于设备实际状态）。
 
 ### Rust 结构体
 
@@ -71,8 +76,16 @@ export interface AppIconEntry {
   packageName: string;
   icon: string;
 }
-export async function getInstalledAppIcons(serial: string): Promise<AppIconEntry[]>;
+// packages 省略或为空数组 = 取全部图标
+export async function getInstalledAppIcons(
+  serial: string,
+  packages?: string[],
+): Promise<AppIconEntry[]>;
 ```
+
+**调用方必须容忍返回的是请求集的超集**：旧 dex 会忽略过滤参数返回全部图标。
+按 `packageName` 索引写入缓存即可，多出来的条目无害，不要断言
+`result.length === packages.length`。
 
 ## Rust 侧设计
 
@@ -102,6 +115,33 @@ impl HelperMode {
     fn timeout(self) -> Duration { /* METADATA_TIMEOUT | ICONS_TIMEOUT */ }
 }
 ```
+
+### 包名过滤与分批
+
+```rust
+const ICON_FILTER_BATCH: usize = 50;
+
+fn is_safe_package_name(name: &str) -> bool
+fn sanitize_package_filter(packages: &[String]) -> Vec<String>
+fn build_helper_command(remote: &str, mode: HelperMode, filter: &[String]) -> String
+```
+
+- `is_safe_package_name`：只接受 `[A-Za-z0-9_.]`，非空，且不以 `.` 开头/结尾。
+  Android 的包名规则本就在这个字符集内，所以这不是"转义"，是**拒绝**——
+  任何不合规的名字直接丢弃，绝不拼进 shell 串。过滤后为空且原始输入非空时，
+  返回 `Err`，不要静默降级成"取全部图标"（那会让一次本该很小的调用变成全量渲染）。
+- `sanitize_package_filter`：去重 + 过滤 + 保持稳定顺序，便于测试。
+- `build_helper_command`：
+  `CLASSPATH=<remote> app_process <dir> com.adbgui.appinfo.Main <mode.arg()> <pkg...>`，
+  包名之间空格分隔。因为已经做过字符集白名单，这里不需要引号。
+- 分批在 `get_installed_app_icons` 这一层做：过滤集为空 → 单次无过滤调用；
+  非空 → 按 `ICON_FILTER_BATCH` 切块，**顺序**执行（不要并发，per-serial 锁本来就
+  会把它们串起来，并发只会制造锁竞争），结果拼接后返回。
+  任何一批失败即整体 `Err`——图标是尽力而为的，部分成功的语义会让调用方缓存进
+  一个不完整的状态，不值得。
+
+这三个函数都是纯函数，必须有单元测试：合法/非法包名、去重、空输入、
+恰好等于批大小、批大小 +1、命令串拼装结果。
 
 ### per-serial 串行化
 
@@ -190,13 +230,11 @@ for attempt in 0..=1 {
 `kill_on_drop(true)` + `wait_with_output()`）。`wait_with_output` 会并发 drain
 stdout/stderr，不要改成手动读单个管道——那会在 stderr 写满 64KB 管道缓冲时死锁。
 
-命令字符串按远程路径动态拼接：
+命令字符串由 `build_helper_command()` 拼接。`remote` 由 `remote_dex_path()` 生成，
+字符集为 `[a-z0-9-]` + `/` + `.`；包名已过白名单。两者都无需 shell 转义。
 
-```rust
-format!("CLASSPATH={remote} app_process {REMOTE_DEX_DIR} com.adbgui.appinfo.Main {arg}")
-```
-
-`remote` 由 `remote_dex_path()` 生成，字符集为 `[a-z0-9-]` + `/` + `.`，无需 shell 转义。
+单批命令串长度上界：50 × 约 30 字节包名 + 约 120 字节前缀 ≈ 1.6KB，
+对 adb shell 协议和 Windows `CreateProcess`（32767 字符）都远在安全区内。
 
 ## Java 侧设计（`scripts/build-app-info-dex/src/com/adbgui/appinfo/Main.java`）
 
@@ -218,7 +256,9 @@ finally 块里 `out.flush(); System.err.flush();`。异常路径同样要 flush 
 
 ```java
 private enum Mode { FULL, METADATA_ONLY, ICONS_ONLY }
-static Mode parseMode(String[] args)   // 未知参数忽略，默认 FULL
+
+/** 模式 + 包名过滤集；未知的 --xxx 忽略，裸 token 收集为过滤集，默认 FULL。 */
+static Options parseArgs(String[] args)
 ```
 
 - `METADATA_ONLY`：跳过 `readIcon()`，`icon` 直接写 `""`。这是本任务的性能核心，
@@ -228,6 +268,12 @@ static Mode parseMode(String[] args)   // 未知参数忽略，默认 FULL
 
 `readApplication` 按 mode 分支，或拆成 `readMetadata` / `readIconEntry` 两个函数——
 执行时选可读性更好的那种，但不要把三种模式的字段拼装逻辑复制三份。
+
+包名过滤：在主循环现有的 `FLAG_SYSTEM` 判断之后加一道
+`if (!filter.isEmpty() && !filter.contains(packageName)) continue;`。
+`filter` 用 `HashSet<String>` 而不是 `List`——过滤集可能几十个元素，
+主循环要跑几百次。过滤集里设备上不存在的包名自然不会命中，无需额外处理，
+更不要为此报错退出。过滤只决定处理哪些包，不改变输出格式。
 
 ### Context 引导多级回退（C9）
 
@@ -286,9 +332,11 @@ const [iconMode, setIconMode] = useState<IconMode>("bulk-pending");
    然后 **不 await** 地发起阶段 2
 3. 失败：`setFallback({ reason: String(bulkError) })`，走现有 `listPackages` 降级，
    `setIconMode("lazy")`
-4. 阶段 2 `getInstalledAppIcons`：成功则写入模块级 `iconCache` 并 `setIcons(new Map(iconCache))`、
+4. 阶段 2 `getInstalledAppIcons(serial)`（**本轮不传 packages，即取全部**）：
+   成功则写入模块级 `iconCache` 并 `setIcons(new Map(iconCache))`、
    `setIconMode("bulk-done")`；失败则 `setIconMode("lazy")`（**不弹 toast、不显示黄条**——
-   图标缺失会由懒加载补上，不是需要用户知晓的降级）
+   图标缺失会由懒加载补上，不是需要用户知晓的降级）。
+   写入时按返回项的 `packageName` 逐条索引，不要假设返回集与请求集一一对应。
 
 每一步回写 state 前都要 `if (loadRequestRef.current !== requestId) return;`，
 阶段 2 尤其重要——它的生命周期比阶段 1 长得多，切设备后极易回写到错误的设备上。
@@ -317,7 +365,7 @@ const [iconMode, setIconMode] = useState<IconMode>("bulk-pending");
 | Rust | dex | 结果 |
 |---|---|---|
 | 新 | 新 | 元数据快速返回，图标后台回填 —— 目标状态 |
-| 新 | **旧（仓库现状）** | 旧 dex 忽略 `--no-icons`，输出全量且无 sentinel；`extract_payload` 回退整体解析 → **仍然可用**，只是元数据阶段仍需渲染图标（慢，但 45s 预算比原来的 15s 宽松）。阶段 2 `--icons-only` 同样返回全量数组，`AppIconEntry` 靠 serde 忽略多余字段 → 也能用 |
+| 新 | **旧（仓库现状）** | 旧 dex 忽略 `--no-icons`，输出全量且无 sentinel；`extract_payload` 回退整体解析 → **仍然可用**，只是元数据阶段仍需渲染图标（慢，但 45s 预算比原来的 15s 宽松）。阶段 2 `--icons-only` 及其后面的包名参数同样被忽略，返回全量数组：`AppIconEntry` 靠 serde 忽略多余字段能解析，返回的是请求集的**超集** → 调用方按 packageName 索引写入，也能用 |
 | 旧 | 新 | 不会发生（同包发布） |
 
 第 2 行是本任务能否安全落地的关键。**代码写完必须真的用仓库现有的 dex 跑一次**，
