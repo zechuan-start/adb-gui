@@ -277,20 +277,20 @@ for attempt in 0..=1 {
     spawn app_process, timeout(mode.timeout())
       ├ 超时      → FORCE_PUSH_NEXT.store(true);        // 下次（用户点「重试」）强制重推
       │             return Err("... timed out ...")     // 本轮不自动重试
-      ├ 非零退出  → if !pushed_fresh {
+      ├ 非零退出或 payload 无效 → if !pushed_fresh {
       │                force_push = true; continue;   // 跑的是跳过 push 的旧文件 → 重推再试
       │             } else {
-      │                return Err(ROM 不兼容)          // 刚推的新文件还失败 → 重试无意义
+      │                return Err(ROM/协议错误)        // 刚推的新文件还失败 → 重试无意义
       │             }
-      └ 成功      → return parse_helper_output(stdout)
-                     （解析失败也直接 return Err，不重试）
+      └ 成功且 payload 有效 → return parse_helper_output(stdout)
 }
 ```
 
 要点：
-- 重试触发条件共**两条**：**push 失败**、
-  以及**"跳过了 push 的那一轮"非零退出**（损坏 dex 自愈）。
-  JSON 解析失败不重试。
+- 重试触发条件共**两类**：**push 失败**、以及**"跳过了 push 的那一轮"执行失败**.
+  后者既包括主机看到非零退出, 也包括退出码成功但 payload 为空/无效. 实机上损坏 dex
+  会让远端输出 `Aborted`, 但 `adb exec-out` 仍可能返回成功退出码, 所以 payload 有效性
+  必须参与自愈判断. 若本轮刚推过 dex, 同样的 payload 错误直接返回, 不再重试.
 - **超时不自动重试**（规划期修订，原方案会重试）。原因：超时基本是"这台设备 /
   这个 dex 就是慢"，重推一次不会更快，只会让用户等两个超时预算才看到黄条
   ——旧 dex 路径尤其明显（45s 变 90s）。取而代之的是置 `FORCE_PUSH_NEXT`：
@@ -301,7 +301,9 @@ for attempt in 0..=1 {
   非零退出必然 `return Err`，不会死循环。
 - **损坏 dex 自愈**是这里最容易被漏掉的一条。`ensure_dex_pushed` 靠 `ls` 的字节数
   判断能否跳过 push，而字节数相同不代表内容没坏（进程被杀留下的半截文件、
-  文件系统损坏、被别的东西覆写）。若非零退出就一律判 ROM 不兼容，
+  文件系统损坏、被别的东西覆写）。同时不能假设 `adb exec-out` 的成功状态等于远端
+  `app_process` 成功: 实机上损坏 dex 会返回成功状态 + stdout `Aborted`. 若只在非零
+  退出时自愈,
   这台设备会**永久**停在黄条上——每次调用都跳过 push、每次都拿同一个坏文件去跑，
   没有任何路径能让它恢复。所以必须区分"跑的是旧文件"和"跑的是刚推的新文件"。
 - 反过来，`pushed_fresh == true` 时非零退出**立刻**返回错误，即使还在 attempt 0。
@@ -488,7 +490,8 @@ const [iconMode, setIconMode] = useState<IconMode>("bulk-pending");
   `fallback`/`iconMode` 改回 boolean 并恢复单段式 `loadApps`。
 - 需要重点 review 三处：
   1. `run_app_info_helper` 的失败分类——分错的两个方向都有代价：把超时也拿去自动重试
-     会让用户等两倍时间才看到黄条，而漏了"跳过 push 那轮非零退出要强制重推"
+     会让用户等两倍时间才看到黄条，而漏了"跳过 push 后执行失败或 payload 无效
+     要强制重推"
      会让一台设备永久卡在黄条上，后者更严重。
   2. 阶段 2 的 `requestId` 守卫（漏了会把 A 设备的图标画到 B 设备上），
      以及"切设备后不再发下一批"（漏了会让新设备的元数据一直等在锁上）。

@@ -57,10 +57,14 @@ public final class Main {
             Options options = parseArgs(args);
             Context context = createSystemContext();
             PackageManager packageManager = context.getPackageManager();
-            List<ApplicationInfo> applications = packageManager.getInstalledApplications(0);
+            List<PackageInfo> packages = packageManager.getInstalledPackages(0);
             JSONArray result = new JSONArray();
 
-            for (ApplicationInfo application : applications) {
+            for (PackageInfo packageInfo : packages) {
+                ApplicationInfo application = packageInfo.applicationInfo;
+                if (application == null) {
+                    continue;
+                }
                 String packageName = application.packageName;
                 if (packageName == null
                         || packageName.length() == 0
@@ -71,7 +75,7 @@ public final class Main {
                         && !options.packageFilter.contains(packageName)) {
                     continue;
                 }
-                result.put(readApplication(packageManager, application, options.mode));
+                result.put(readApplication(packageManager, packageInfo, options.mode));
             }
 
             out.print(SENTINEL);
@@ -164,8 +168,12 @@ public final class Main {
 
     private static JSONObject readApplication(
             PackageManager packageManager,
-            ApplicationInfo application,
+            PackageInfo packageInfo,
             Mode mode) throws Exception {
+        ApplicationInfo application = packageInfo.applicationInfo;
+        if (application == null) {
+            throw new IllegalArgumentException("Package has no application info");
+        }
         String packageName = application.packageName;
         JSONObject item = new JSONObject();
         item.put("packageName", packageName);
@@ -178,25 +186,10 @@ public final class Main {
         item.put("appName", readApplicationName(packageManager, application, packageName));
         item.put("icon", mode == Mode.FULL ? readIcon(packageManager, application) : "");
         item.put("apkSize", readApkSize(application));
-
-        String versionName = "";
-        long versionCode = 0;
-        long firstInstallTime = 0;
-        long lastUpdateTime = 0;
-        try {
-            PackageInfo packageInfo = packageManager.getPackageInfo(packageName, 0);
-            versionName = packageInfo.versionName == null ? "" : packageInfo.versionName;
-            versionCode = packageInfo.getLongVersionCode();
-            firstInstallTime = packageInfo.firstInstallTime;
-            lastUpdateTime = packageInfo.lastUpdateTime;
-        } catch (Throwable error) {
-            reportFieldFailure(packageName, "package info", error);
-        }
-
-        item.put("versionName", versionName);
-        item.put("versionCode", versionCode);
-        item.put("firstInstallTime", firstInstallTime);
-        item.put("lastUpdateTime", lastUpdateTime);
+        item.put("versionName", packageInfo.versionName == null ? "" : packageInfo.versionName);
+        item.put("versionCode", packageInfo.getLongVersionCode());
+        item.put("firstInstallTime", packageInfo.firstInstallTime);
+        item.put("lastUpdateTime", packageInfo.lastUpdateTime);
         return item;
     }
 

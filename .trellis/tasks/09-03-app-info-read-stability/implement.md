@@ -57,9 +57,10 @@
    不再走同步的 `run_adb_with_serial`。
 5. `run_app_info_helper<T: DeserializeOwned>(app, serial, mode) -> Result<Vec<T>, String>`：
    按 `design.md`「重试策略」的伪流程实现。自动重试触发条件是**两条**：
-   push 失败、以及**跳过了 push 的那一轮非零退出**（损坏 dex 自愈——漏了这条，
+   push 失败、以及**跳过了 push 的那一轮非零退出或 payload 无效**（损坏 dex 自愈——漏了这条，
    设备上一旦有个大小对但内容坏的 dex，这台设备就永久卡在黄条上）。
-   `pushed_fresh == true` 时非零退出立刻返回错误，不重试。
+   实机上损坏 dex 可能表现为成功退出码 + stdout `Aborted`, 所以 payload 解析结果必须
+   参与判断. `pushed_fresh == true` 时非零退出或 payload 无效立刻返回错误, 不重试。
    **`app_process` 超时不自动重试**：置 `FORCE_PUSH_NEXT`（`static AtomicBool`）
    后直接返回错误，下一次调用（通常就是用户点黄条上的「重试」）会强制重推。
    进入函数时用 `FORCE_PUSH_NEXT.swap(false)` 取出并消费这个标志。
@@ -191,7 +192,8 @@ pnpm build                          # tsc + vite build
    然后在设备上把它替换成**同样字节数但内容无效**的文件，例如
    `adb shell "head -c $(stat -c %s <path>) /dev/urandom > <path>"`
    （或读出大小后用 `dd` 写等长随机数据）。
-   再点刷新：`ls` 大小命中 → 跳过 push → `app_process` 非零退出 →
+   再点刷新：`ls` 大小命中 → 跳过 push → `app_process` 非零退出, 或主机收到成功
+   退出码但 payload 为 `Aborted`/无效 JSON →
    **应当自动强制重推并成功**，用户看不到黄条。
    若这里出现黄条，说明自愈分支没实现或分错了，这台设备之后每次刷新都会失败。
 6. 降级路径验证：临时把 `resources/app-info.dex` 改名制造失败，确认黄条出现、
@@ -214,7 +216,8 @@ pnpm build                          # tsc + vite build
 - Java、Rust、前端三部分互不依赖，可单独回退。
 - 最容易写错的三处：
   1. `run_app_info_helper` 的失败分类。两个方向的代价不对称：把超时也拿去自动重试
-     只是让用户等两倍时间才看到黄条；而漏掉"跳过 push 那轮非零退出要强制重推"，
+     只是让用户等两倍时间才看到黄条；而漏掉"跳过 push 后执行失败或 payload 无效
+     要强制重推"，
      会让一台设备**永久**卡在黄条上——每次都跳过 push、每次都跑同一个坏文件，
      没有任何路径能恢复。后者严重得多。
   2. 阶段 2 图标回填的 `requestId` 守卫（漏了会把 A 设备的图标画到 B 设备上），

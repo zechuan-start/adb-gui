@@ -209,9 +209,9 @@ nsExec::ExecToLog 'taskkill /IM adb.exe /F'
 - Missing SDK root, API 29+ platform, `javac`, or `d8` -> the build script exits nonzero with the missing requirement named.
 - Missing bundled dex or failed `adb push` -> contextual `Err`; do not start `app_process`.
 - Nonempty icon filter whose names are all invalid after `[A-Za-z0-9_.]` validation -> `Err`; never turn it into an unfiltered request. Missing or empty filters mean all icons.
-- Push failure -> force one retry. Nonzero helper exit after a skipped push -> force one push and retry. Nonzero exit after a fresh push -> return a ROM-incompatibility error with truncated stderr.
+- Push failure -> force one retry. Nonzero helper exit or invalid payload after a skipped push -> force one push and retry. `adb exec-out` may report success while a corrupt remote dex prints `Aborted`, so host exit status alone is not proof that the helper ran. The same failure after a fresh push -> return a ROM/protocol error without another retry.
 - Helper timeout -> kill on drop, set the next call to force-push, and return immediately with retry guidance; do not automatically repeat the timed-out helper.
-- Empty or invalid JSON stdout -> `Err`; never return a partial Rust vector.
+- Empty or invalid JSON stdout after a fresh push -> `Err`; never return a partial Rust vector. After a skipped push, treat it as evidence that the cached dex may be corrupt and refresh once.
 - One app label, icon, package-info, or file-size read fails -> keep that app with the field fallback and continue the array.
 - Batch command error plus successful legacy list -> show package-only rows and degraded notice.
 - Both batch and legacy list fail -> show the existing application-list error feedback.

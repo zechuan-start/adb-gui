@@ -325,3 +325,23 @@ state correctly, but several commands still re-parsed event payload fields with
 local casts. The fix was to make the core event layer own `ThreadChannelEvent`
 and `isThreadEvent`, make `reduceChannelMetadata` the only channel metadata
 projection, and make `reduceThreads` the only thread replay reducer.
+
+---
+
+## Generated Binary Consistency
+
+Checked-in binaries generated from source are a cross-layer contract. A
+successful compiler invocation does not prove that the runtime artifact
+contains every compiled dependency.
+
+### Checklist: After Changing Generated Runtime Code
+
+- [ ] Pass every generated class/module to the packager, including nested or
+      companion outputs; do not pass only the entry point.
+- [ ] Keep the generated artifact in sync with the checked-in source in the
+      same change.
+- [ ] Validate the generated program's payload separately from the transport
+      exit status; a wrapper such as `adb exec-out` may report success while
+      the remote runtime only writes an abort diagnostic.
+- [ ] Run the smallest real runtime smoke test that loads the artifact, in
+      addition to compiler and unit checks.

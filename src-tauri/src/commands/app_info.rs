@@ -90,9 +90,7 @@ pub async fn get_installed_app_icons(
     let mut icons = Vec::new();
 
     for batch in batches {
-        icons.extend(
-            run_app_info_helper(&app, &serial, HelperMode::Icons, &batch).await?,
-        );
+        icons.extend(run_app_info_helper(&app, &serial, HelperMode::Icons, &batch).await?);
     }
 
     Ok(icons)
@@ -131,55 +129,53 @@ async fn run_app_info_helper<T: DeserializeOwned>(
     .await
     {
         Ok(pushed) => pushed,
-        Err(first_error) => ensure_dex_pushed(
-            app,
-            serial,
-            &dex_path,
-            &remote_path,
-            expected_size,
-            true,
-        )
-        .await
-        .map_err(|retry_error| {
-            format!(
-                "Failed to push app-info dex; retry also failed. First error: {}; retry error: {}",
-                truncate_detail(&first_error, MAX_ERROR_DETAIL_BYTES / 2),
-                truncate_detail(&retry_error, MAX_ERROR_DETAIL_BYTES / 2)
-            )
-        })?,
+        Err(first_error) => {
+            ensure_dex_pushed(app, serial, &dex_path, &remote_path, expected_size, true)
+                .await
+                .map_err(|retry_error| {
+                    format!(
+                        "Failed to push app-info dex; retry also failed. First error: {}; retry error: {}",
+                        truncate_detail(&first_error, MAX_ERROR_DETAIL_BYTES / 2),
+                        truncate_detail(&retry_error, MAX_ERROR_DETAIL_BYTES / 2)
+                    )
+                })?
+        }
     };
 
     let first_output = run_helper_once(app, serial, &remote_path, mode, packages).await?;
-    let output = if first_output.status.success() {
-        first_output
-    } else if pushed {
-        return Err(helper_exit_error(mode, &first_output));
-    } else {
-        ensure_dex_pushed(
-            app,
-            serial,
-            &dex_path,
-            &remote_path,
-            expected_size,
-            true,
-        )
+    let first_payload = first_output
+        .status
+        .success()
+        .then(|| parse_helper_output::<T>(&first_output.stdout));
+    let payload_valid = first_payload.as_ref().is_some_and(|result| result.is_ok());
+
+    if !should_refresh_cached_dex(pushed, first_output.status.success(), payload_valid) {
+        return match first_payload {
+            Some(result) => result,
+            None => Err(helper_exit_error(mode, &first_output, pushed)),
+        };
+    }
+
+    let first_failure = match first_payload {
+        Some(Err(error)) => error,
+        Some(Ok(value)) => return Ok(value),
+        None => helper_exit_error(mode, &first_output, false),
+    };
+    ensure_dex_pushed(app, serial, &dex_path, &remote_path, expected_size, true)
         .await
         .map_err(|error| {
             format!(
-                "{} failed and refreshing app-info.dex also failed: {}",
-                mode.description(),
-                truncate_detail(&error, MAX_ERROR_DETAIL_BYTES)
+                "{}; refreshing app-info.dex also failed: {}",
+                truncate_detail(&first_failure, MAX_ERROR_DETAIL_BYTES / 2),
+                truncate_detail(&error, MAX_ERROR_DETAIL_BYTES / 2)
             )
         })?;
 
-        let retry_output = run_helper_once(app, serial, &remote_path, mode, packages).await?;
-        if !retry_output.status.success() {
-            return Err(helper_exit_error(mode, &retry_output));
-        }
-        retry_output
-    };
-
-    parse_helper_output(&output.stdout)
+    let retry_output = run_helper_once(app, serial, &remote_path, mode, packages).await?;
+    if !retry_output.status.success() {
+        return Err(helper_exit_error(mode, &retry_output, true));
+    }
+    parse_helper_output(&retry_output.stdout)
 }
 
 async fn ensure_dex_pushed(
@@ -192,7 +188,8 @@ async fn ensure_dex_pushed(
 ) -> Result<bool, String> {
     if !force {
         let probe_args = ["-s", serial, "shell", "ls", "-l", remote_path];
-        if let Ok(output) = run_adb_output(app, &probe_args, PUSH_TIMEOUT, "inspect remote dex").await
+        if let Ok(output) =
+            run_adb_output(app, &probe_args, PUSH_TIMEOUT, "inspect remote dex").await
         {
             if output.status.success()
                 && parse_ls_size_matches(&String::from_utf8_lossy(&output.stdout), expected_size)
@@ -239,7 +236,10 @@ async fn run_helper_once(
         .map_err(|error| format!("Failed to start {}: {error}", mode.description()))?;
     match tokio::time::timeout(mode.timeout(), child.wait_with_output()).await {
         Ok(Ok(output)) => Ok(output),
-        Ok(Err(error)) => Err(format!("Failed to wait for {}: {error}", mode.description())),
+        Ok(Err(error)) => Err(format!(
+            "Failed to wait for {}: {error}",
+            mode.description()
+        )),
         Err(_) => {
             FORCE_PUSH_NEXT.store(true, Ordering::Release);
             Err(format!(
@@ -278,9 +278,14 @@ async fn run_adb_output(
         .map_err(|error| format!("Failed to {operation}: {error}"))
 }
 
-fn helper_exit_error(mode: HelperMode, output: &Output) -> String {
+fn helper_exit_error(mode: HelperMode, output: &Output, pushed_fresh: bool) -> String {
+    let context = if pushed_fresh {
+        "failed even though the dex was freshly pushed; this device ROM may be incompatible"
+    } else {
+        "failed while using the cached dex"
+    };
     format!(
-        "{} failed even though the dex was freshly pushed; this device ROM may be incompatible: {}",
+        "{} {context}: {}",
         mode.description(),
         truncate_detail(&adb_output_error(output), MAX_ERROR_DETAIL_BYTES)
     )
@@ -328,12 +333,20 @@ fn parse_helper_output<T: DeserializeOwned>(stdout: &[u8]) -> Result<Vec<T>, Str
     if payload.is_empty() {
         return Err("App-info helper returned empty stdout.".to_string());
     }
-    serde_json::from_slice(payload).map_err(|error| {
-        format!(
+    match serde_json::from_slice(payload) {
+        Ok(value) => Ok(value),
+        Err(error) if !contains_payload_sentinel(stdout) => parse_legacy_noisy_output(stdout)
+            .ok_or_else(|| {
+                format!(
+                    "App-info helper returned invalid JSON: {error}; stdout: {}",
+                    truncate_detail(&String::from_utf8_lossy(payload), MAX_ERROR_DETAIL_BYTES)
+                )
+            }),
+        Err(error) => Err(format!(
             "App-info helper returned invalid JSON: {error}; stdout: {}",
             truncate_detail(&String::from_utf8_lossy(payload), MAX_ERROR_DETAIL_BYTES)
-        )
-    })
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -350,17 +363,32 @@ fn extract_payload(stdout: &[u8]) -> &[u8] {
     trim_ascii_whitespace(&stdout[start..])
 }
 
+fn contains_payload_sentinel(stdout: &[u8]) -> bool {
+    stdout
+        .windows(PAYLOAD_SENTINEL.len())
+        .any(|window| window == PAYLOAD_SENTINEL.as_bytes())
+}
+
+fn parse_legacy_noisy_output<T: DeserializeOwned>(stdout: &[u8]) -> Option<Vec<T>> {
+    for (offset, byte) in stdout.iter().enumerate() {
+        if *byte != b'[' {
+            continue;
+        }
+
+        let mut stream =
+            serde_json::Deserializer::from_slice(&stdout[offset..]).into_iter::<Vec<T>>();
+        if let Some(Ok(value)) = stream.next() {
+            return Some(value);
+        }
+    }
+    None
+}
+
 fn trim_ascii_whitespace(mut bytes: &[u8]) -> &[u8] {
-    while bytes
-        .first()
-        .is_some_and(|byte| byte.is_ascii_whitespace())
-    {
+    while bytes.first().is_some_and(|byte| byte.is_ascii_whitespace()) {
         bytes = &bytes[1..];
     }
-    while bytes
-        .last()
-        .is_some_and(|byte| byte.is_ascii_whitespace())
-    {
+    while bytes.last().is_some_and(|byte| byte.is_ascii_whitespace()) {
         bytes = &bytes[..bytes.len() - 1];
     }
     bytes
@@ -371,6 +399,14 @@ fn parse_ls_size_matches(output: &str, expected_size: u64) -> bool {
         .split_ascii_whitespace()
         .filter_map(|field| field.parse::<u64>().ok())
         .any(|size| size == expected_size)
+}
+
+fn should_refresh_cached_dex(
+    pushed_fresh: bool,
+    process_succeeded: bool,
+    payload_valid: bool,
+) -> bool {
+    !pushed_fresh && (!process_succeeded || !payload_valid)
 }
 
 fn truncate_detail(detail: &str, max_bytes: usize) -> String {
@@ -481,6 +517,15 @@ mod tests {
     }
 
     #[test]
+    fn accepts_legacy_output_with_diagnostic_prefix() {
+        let output = b"Failed to read icon for com.example.app: Resources$NotFoundException\n[{\"packageName\":\"com.example.app\",\"icon\":\"\"}]";
+        let entries = parse_helper_output::<AppIconEntry>(output)
+            .expect("legacy JSON should survive diagnostic stdout noise");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].package_name, "com.example.app");
+    }
+
+    #[test]
     fn content_hash_produces_stable_remote_path() {
         assert_eq!(fnv1a_64(b""), 0xcbf29ce484222325);
         assert_ne!(fnv1a_64(b"hello"), fnv1a_64(b"world"));
@@ -498,7 +543,19 @@ mod tests {
         ));
         assert!(!parse_ls_size_matches("permission denied", 12_345));
         assert!(!parse_ls_size_matches("", 12_345));
-        assert!(!parse_ls_size_matches("-rw-r--r-- shell shell 12 file.dex", 12_345));
+        assert!(!parse_ls_size_matches(
+            "-rw-r--r-- shell shell 12 file.dex",
+            12_345
+        ));
+    }
+
+    #[test]
+    fn refreshes_only_failed_or_invalid_cached_dex_attempts() {
+        assert!(should_refresh_cached_dex(false, false, false));
+        assert!(should_refresh_cached_dex(false, true, false));
+        assert!(!should_refresh_cached_dex(false, true, true));
+        assert!(!should_refresh_cached_dex(true, false, false));
+        assert!(!should_refresh_cached_dex(true, true, false));
     }
 
     #[test]
@@ -522,11 +579,10 @@ mod tests {
 
     #[test]
     fn rejects_nonempty_filter_when_every_package_is_invalid() {
-        assert!(prepare_icon_batches(Some(vec![
-            "bad-name".to_string(),
-            "also/bad".to_string()
-        ]))
-        .is_err());
+        assert!(
+            prepare_icon_batches(Some(vec!["bad-name".to_string(), "also/bad".to_string()]))
+                .is_err()
+        );
     }
 
     #[test]
@@ -535,18 +591,27 @@ mod tests {
             .map(|index| format!("com.example.p{index}"))
             .collect();
         let exact_batches = prepare_icon_batches(Some(exact)).expect("packages should be valid");
-        assert_eq!(exact_batches.iter().map(Vec::len).collect::<Vec<_>>(), vec![50]);
+        assert_eq!(
+            exact_batches.iter().map(Vec::len).collect::<Vec<_>>(),
+            vec![50]
+        );
 
         let packages = (0..51)
             .map(|index| format!("com.example.p{index}"))
             .collect();
         let batches = prepare_icon_batches(Some(packages)).expect("packages should be valid");
-        assert_eq!(batches.iter().map(Vec::len).collect::<Vec<_>>(), vec![50, 1]);
+        assert_eq!(
+            batches.iter().map(Vec::len).collect::<Vec<_>>(),
+            vec![50, 1]
+        );
     }
 
     #[test]
     fn empty_icon_filter_means_one_unfiltered_call() {
-        assert_eq!(prepare_icon_batches(None).unwrap(), vec![Vec::<String>::new()]);
+        assert_eq!(
+            prepare_icon_batches(None).unwrap(),
+            vec![Vec::<String>::new()]
+        );
         assert_eq!(
             prepare_icon_batches(Some(Vec::new())).unwrap(),
             vec![Vec::<String>::new()]
