@@ -8,8 +8,9 @@ import {
 import {
   getDeviceBySerial,
   getPreferredSelectedDeviceSerial,
+  getSelectableDevices,
   isOnlineDevice,
-  isSelectableDevice,
+  mergeDevicesByIdentity,
 } from "@/lib/device";
 
 export interface DeviceDetailState {
@@ -92,10 +93,10 @@ export const useDeviceStore = create<DeviceStore>((set, get) => ({
   },
   setSelectedDevice: (serial) => {
     set((state) => {
-      const requestedDevice = getDeviceBySerial(state.devices, serial);
-      const selectedDevice = requestedDevice && isSelectableDevice(requestedDevice)
-        ? requestedDevice.serial
-        : null;
+      const selectedDevice =
+        mergeDevicesByIdentity(getSelectableDevices(state.devices)).find((merged) =>
+          merged.transports.some((device) => device.serial === serial),
+        )?.serial ?? null;
       if (selectedDevice === state.selectedDevice) {
         return state;
       }

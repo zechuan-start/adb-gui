@@ -20,7 +20,7 @@ fn start_device_poll(app: &AppHandle) {
             if adb::is_shutting_down(&app_handle) {
                 break;
             }
-            if let Ok(devices) = commands::device::list_devices(app_handle.clone()) {
+            if let Ok(devices) = commands::device::list_devices(app_handle.clone()).await {
                 if adb::is_shutting_down(&app_handle) {
                     break;
                 }

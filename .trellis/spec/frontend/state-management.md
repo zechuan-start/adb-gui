@@ -126,22 +126,65 @@ Do not clamp the seq difference to ring-buffer capacity: rows that arrived while
 - Do not derive session freshness from serial alone; every batch, exit, and stop must use the current `sessionId`.
 - Do not reset `nextSeq` when clearing the Logcat window or replacing a session/device.
 
-### Explicit Device Selection vs Automatic Preference
+## Scenario: Merged Device Transport Selection
 
-`setDevices` owns automatic device preference and alias migration through `getPreferredSelectedDeviceSerial`. `setSelectedDevice` is a different contract: it must accept the exact selectable device requested by the user, including USB `unauthorized` and `offline` entries, and must not redirect that request to another online device.
+### 1. Scope / Trigger
+
+- Trigger: changing device discovery fields, transport grouping, device picker options, or either device-store selection action.
+- Applies when one physical Android device is reachable through multiple ADB serials such as USB and WiFi.
+
+### 2. Signatures
+
+- Rust payload: `DeviceInfo { serial, state, model, transport, is_network, alias_identity, device_id }`.
+- `mergeDevicesByIdentity(devices: DeviceInfo[]) -> MergedDevice[]`.
+- `getPreferredSelectedDeviceSerial(devices, selectedSerial, previousDevices?) -> string | null`.
+- `setDevices(devices: DeviceInfo[])` and `setSelectedDevice(serial: string | null)`.
+
+### 3. Contracts
+
+- `device_id` is the backend-provided physical identity. A null identity never participates in grouping.
+- Group only the selectable devices, then choose the primary transport by online state first, USB second, and original order last.
+- Every non-null `selectedDevice` is a merged group's primary serial. Both automatic refresh and explicit selection normalize a requested secondary serial to that primary.
+- A standalone selectable USB `offline` or `unauthorized` row remains explicitly selectable because its one-member group is its own primary.
+- Device-backed lifecycles still derive `onlineSerial` from the selected `DeviceInfo.state`; a non-null selection alone does not authorize ADB commands.
+
+### 4. Validation & Error Matrix
+
+- Requested serial belongs to a selectable merged group -> store the group's primary serial.
+- Requested serial is an unavailable network-only row or is absent -> store `null`.
+- Current primary disappears but an online transport with the prior `device_id` remains -> migrate to that group's primary.
+- `device_id` is null -> keep the row independent and use alias migration or normal preference only; never guess a physical identity.
+
+### 5. Good/Base/Bad Cases
+
+- Good: WiFi is selected, then the same device appears over USB; the store moves to the online USB primary while the picker keeps one option.
+- Base: an unauthorized USB device remains a selectable one-member group but does not produce an `onlineSerial`.
+- Bad: preserving a still-online secondary WiFi serial leaves the store value absent from the merged picker options.
+
+### 6. Tests Required
+
+- Pure helper tests cover null identities, online-before-USB ordering, stable group order, and offline USB plus online WiFi.
+- Store tests cover automatic WiFi-to-USB normalization, explicit secondary selection, standalone unauthorized/offline USB selection, and unavailable network rejection.
+- Assert that every non-null store selection exists in `mergeDevicesByIdentity(getSelectableDevices(devices)).map(({ serial }) => serial)`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
 
 ```typescript
-// Automatic refresh may prefer an online alias.
-const selectedDevice = getPreferredSelectedDeviceSerial(devices, previousSerial);
-
-// Explicit UI selection preserves the requested context.
 const requested = getDeviceBySerial(devices, requestedSerial);
 const selectedDevice = requested && isSelectableDevice(requested)
   ? requested.serial
   : null;
 ```
 
-Device-backed lifecycles must derive an `onlineSerial` from the selected `DeviceInfo.state`; a non-null serial alone does not authorize ADB commands. Store tests must assert explicit USB unauthorized/offline selection and rejection of unavailable network-only entries.
+#### Correct
+
+```typescript
+const selectedDevice = mergeDevicesByIdentity(getSelectableDevices(devices))
+  .find((group) => group.transports.some(({ serial }) => serial === requestedSerial))
+  ?.serial ?? null;
+```
 
 ### Serial-Bound Device Detail
 

@@ -7,7 +7,7 @@ import {
 import type { DeviceDetail, DeviceInfo } from "@/lib/tauri";
 import type { DeviceDetailState } from "@/store/device";
 
-function device(state = "device"): DeviceInfo {
+function device(state = "device", overrides: Partial<DeviceInfo> = {}): DeviceInfo {
   return {
     serial: "emulator-5554",
     state,
@@ -15,6 +15,8 @@ function device(state = "device"): DeviceInfo {
     transport: "usb",
     is_network: false,
     alias_identity: null,
+    device_id: "emulator-5554",
+    ...overrides,
   };
 }
 
@@ -57,6 +59,7 @@ describe("getDeviceSpecStripModel", () => {
     expect(itemValues(model)).toEqual({
       model: "Google / Pixel 9 Pro",
       serial: "emulator-5554",
+      transport: "USB",
       android: "16 / SDK 36",
       abi: "arm64-v8a",
       display: "1440x3120 / 560",
@@ -86,6 +89,7 @@ describe("getDeviceSpecStripModel", () => {
     expect(itemValues(model)).toEqual({
       model: "Pixel 9",
       serial: "emulator-5554",
+      transport: "USB",
       "detail-status": "读取中...",
     });
   });
@@ -99,6 +103,7 @@ describe("getDeviceSpecStripModel", () => {
     expect(itemValues(model)).toEqual({
       model: "Pixel 9",
       serial: "emulator-5554",
+      transport: "USB",
       state: "未授权",
     });
   });
@@ -112,12 +117,47 @@ describe("getDeviceSpecStripModel", () => {
     expect(itemValues(model)).toEqual({
       model: "Pixel 9",
       serial: "emulator-5554",
+      transport: "USB",
       state: "离线",
     });
   });
 
   it("does not render a strip when no device is selected", () => {
     expect(getDeviceSpecStripModel(null, detailState())).toBeNull();
+  });
+
+  it("shows all merged transports and marks the current USB transport", () => {
+    const usb = device();
+    const wifi = device("device", {
+      serial: "192.168.1.5:5555",
+      transport: "tcpip",
+      is_network: true,
+    });
+
+    const model = getDeviceSpecStripModel(
+      usb,
+      detailState({ serial: usb.serial, detail: detail() }),
+      [usb, wifi],
+    );
+
+    expect(itemValues(model).transport).toBe("USB 和 WiFi (当前 USB)");
+  });
+
+  it("marks WiFi when it is the active transport of a merged device", () => {
+    const wifi = device("device", {
+      serial: "192.168.1.5:5555",
+      transport: "tcpip",
+      is_network: true,
+    });
+    const offlineUsb = device("offline");
+
+    const model = getDeviceSpecStripModel(
+      wifi,
+      detailState({ serial: wifi.serial, detail: detail() }),
+      [wifi, offlineUsb],
+    );
+
+    expect(itemValues(model).transport).toBe("USB 和 WiFi (当前 WiFi)");
   });
 });
 

@@ -17,6 +17,7 @@ export interface DeviceInfo {
   transport: string;
   is_network: boolean;
   alias_identity: string | null;
+  device_id: string | null;
 }
 
 export interface AdbInfo {

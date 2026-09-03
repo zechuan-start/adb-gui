@@ -1,10 +1,14 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { RefreshCw } from "lucide-react";
 import type { DeviceInfo } from "@/lib/tauri";
 import {
   getDeviceBySerial,
   getDeviceStateLabel,
+  getSelectableDevices,
   isOnlineDevice,
+  mergeDevicesByIdentity,
+  transportKind,
+  transportLabel,
 } from "@/lib/device";
 import {
   useDeviceStore,
@@ -26,20 +30,28 @@ export interface DeviceSpecStripModel {
 export function getDeviceSpecStripModel(
   device: DeviceInfo | null,
   deviceDetail: DeviceDetailState,
+  transports?: DeviceInfo[],
 ): DeviceSpecStripModel | null {
   if (!device) {
     return null;
   }
 
+  const resolvedTransports = transports ?? [device];
   const model = device.model.trim();
   const serialItem: DeviceSpecItem = {
     key: "serial",
     label: "序列号",
     value: device.serial,
   };
+  const transportItem: DeviceSpecItem = {
+    key: "transport",
+    label: "连接方式",
+    value: getTransportDescription(device, resolvedTransports),
+  };
   const baseItems: DeviceSpecItem[] = [
     ...(model ? [{ key: "model", label: "型号", value: model }] : []),
     serialItem,
+    transportItem,
   ];
 
   if (!isOnlineDevice(device)) {
@@ -91,6 +103,7 @@ export function getDeviceSpecStripModel(
         ? [{ key: "model", label: "厂商 / 型号", value: vendorModel }]
         : baseItems.filter((item) => item.key === "model")),
       serialItem,
+      transportItem,
       ...optionalItem("android", "Android / SDK", android),
       ...optionalItem("abi", "ABI", detail.abi),
       ...optionalItem("display", "分辨率 / 密度", display),
@@ -121,8 +134,21 @@ export function DeviceSpecStrip({ onRefreshActivity }: DeviceSpecStripProps) {
   const currentActivity = useDeviceStore((state) => state.currentActivity);
   const refreshDeviceDetail = useDeviceStore((state) => state.refreshDeviceDetail);
   const device = getDeviceBySerial(devices, selectedDevice);
+  const mergedDevices = useMemo(
+    () => mergeDevicesByIdentity(getSelectableDevices(devices)),
+    [devices],
+  );
+  const merged = device
+    ? mergedDevices.find((item) =>
+        item.transports.some((transport) => transport.serial === device.serial),
+      )
+    : null;
   const onlineSerial = device && isOnlineDevice(device) ? device.serial : null;
-  const model = getDeviceSpecStripModel(device, deviceDetail);
+  const model = getDeviceSpecStripModel(
+    device,
+    deviceDetail,
+    merged?.transports ?? (device ? [device] : undefined),
+  );
 
   useEffect(() => {
     if (!onlineSerial) {
@@ -141,7 +167,7 @@ export function DeviceSpecStrip({ onRefreshActivity }: DeviceSpecStripProps) {
       aria-busy={model.loading}
       className="shrink-0 border border-rule bg-surface2"
     >
-      <div className="grid min-h-[92px] grid-cols-3 border-b border-rule lg:min-h-14 lg:grid-cols-6">
+      <div className="grid min-h-[92px] grid-cols-3 border-b border-rule lg:min-h-14 lg:grid-cols-7">
         {model.items.map((item) => (
           <dl
             key={item.key}
@@ -181,6 +207,20 @@ export function DeviceSpecStrip({ onRefreshActivity }: DeviceSpecStripProps) {
 function optionalItem(key: string, label: string, value: string): DeviceSpecItem[] {
   const normalized = value.trim();
   return normalized ? [{ key, label, value: normalized }] : [];
+}
+
+function getTransportDescription(device: DeviceInfo, transports: DeviceInfo[]): string {
+  const labels: string[] = [];
+  if (transports.some((transport) => transportKind(transport) === "usb")) {
+    labels.push(transportLabel("usb"));
+  }
+  if (transports.some((transport) => transportKind(transport) === "network")) {
+    labels.push(transportLabel("network"));
+  }
+  if (labels.length === 1) {
+    return labels[0];
+  }
+  return `${labels.join(" 和 ")} (当前 ${transportLabel(transportKind(device))})`;
 }
 
 function joinValues(...values: string[]): string {

@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeviceDetail, DeviceInfo } from "@/lib/tauri";
 import {
+  getSelectableDevices,
+  mergeDevicesByIdentity,
+} from "@/lib/device";
+import {
   createEmptyDeviceDetailState,
   useDeviceStore,
 } from "@/store/device";
@@ -25,6 +29,7 @@ function device(serial: string, overrides: Partial<DeviceInfo> = {}): DeviceInfo
     transport: "usb",
     is_network: false,
     alias_identity: null,
+    device_id: serial,
     ...overrides,
   };
 }
@@ -175,6 +180,36 @@ describe("useDeviceStore", () => {
     ]);
 
     expect(useDeviceStore.getState().selectedDevice).toBe("emulator-5554");
+  });
+
+  it("normalizes a WiFi selection to the merged USB primary after refresh", () => {
+    const wifi = device("192.168.1.5:5555", {
+      is_network: true,
+      device_id: "physical-a",
+    });
+    const usb = device("physical-a", { device_id: "physical-a" });
+    useDeviceStore.getState().setDevices([wifi]);
+
+    useDeviceStore.getState().setDevices([wifi, usb]);
+
+    const state = useDeviceStore.getState();
+    const optionSerials = mergeDevicesByIdentity(getSelectableDevices(state.devices))
+      .map((merged) => merged.serial);
+    expect(state.selectedDevice).toBe(usb.serial);
+    expect(optionSerials).toContain(state.selectedDevice);
+  });
+
+  it("normalizes an explicitly selected secondary transport to the group primary", () => {
+    const wifi = device("192.168.1.5:5555", {
+      is_network: true,
+      device_id: "physical-a",
+    });
+    const usb = device("physical-a", { device_id: "physical-a" });
+    useDeviceStore.getState().setDevices([wifi, usb]);
+
+    useDeviceStore.getState().setSelectedDevice(wifi.serial);
+
+    expect(useDeviceStore.getState().selectedDevice).toBe(usb.serial);
   });
 
   it("shares an in-flight detail request for the selected serial", async () => {

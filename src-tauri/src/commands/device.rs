@@ -1,11 +1,15 @@
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::process::Output;
+use std::sync::{Mutex, OnceLock};
 use tauri::AppHandle;
 
 use crate::adb;
 
 const MDNS_CONNECT_SERVICE_SUFFIXES: [&str; 2] = ["._adb-tls-connect._tcp", "._adb._tcp"];
+
+static DEVICE_ID_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+static DEVICE_LIST_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 
 #[derive(Serialize, Clone)]
 pub struct DeviceInfo {
@@ -15,6 +19,15 @@ pub struct DeviceInfo {
     pub transport: String,
     pub is_network: bool,
     pub alias_identity: Option<String>,
+    pub device_id: Option<String>,
+}
+
+fn device_id_cache() -> &'static Mutex<HashMap<String, String>> {
+    DEVICE_ID_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn device_list_lock() -> &'static tokio::sync::Mutex<()> {
+    DEVICE_LIST_LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
 }
 
 pub fn run_adb_output(app: &AppHandle, args: &[&str]) -> Result<Output, String> {
@@ -38,6 +51,13 @@ pub fn run_adb_with_serial(app: &AppHandle, serial: &str, args: &[&str]) -> Resu
     let mut full_args = vec!["-s", serial];
     full_args.extend_from_slice(args);
     run_adb(app, &full_args)
+}
+
+pub(super) fn getprop(app: &AppHandle, serial: &str, prop: &str) -> String {
+    run_adb_with_serial(app, serial, &["shell", "getprop", prop])
+        .unwrap_or_default()
+        .trim()
+        .to_string()
 }
 
 pub fn run_adb_output_with_serial(
@@ -85,12 +105,73 @@ pub fn get_adb_info(app: AppHandle) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-pub fn list_devices(app: AppHandle) -> Result<Vec<DeviceInfo>, String> {
-    let output = run_adb(&app, &["devices", "-l"])?;
-    Ok(parse_devices_output(&output))
+pub async fn list_devices(app: AppHandle) -> Result<Vec<DeviceInfo>, String> {
+    let _guard = device_list_lock().lock().await;
+    tauri::async_runtime::spawn_blocking(move || list_devices_blocking(&app))
+        .await
+        .map_err(|error| format!("Failed to run device list worker: {error}"))?
 }
 
+fn list_devices_blocking(app: &AppHandle) -> Result<Vec<DeviceInfo>, String> {
+    let output = run_adb(app, &["devices", "-l"])?;
+    let (mut devices, present_serials) = parse_devices_snapshot(&output);
+    for device in &mut devices {
+        device.device_id = resolve_device_id(app, &device.serial, &device.state);
+    }
+
+    prune_device_id_cache(device_id_cache(), &present_serials);
+    Ok(devices)
+}
+
+fn resolve_device_id(app: &AppHandle, serial: &str, state: &str) -> Option<String> {
+    resolve_device_id_with(device_id_cache(), serial, state, |prop| {
+        getprop(app, serial, prop)
+    })
+}
+
+fn resolve_device_id_with(
+    cache: &Mutex<HashMap<String, String>>,
+    serial: &str,
+    state: &str,
+    mut read_property: impl FnMut(&str) -> String,
+) -> Option<String> {
+    if state != "device" {
+        return cache.lock().unwrap().get(serial).cloned();
+    }
+
+    let device_id = ["ro.serialno", "ro.boot.serialno"]
+        .into_iter()
+        .find_map(|property| {
+            let value = read_property(property);
+            let trimmed = value.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        });
+
+    if let Some(resolved) = &device_id {
+        cache
+            .lock()
+            .unwrap()
+            .insert(serial.to_string(), resolved.clone());
+    }
+    device_id
+}
+
+fn prune_device_id_cache(
+    cache: &Mutex<HashMap<String, String>>,
+    present_serials: &HashSet<String>,
+) {
+    cache
+        .lock()
+        .unwrap()
+        .retain(|serial, _| present_serials.contains(serial));
+}
+
+#[cfg(test)]
 fn parse_devices_output(output: &str) -> Vec<DeviceInfo> {
+    parse_devices_snapshot(output).0
+}
+
+fn parse_devices_snapshot(output: &str) -> (Vec<DeviceInfo>, HashSet<String>) {
     let mut devices = Vec::new();
     for line in output.lines().skip(1) {
         let line = line.trim();
@@ -122,8 +203,14 @@ fn parse_devices_output(output: &str) -> Vec<DeviceInfo> {
             transport,
             is_network,
             alias_identity,
+            device_id: None,
         });
     }
+
+    let present_serials = devices
+        .iter()
+        .map(|device| device.serial.clone())
+        .collect::<HashSet<_>>();
 
     // ADB matches the bare mDNS service serial as a prefix, so its :port alias makes -s ambiguous.
     let mdns_port_aliases: HashSet<String> = devices
@@ -134,7 +221,7 @@ fn parse_devices_output(output: &str) -> Vec<DeviceInfo> {
         })
         .collect();
     devices.retain(|device| !mdns_port_aliases.contains(&device.serial));
-    devices
+    (devices, present_serials)
 }
 
 fn mdns_alias_identity(serial: &str) -> Option<&str> {
@@ -181,7 +268,12 @@ pub fn parse_current_activity(output: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_current_activity, parse_devices_output};
+    use super::{
+        parse_current_activity, parse_devices_output, parse_devices_snapshot,
+        prune_device_id_cache, resolve_device_id_with,
+    };
+    use std::collections::{HashMap, HashSet};
+    use std::sync::Mutex;
 
     #[test]
     fn collapses_ambiguous_mdns_service_serial_when_port_alias_exists() {
@@ -208,6 +300,20 @@ emulator-5554 device product:sdk_gphone16k_arm64 model:sdk_gphone16k_arm64 devic
             devices[0].alias_identity.as_deref(),
             Some("adb-275179f2-BYZBAE._adb-tls-connect._tcp")
         );
+    }
+
+    #[test]
+    fn keeps_deduplicated_mdns_serials_in_the_cache_pruning_set() {
+        let output = "List of devices attached\n\
+phone._adb-tls-connect._tcp device model:Phone transport_id:1\n\
+phone._adb-tls-connect._tcp:5555 device model:Phone transport_id:2\n";
+
+        let (devices, present_serials) = parse_devices_snapshot(output);
+
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].serial, "phone._adb-tls-connect._tcp:5555");
+        assert!(present_serials.contains("phone._adb-tls-connect._tcp"));
+        assert!(present_serials.contains("phone._adb-tls-connect._tcp:5555"));
     }
 
     #[test]
@@ -371,6 +477,97 @@ phone._adb-tls-connect._tcp:5555 device model:Phone transport_id:1\n";
 
         assert_eq!(payload["is_network"], true);
         assert_eq!(payload["alias_identity"], "phone._adb-tls-connect._tcp");
+        assert!(payload["device_id"].is_null());
+    }
+
+    #[test]
+    fn resolves_online_identity_from_serial_number_on_every_read() {
+        let cache = Mutex::new(HashMap::from([(
+            "192.168.1.5:5555".to_string(),
+            "old-device".to_string(),
+        )]));
+        let mut properties = Vec::new();
+
+        let resolved = resolve_device_id_with(&cache, "192.168.1.5:5555", "device", |property| {
+            properties.push(property.to_string());
+            " new-device \n".to_string()
+        });
+
+        assert_eq!(resolved.as_deref(), Some("new-device"));
+        assert_eq!(properties, vec!["ro.serialno"]);
+        assert_eq!(
+            cache
+                .lock()
+                .unwrap()
+                .get("192.168.1.5:5555")
+                .map(String::as_str),
+            Some("new-device")
+        );
+    }
+
+    #[test]
+    fn falls_back_to_boot_serial_number_when_primary_property_is_empty() {
+        let cache = Mutex::new(HashMap::new());
+        let mut properties = Vec::new();
+
+        let resolved = resolve_device_id_with(&cache, "usb-a", "device", |property| {
+            properties.push(property.to_string());
+            if property == "ro.boot.serialno" {
+                "boot-a".to_string()
+            } else {
+                " \n".to_string()
+            }
+        });
+
+        assert_eq!(resolved.as_deref(), Some("boot-a"));
+        assert_eq!(properties, vec!["ro.serialno", "ro.boot.serialno"]);
+    }
+
+    #[test]
+    fn offline_devices_reuse_identity_without_reading_properties() {
+        let cache = Mutex::new(HashMap::from([(
+            "usb-a".to_string(),
+            "physical-a".to_string(),
+        )]));
+
+        let resolved = resolve_device_id_with(&cache, "usb-a", "offline", |_| {
+            panic!("offline devices must not invoke getprop")
+        });
+
+        assert_eq!(resolved.as_deref(), Some("physical-a"));
+    }
+
+    #[test]
+    fn failed_online_reads_do_not_return_a_cached_identity() {
+        let cache = Mutex::new(HashMap::from([(
+            "wifi-a".to_string(),
+            "previous-device".to_string(),
+        )]));
+
+        let resolved = resolve_device_id_with(&cache, "wifi-a", "device", |_| String::new());
+
+        assert_eq!(resolved, None);
+        assert_eq!(
+            cache.lock().unwrap().get("wifi-a").map(String::as_str),
+            Some("previous-device")
+        );
+    }
+
+    #[test]
+    fn prunes_only_serials_missing_from_the_current_device_list() {
+        let cache = Mutex::new(HashMap::from([
+            ("online".to_string(), "one".to_string()),
+            ("offline".to_string(), "two".to_string()),
+            ("missing".to_string(), "three".to_string()),
+        ]));
+        let present = HashSet::from(["online".to_string(), "offline".to_string()]);
+
+        prune_device_id_cache(&cache, &present);
+
+        let cache = cache.lock().unwrap();
+        assert_eq!(cache.len(), 2);
+        assert!(cache.contains_key("online"));
+        assert!(cache.contains_key("offline"));
     }
 
     #[test]

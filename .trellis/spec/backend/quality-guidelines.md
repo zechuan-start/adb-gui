@@ -852,20 +852,20 @@ Compatibility fallback is valid only for a proven unsupported option. Device and
 
 ### 2. Signatures
 
-- `list_devices(app: AppHandle) -> Result<Vec<DeviceInfo>, String>`
+- `async list_devices(app: AppHandle) -> Result<Vec<DeviceInfo>, String>`
 - `parse_devices_output(output: &str) -> Vec<DeviceInfo>`
 - `mdns_port_alias_base(serial: &str) -> Option<&str>`
-- `DeviceInfo { serial, state, model, transport, is_network, alias_identity }`
+- `DeviceInfo { serial, state, model, transport, is_network, alias_identity, device_id }`
 
 ### 3. Contracts
 
 - Parse every valid `adb devices -l` row before deduplication so matching is independent of row order.
-- Rust parsing is the only owner of network classification and alias identity. Serialize `is_network` and `alias_identity` with every `DeviceInfo`; frontend code must consume those fields and must not parse serial strings again.
+- Rust is the only owner of network classification, alias identity, and physical-device identity. Serialize `is_network`, `alias_identity`, and `device_id` with every `DeviceInfo`; frontend code must consume those fields and must not parse serial strings or issue a second identity lookup.
 - Recognize only connect services ending in `._adb-tls-connect._tcp` or `._adb._tcp`. Do not fold `._adb-tls-pairing._tcp` or arbitrary serials.
 - Parse a possible alias from the final `:<port>` segment. The port must be a decimal value in `1..=65535`, and the complete base before that segment must end with a supported connect-service suffix.
 - When an alias base exactly equals another reported serial, remove only that bare serial. Keep every alias and every unrelated device in their original relative order.
 - Device state does not change alias detection. If the bare row is online but its port alias is offline, the bare value is still unusable with `adb -s` because ADB prefix matching is ambiguous; preserve the offline alias so the frontend shows the real unusable state.
-- Background device updates and explicit frontend refreshes must both consume the same filtered `list_devices` result.
+- Background device updates and explicit frontend refreshes must both consume the same serialized async `list_devices` entry point. Run its synchronous ADB chain in a blocking worker so the three-second poll does not block an async runtime worker.
 - When a refresh replaces a selected bare serial or old port alias, the frontend may migrate only to an online device with the same backend-provided `alias_identity`. If that identity is absent, use the normal online-device selection order; never jump to an unrelated network device.
 
 ### 4. Validation & Error Matrix
@@ -892,7 +892,7 @@ Compatibility fallback is valid only for a proven unsupported option. Device and
 - Unit-test TLS connect and legacy connect services, alias-before-bare ordering, multiple aliases, isolated bare services, and unchanged unrelated-device order.
 - Unit-test ports `0`, `65535`, `65536`, and nonnumeric suffixes.
 - Unit-test pairing exclusion, service-like text inside an instance name, and online-bare/offline-alias behavior.
-- Unit-test serialized `is_network` / `alias_identity`, frontend bare-to-alias and old-alias-to-new-alias migration, offline bare rejection, and unrelated-network non-migration.
+- Unit-test serialized `is_network` / `alias_identity` / `device_id`, frontend bare-to-alias and old-alias-to-new-alias migration, offline bare rejection, and unrelated-network non-migration.
 - Run the 60-second Rust test gate, target-file rustfmt, and Clippy.
 - Real-device smoke must prove the raw bare serial fails with ADB ambiguity, the retained `:port` alias returns a foreground Activity, and the Tauri device selector contains no duplicate bare option.
 
