@@ -520,3 +520,37 @@ Validated ADB WiFi transport state after connect, added reconnect regression cov
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: 应用信息稳定性真机验证
+
+**Date**: 2026-09-03
+**Task**: 应用信息稳定性真机验证
+**Branch**: `claude/app-info-read-stability-tj25vt`
+
+### Summary
+
+完成应用信息稳定性收口验证: 重建 dex 成功; 真机元数据约 1.96 秒返回 227 个第三方应用; --icons-only 包名过滤返回精确条目; 旧 dex 无 sentinel 全量兼容且忽略过滤返回超集; 同大小随机 dex 在真实 Tauri 启动链路中约 2 秒自动恢复. cargo fmt/test/clippy/check、pnpm test/build 全部通过. CUA 接口持续返回 Unexpected token ':'，无法可靠点击 UI 完成降级/重试与并发切换验收，主任务保留 in_progress; 两个 P2 任务仍 planning.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9893dc5` | (see git log) |
+| `95d75ce` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
