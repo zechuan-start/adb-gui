@@ -554,3 +554,36 @@ Validated ADB WiFi transport state after connect, added reconnect regression cov
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: 应用信息读取稳定性收尾
+
+**Date**: 2026-09-03
+**Task**: 应用信息读取稳定性收尾
+**Branch**: `claude/app-info-read-stability-tj25vt`
+
+### Summary
+
+补做真实 UI 验收：连续刷新返回 227 项完整应用信息；缺失 dex 时降级黄条、错误详情和重试入口可用；恢复 dex 后重试成功。自动化测试、clippy 和生产构建均通过。当前仅有单条 WiFi 传输，USB/WiFi 双传输场景记录为发布观察项；P1 已归档，两个未实现的 P2 任务保持 planning。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5e2b3eb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

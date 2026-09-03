@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 15
+- **Total Sessions**: 16
 - **Last Active**: 2026-09-03
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~556 | Active |
+| `journal-1.md` | ~589 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 16 | 2026-09-03 | 应用信息读取稳定性收尾 | `5e2b3eb` | `claude/app-info-read-stability-tj25vt` |
 | 15 | 2026-09-03 | 应用信息稳定性真机验证 | `9893dc5`, `95d75ce` | `claude/app-info-read-stability-tj25vt` |
 | 14 | 2026-09-02 | 批量应用信息 dex 实现 | `6f353a0` | `claude/adb-dex-jar-app-info-qk34vq` |
 | 13 | 2026-09-02 | Fix ADB WiFi switching and release v0.1.6 | `fe14bde`, `1a7b898` | `main` |
