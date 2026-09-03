@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "复查前端改动符合 TypeScript strict 与禁用写法清单"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "复查下拉行高仍是 min-h-[52px]、菜单宽仍是 292px，图标未导致换行或溢出"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "复查 device.rs 的缓存实现与 clippy 零告警"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复查 getprop helper 是共用而非复制，TransportBadges 没有被复制成两份"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "复查 selectedDevice 每次刷新都归一到合并项主 serial：WiFi 仍在线时 USB 上线也要切主值，且 store 的非 null 值始终对应 picker option"}
+{"file": ".trellis/tasks/09-03-device-transport-merge/prd.md", "reason": "复查两条最严重的失败模式：不同设备绝不误合并、device_id 为 null 一律不合并"}

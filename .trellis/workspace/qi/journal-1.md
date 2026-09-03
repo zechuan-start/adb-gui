@@ -520,3 +520,104 @@ Validated ADB WiFi transport state after connect, added reconnect regression cov
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: 应用信息稳定性真机验证
+
+**Date**: 2026-09-03
+**Task**: 应用信息稳定性真机验证
+**Branch**: `claude/app-info-read-stability-tj25vt`
+
+### Summary
+
+完成应用信息稳定性收口验证: 重建 dex 成功; 真机元数据约 1.96 秒返回 227 个第三方应用; --icons-only 包名过滤返回精确条目; 旧 dex 无 sentinel 全量兼容且忽略过滤返回超集; 同大小随机 dex 在真实 Tauri 启动链路中约 2 秒自动恢复. cargo fmt/test/clippy/check、pnpm test/build 全部通过. CUA 接口持续返回 Unexpected token ':'，无法可靠点击 UI 完成降级/重试与并发切换验收，主任务保留 in_progress; 两个 P2 任务仍 planning.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9893dc5` | (see git log) |
+| `95d75ce` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 16: 应用信息读取稳定性收尾
+
+**Date**: 2026-09-03
+**Task**: 应用信息读取稳定性收尾
+**Branch**: `claude/app-info-read-stability-tj25vt`
+
+### Summary
+
+补做真实 UI 验收：连续刷新返回 227 项完整应用信息；缺失 dex 时降级黄条、错误详情和重试入口可用；恢复 dex 后重试成功。自动化测试、clippy 和生产构建均通过。当前仅有单条 WiFi 传输，USB/WiFi 双传输场景记录为发布观察项；P1 已归档，两个未实现的 P2 任务保持 planning。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5e2b3eb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 17: 完成设备传输合并与应用信息缓存
+
+**Date**: 2026-09-03
+**Task**: 完成设备传输合并与应用信息缓存
+**Branch**: `claude/app-info-read-stability-tj25vt`
+
+### Summary
+
+合并同一设备的 USB/WiFi 传输, 并按设备持久化应用元数据与图标缓存; 补齐竞态、路径安全和缓存失效测试.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6ccdfd3` | (see git log) |
+| `0518248` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

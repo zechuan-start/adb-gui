@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "新增的 run_app_info_helper 重试分支与错误分类必须遵循项目的 Result<T, String> 错误传播约定"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "app_info.rs 会引入 OnceLock + 双层锁，需要先确认 clippy 规则与禁用写法（尤其是跨 await 持有 std MutexGuard）"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "helper 失败详情要不要写 eprintln、写多少，按项目既有的最小化日志约定来"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "黄条要加详情折叠与重试按钮，样式和结构必须沿用既有组件写法，不引入新组件"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "新增 AppIconEntry 类型与 IconMode/FallbackState 联合类型，需符合严格 TS 与接口命名约定"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "loadApps 拆成两阶段后 useEffect/useCallback 依赖与 requestId 守卫的写法需对齐既有 hook 约定"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "本任务跨 Java/Rust/前端三层且新增了 sentinel 与模式参数契约，属于该指南点名的触发条件"}

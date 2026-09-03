@@ -13,39 +13,106 @@ import android.util.Base64;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileDescriptor;
+import java.io.FileOutputStream;
+import java.io.PrintStream;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /** Entry point loaded by app_process to collect third-party application metadata. */
 public final class Main {
     private static final int ICON_SIZE = 96;
+    // Keep this value in sync with app_info.rs PAYLOAD_SENTINEL and rebuild the dex.
+    private static final String SENTINEL = "--ADBGUI-APPINFO-V1--";
+
+    private enum Mode {
+        FULL,
+        METADATA_ONLY,
+        ICONS_ONLY
+    }
+
+    private static final class Options {
+        private Mode mode = Mode.FULL;
+        private final Set<String> packageFilter = new HashSet<>();
+    }
 
     private Main() {}
 
     public static void main(String[] args) {
+        PrintStream out = null;
+        int exitCode = 0;
         try {
+            out = new PrintStream(
+                    new BufferedOutputStream(
+                            new FileOutputStream(FileDescriptor.out),
+                            1 << 16),
+                    false,
+                    "UTF-8");
+            Options options = parseArgs(args);
             Context context = createSystemContext();
             PackageManager packageManager = context.getPackageManager();
-            List<ApplicationInfo> applications = packageManager.getInstalledApplications(0);
+            List<PackageInfo> packages = packageManager.getInstalledPackages(0);
             JSONArray result = new JSONArray();
 
-            for (ApplicationInfo application : applications) {
-                if (application.packageName == null
-                        || application.packageName.length() == 0
+            for (PackageInfo packageInfo : packages) {
+                ApplicationInfo application = packageInfo.applicationInfo;
+                if (application == null) {
+                    continue;
+                }
+                String packageName = application.packageName;
+                if (packageName == null
+                        || packageName.length() == 0
                         || (application.flags & ApplicationInfo.FLAG_SYSTEM) != 0) {
                     continue;
                 }
-                result.put(readApplication(packageManager, application));
+                if (!options.packageFilter.isEmpty()
+                        && !options.packageFilter.contains(packageName)) {
+                    continue;
+                }
+                result.put(readApplication(packageManager, packageInfo, options.mode));
             }
 
-            System.out.print(result.toString());
+            out.print(SENTINEL);
+            out.print('\n');
+            out.print(result.toString());
+            out.flush();
         } catch (Throwable error) {
             System.err.println("Failed to collect installed applications: " + error);
             error.printStackTrace(System.err);
-            System.exit(1);
+            exitCode = 1;
+        } finally {
+            if (out != null) {
+                out.flush();
+            }
+            System.err.flush();
         }
+
+        if (exitCode != 0) {
+            System.exit(exitCode);
+        }
+    }
+
+    private static Options parseArgs(String[] args) {
+        Options options = new Options();
+        if (args == null) {
+            return options;
+        }
+        for (String argument : args) {
+            if ("--no-icons".equals(argument)) {
+                options.mode = Mode.METADATA_ONLY;
+            } else if ("--icons-only".equals(argument)) {
+                options.mode = Mode.ICONS_ONLY;
+            } else if (argument != null && !argument.startsWith("--")) {
+                options.packageFilter.add(argument);
+            }
+        }
+        return options;
     }
 
     private static Context createSystemContext() throws Exception {
@@ -55,45 +122,74 @@ public final class Main {
             Looper.prepareMainLooper();
         }
 
-        // ActivityThread is hidden from the SDK stubs, so keep the build compatible with
-        // a normal android.jar and resolve only this app_process bootstrap path at runtime.
+        // ActivityThread is hidden from the SDK stubs, so resolve both bootstrap paths at runtime.
         Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");
+        try {
+            return systemMainContext(activityThreadClass);
+        } catch (Throwable primaryError) {
+            reportBootstrapFailure("ActivityThread.systemMain()", primaryError);
+            try {
+                return lightweightContext(activityThreadClass);
+            } catch (Throwable fallbackError) {
+                reportBootstrapFailure("ActivityThread constructor", fallbackError);
+                throw new IllegalStateException(
+                        "Unable to obtain a system context; see stderr for both attempts.",
+                        fallbackError);
+            }
+        }
+    }
+
+    private static Context systemMainContext(Class<?> activityThreadClass) throws Exception {
         Method systemMain = activityThreadClass.getDeclaredMethod("systemMain");
         systemMain.setAccessible(true);
         Object activityThread = systemMain.invoke(null);
+        return getSystemContext(activityThreadClass, activityThread);
+    }
+
+    private static Context lightweightContext(Class<?> activityThreadClass) throws Exception {
+        Constructor<?> constructor = activityThreadClass.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        Object activityThread = constructor.newInstance();
+        return getSystemContext(activityThreadClass, activityThread);
+    }
+
+    private static Context getSystemContext(
+            Class<?> activityThreadClass,
+            Object activityThread) throws Exception {
         Method getSystemContext = activityThreadClass.getDeclaredMethod("getSystemContext");
         getSystemContext.setAccessible(true);
         return (Context) getSystemContext.invoke(activityThread);
     }
 
+    private static void reportBootstrapFailure(String attempt, Throwable error) {
+        System.err.println("Failed to bootstrap context with " + attempt + ": " + error);
+        error.printStackTrace(System.err);
+    }
+
     private static JSONObject readApplication(
             PackageManager packageManager,
-            ApplicationInfo application) throws Exception {
+            PackageInfo packageInfo,
+            Mode mode) throws Exception {
+        ApplicationInfo application = packageInfo.applicationInfo;
+        if (application == null) {
+            throw new IllegalArgumentException("Package has no application info");
+        }
         String packageName = application.packageName;
         JSONObject item = new JSONObject();
         item.put("packageName", packageName);
-        item.put("appName", readApplicationName(packageManager, application, packageName));
-        item.put("icon", readIcon(packageManager, application));
-        item.put("apkSize", readApkSize(application));
 
-        String versionName = "";
-        long versionCode = 0;
-        long firstInstallTime = 0;
-        long lastUpdateTime = 0;
-        try {
-            PackageInfo packageInfo = packageManager.getPackageInfo(packageName, 0);
-            versionName = packageInfo.versionName == null ? "" : packageInfo.versionName;
-            versionCode = packageInfo.getLongVersionCode();
-            firstInstallTime = packageInfo.firstInstallTime;
-            lastUpdateTime = packageInfo.lastUpdateTime;
-        } catch (Throwable error) {
-            reportFieldFailure(packageName, "package info", error);
+        if (mode == Mode.ICONS_ONLY) {
+            item.put("icon", readIcon(packageManager, application));
+            return item;
         }
 
-        item.put("versionName", versionName);
-        item.put("versionCode", versionCode);
-        item.put("firstInstallTime", firstInstallTime);
-        item.put("lastUpdateTime", lastUpdateTime);
+        item.put("appName", readApplicationName(packageManager, application, packageName));
+        item.put("icon", mode == Mode.FULL ? readIcon(packageManager, application) : "");
+        item.put("apkSize", readApkSize(application));
+        item.put("versionName", packageInfo.versionName == null ? "" : packageInfo.versionName);
+        item.put("versionCode", packageInfo.getLongVersionCode());
+        item.put("firstInstallTime", packageInfo.firstInstallTime);
+        item.put("lastUpdateTime", packageInfo.lastUpdateTime);
         return item;
     }
 

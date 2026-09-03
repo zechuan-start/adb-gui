@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "DevicePicker 的下拉项结构与 lucide 图标用法要沿用既有组件写法，不新开文件、不改行高与菜单宽"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "新增 MergedDevice / TransportKind 类型与 DeviceInfo 的 device_id 可空字段，需符合严格 TS 约定"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "selectedDevice 仍是裸 serial，但每次 setDevices 后必须归一到合并项主 serial，且非 null 值始终对应 picker option；需确认该跨层不变量与既有 store 划分一致"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "device.rs 新增 OnceLock 缓存，需确认 clippy 规则与禁用写法"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "getprop helper 在 device_info.rs 已有一份，本任务需要共用而不是复制；该指南点名了这种场景"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "device_id 是新增的跨层字段（Rust 解析 → 前端分组 → UI 渲染），属于该指南点名的触发条件"}

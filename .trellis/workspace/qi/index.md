@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 14
-- **Last Active**: 2026-09-02
+- **Total Sessions**: 17
+- **Last Active**: 2026-09-03
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~517 | Active |
+| `journal-1.md` | ~623 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,9 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-09-03 | 完成设备传输合并与应用信息缓存 | `6ccdfd3`, `0518248` | `claude/app-info-read-stability-tj25vt` |
+| 16 | 2026-09-03 | 应用信息读取稳定性收尾 | `5e2b3eb` | `claude/app-info-read-stability-tj25vt` |
+| 15 | 2026-09-03 | 应用信息稳定性真机验证 | `9893dc5`, `95d75ce` | `claude/app-info-read-stability-tj25vt` |
 | 14 | 2026-09-02 | 批量应用信息 dex 实现 | `6f353a0` | `claude/adb-dex-jar-app-info-qk34vq` |
 | 13 | 2026-09-02 | Fix ADB WiFi switching and release v0.1.6 | `fe14bde`, `1a7b898` | `main` |
 | 12 | 2026-09-02 | Blueprint Quiet UI 翻新收口 | `d6c769f` | `codex/blueprint-quiet-ui-refresh` |

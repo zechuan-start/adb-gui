@@ -68,8 +68,18 @@ if [[ ! -f "$MAIN_CLASS" ]]; then
   exit 1
 fi
 
+CLASS_FILES=()
+while IFS= read -r -d '' class_file; do
+  CLASS_FILES+=("$class_file")
+done < <(find "$CLASS_DIR" -type f -name '*.class' -print0)
+
+if [[ ${#CLASS_FILES[@]} -eq 0 ]]; then
+  echo "javac produced no class files." >&2
+  exit 1
+fi
+
 echo "Converting class files with $D8"
-"$D8" --min-api 28 --lib "$ANDROID_JAR" --output "$DEX_DIR" "$MAIN_CLASS"
+"$D8" --min-api 28 --lib "$ANDROID_JAR" --output "$DEX_DIR" "${CLASS_FILES[@]}"
 
 if [[ ! -s "$DEX_DIR/classes.dex" ]]; then
   echo "d8 did not produce a non-empty classes.dex." >&2

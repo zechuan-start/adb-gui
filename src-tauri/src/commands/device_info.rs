@@ -1,7 +1,7 @@
 use serde::Serialize;
 use tauri::AppHandle;
 
-use super::device::run_adb_with_serial;
+use super::device::{getprop, run_adb_with_serial};
 
 #[derive(Serialize, Clone)]
 pub struct DeviceDetail {
@@ -38,13 +38,6 @@ pub fn get_device_info(app: AppHandle, serial: String) -> Result<DeviceDetail, S
         battery_level,
         battery_status,
     })
-}
-
-fn getprop(app: &AppHandle, serial: &str, prop: &str) -> String {
-    run_adb_with_serial(app, serial, &["shell", "getprop", prop])
-        .unwrap_or_default()
-        .trim()
-        .to_string()
 }
 
 fn get_resolution(app: &AppHandle, serial: &str) -> String {

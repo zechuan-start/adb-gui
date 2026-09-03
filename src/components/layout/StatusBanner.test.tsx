@@ -22,6 +22,7 @@ function device(state: DeviceInfo["state"]): DeviceInfo {
     transport: "usb",
     is_network: false,
     alias_identity: null,
+    device_id: "R5CT30ZXJKQ",
   };
 }
 

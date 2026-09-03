@@ -178,75 +178,163 @@ nsExec::ExecToLog 'taskkill /IM adb.exe /F'
 
 ### 1. Scope / Trigger
 
-- Trigger: changing the `app_process` dex helper, `get_installed_apps`, its Tauri payload, or the application-manager fallback.
+- Trigger: changing the `app_process` dex helper, either app-info Tauri command, its payload, or the application-manager fallback.
 - Applies across `scripts/build-app-info-dex/`, `src-tauri/src/commands/app_info.rs`, `src/lib/tauri.ts`, and `PackageManager.tsx`.
 
 ### 2. Signatures
 
 - Java entry point: `com.adbgui.appinfo.Main.main(String[] args)`.
 - Rust command: `get_installed_apps(app: AppHandle, serial: String) -> Result<Vec<AppInfo>, String>`.
+- Rust command: `get_installed_app_icons(app: AppHandle, serial: String, packages: Option<Vec<String>>) -> Result<Vec<AppIconEntry>, String>`.
 - Frontend bridge: `getInstalledApps(serial: string) -> Promise<AppInfo[]>`.
+- Frontend bridge: `getInstalledAppIcons(serial: string, packages?: string[]) -> Promise<AppIconEntry[]>`.
 - `AppInfo { packageName, appName, versionName, versionCode, icon, firstInstallTime, lastUpdateTime, apkSize }`.
+- `AppIconEntry { packageName, icon }`; extra fields from an old dex must be ignored.
 
 ### 3. Contracts
 
 - `scripts/build-app-info-dex/build.sh` accepts `ANDROID_HOME` or `ANDROID_SDK_ROOT`, requires an API 29+ `android.jar`, `javac`, and `d8`, then writes `src-tauri/resources/app-info.dex`.
 - The build script must run with macOS Bash 3.2; avoid Bash 4-only helpers such as `mapfile` and GNU-only `find`/`sort` flags.
-- `ActivityThread` is absent from the public SDK stubs. Compile against a normal `android.jar` by resolving `systemMain()` and `getSystemContext()` through reflection; do not add a host or device `framework.jar` dependency.
+- Resolve `ActivityThread` through reflection. Prefer `systemMain()` and fall back to a no-argument `ActivityThread` plus `getSystemContext()`; print both failed bootstrap stacks to stderr.
 - Tauri maps `src-tauri/resources/` to the resource root, so Rust resolves `resource_dir().join("app-info.dex")`.
-- Every request pushes the dex to `/data/local/tmp/adb-gui-app-info.dex`, then runs it through the shared hidden-window async ADB constructor with a 15-second timeout and kill-on-drop cancellation.
-- The helper outputs only one UTF-8 JSON array on stdout. Diagnostics use stderr. Rust rejects empty, non-array, invalid, timed-out, or nonzero output as one command error.
+- Name the remote dex `/data/local/tmp/adb-gui-app-info-<fnv1a64>.dex`. Under one process-wide async mutex, skip `adb push` only when `ls -l` contains the expected byte length; use 30 seconds for inspect/push.
+- Invoke metadata with `--no-icons` and a 45-second timeout. Invoke icons with `--icons-only [package...]`, 50 packages per frontend batch, and a 90-second timeout per batch.
+- Java writes `--ADBGUI-APPINFO-V1--\n` followed by one UTF-8 JSON array through a buffered `FileDescriptor.out` stream. Rust parses after the last sentinel and accepts unsentinelled whole-array output from the old dex.
 - Return only non-system applications. Icons are 96 x 96 PNG data URIs; APK size is the base APK only. A single field failure produces an empty/zero fallback for that field, while a helper/process/protocol failure rejects the complete command.
-- `PackageManagerPanel` tries the batch command first. A command error falls back to unchanged `list_packages` plus lazy `get_app_icon`, and the UI must display a visible degraded-mode notice.
+- Render metadata before background icon batches. A metadata failure falls back to unchanged `list_packages`, lazy `get_app_icon`, and a degraded-mode notice with details and retry.
+- Every icon batch issue and state write is guarded by the current request ID. If an old dex returns packages outside the requested batch, cache all entries and stop batching. A batch error preserves prior batches and enables lazy icons.
 
 ### 4. Validation & Error Matrix
 
 - Missing SDK root, API 29+ platform, `javac`, or `d8` -> the build script exits nonzero with the missing requirement named.
 - Missing bundled dex or failed `adb push` -> contextual `Err`; do not start `app_process`.
-- `app_process` exceeds 15 seconds -> kill the child on drop and return a timeout error.
-- Nonzero process status -> preserve stderr through the normal ADB output error path.
-- Empty or invalid JSON stdout -> `Err`; never return a partial Rust vector.
+- Nonempty icon filter whose names are all invalid after `[A-Za-z0-9_.]` validation -> `Err`; never turn it into an unfiltered request. Missing or empty filters mean all icons.
+- Push failure -> force one retry. Nonzero helper exit or invalid payload after a skipped push -> force one push and retry. `adb exec-out` may report success while a corrupt remote dex prints `Aborted`, so host exit status alone is not proof that the helper ran. The same failure after a fresh push -> return a ROM/protocol error without another retry.
+- Helper timeout -> kill on drop, set the next call to force-push, and return immediately with retry guidance; do not automatically repeat the timed-out helper.
+- Empty or invalid JSON stdout after a fresh push -> `Err`; never return a partial Rust vector. After a skipped push, treat it as evidence that the cached dex may be corrupt and refresh once.
 - One app label, icon, package-info, or file-size read fails -> keep that app with the field fallback and continue the array.
 - Batch command error plus successful legacy list -> show package-only rows and degraded notice.
 - Both batch and legacy list fail -> show the existing application-list error feedback.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: one helper invocation returns localized labels, versions, icons, install times, and APK sizes for the same third-party scope as `pm list packages -3`.
+- Good: metadata arrives without icon rendering, then icons appear batch by batch while the list remains usable.
+- Base: the checked-in old dex ignores mode/filter flags and emits no sentinel; the first icon batch returns a superset, which fills the cache and stops later batches.
 - Base: an app whose icon cannot be drawn has an empty `icon`, but other apps and fields remain available.
 - Good: an Android version/vendor incompatibility rejects the batch command and automatically renders the legacy list with a visible warning.
-- Bad: importing `android.app.ActivityThread` directly makes compilation fail against the standard SDK `android.jar`.
-- Bad: writing helper diagnostics to stdout corrupts the JSON protocol and forces an unnecessary complete fallback.
-- Bad: replacing or changing `list_packages` breaks the Logcat package-resolution consumer.
+- Bad: per-serial locks allow USB and Wi-Fi serials for one device to overwrite the same remote dex concurrently.
+- Bad: retrying a timeout in the same request doubles the wait; retrying every old-dex icon batch repeats full icon rendering.
+- Bad: sending package text to `sh -c` without the strict whitelist creates command injection risk.
 
 ### 6. Tests Required
 
-- Rust unit tests parse a complete sample JSON array and reject empty, object-shaped, and invalid stdout.
-- Frontend helper tests cover complete fallback-object construction, display-name ordering, and app-name/package-name search.
+- Rust unit tests cover FNV/path stability, last-sentinel and legacy parsing, size matching, UTF-8-safe truncation, package validation/deduplication, batching, command assembly, and JSON contract failures.
+- Frontend helper tests cover package chunk boundaries and requested-batch superset detection, in addition to fallback, sorting, and search.
 - Run `bash -n scripts/build-app-info-dex/build.sh`, Rust test/fmt/Clippy gates, frontend tests, and `pnpm build`.
 - On a JDK + Android SDK host, run the build script and assert a non-empty `src-tauri/resources/app-info.dex`.
-- Real-device smoke on Android 10+ must compare count with `pm list packages -3`, inspect localized labels and 96 x 96 icons, and verify version/time/size values.
-- Compatibility smoke must force or encounter a helper failure and assert the legacy rows, lazy icons, and degraded notice remain usable.
+- Real-device smoke on Android 10+ must compare count with `pm list packages -3`, verify metadata-first timing and gradual 96 x 96 icons, switch devices during icon batches, and exercise retry after a forced failure.
+- Compatibility smoke must run the new Rust/frontend code with the checked-in old dex and assert that unsentinelled full output and the first-batch superset remain usable.
 
 ### 7. Wrong vs Correct
 
 #### Wrong
 
-```java
-import android.app.ActivityThread;
-
-Context context = ActivityThread.systemMain().getSystemContext();
+```typescript
+for (const batch of batches) {
+  void getInstalledAppIcons(serial, batch);
+}
 ```
 
 #### Correct
 
-```java
-Class<?> type = Class.forName("android.app.ActivityThread");
-Object thread = type.getDeclaredMethod("systemMain").invoke(null);
-Context context = (Context) type.getDeclaredMethod("getSystemContext").invoke(thread);
+```typescript
+for (const batch of batches) {
+  if (loadRequestRef.current !== requestId) return;
+  const entries = await getInstalledAppIcons(serial, batch);
+  if (loadRequestRef.current !== requestId) return;
+  cacheEntries(entries);
+  if (hasUnrequestedPackages(entries, batch)) break;
+}
 ```
 
-Keep hidden bootstrap APIs behind reflection so the checked-in source builds with the public Android SDK while runtime incompatibility remains covered by the legacy fallback.
+Sequential guarded batches bound lock occupancy and prevent stale device writes; the superset check preserves old-dex compatibility without repeating full icon work.
+
+## Scenario: Local Application Information Cache
+
+### 1. Scope / Trigger
+
+- Trigger: changing application metadata loading, persistent application icons, device cache identity, or the app-info cache commands.
+- Applies across `app_info_cache.rs`, `device.ts`, `appInfo.ts`, `appInfoLoader.ts`, the Tauri bridge, and `PackageManager.tsx`.
+
+### 2. Signatures
+
+- `read_app_info_cache(app: AppHandle, device_key: String) -> Result<Vec<AppInfo>, String>` with `#[tauri::command(async)]`.
+- `write_app_info_cache(app: AppHandle, device_key: String, apps: Vec<AppInfo>, new_icons: Vec<AppIconEntry>) -> Result<(), String>` with `#[tauri::command(async)]`.
+- `deviceCacheKey(device: DeviceInfo) -> string`.
+- `appIconKey(packageName: string, lastUpdateTime: number) -> string`.
+- `missingIconPackages(fresh: AppInfo[], cachedIcons: Map<string, string>) -> string[]`.
+- `loadAppInfoSources(options) -> AppInfoSourceResult`.
+
+### 3. Contracts
+
+- Derive the raw device key as `device_id ?? alias_identity ?? serial`; sanitize it next to the Rust filesystem boundary and append the complete 64-bit FNV hash suffix so replacement characters and known low-32-bit collisions cannot merge device directories.
+- Store one `index.json` plus individual PNG files below `app.path().app_cache_dir()/app-info/<sanitized-device-key>/`.
+- Cache identity is `(packageName, lastUpdateTime)`. Values with `lastUpdateTime <= 0` are always live misses and never enter the persistent index.
+- Metadata remains a full live read on every load. Cached metadata may render an optimistic first screen but never replace a completed live result.
+- Cache reads and writes are fallible optimization paths. Read failures return an empty cache; write failures are logged without toast or list failure.
+- Serialize reads and writes by sanitized device key so a reader cannot delete a directory while its index is being committed. Write valid new PNG files first, atomically replace the complete index on Unix or remove-then-rename on Windows, then prune files not referenced by the new index.
+- Reuse exact old `(packageName, lastUpdateTime)` icon references when no valid new icon exists. Validate every stored `iconFile` against the recomputed filename before reading it.
+- The in-memory key is `(deviceKey, packageName, lastUpdateTime)`. Every batch and persistence write checks the current request generation.
+
+### 4. Validation & Error Matrix
+
+- Missing, malformed, wrong-version, or wrong-device-key index -> delete only that device directory and return an empty cache.
+- Missing, unreadable, corrupt, absolute, parent-relative, or separator-containing icon reference -> return that application with an empty icon; keep the rest of the cache.
+- Invalid PNG data URI in `new_icons` -> ignore that new icon and preserve a still-valid exact old reference.
+- Live metadata failure with a nonempty cache -> keep cached rows, enable lazy icons, and show the last-read-data warning; do not run package-only fallback or write cache.
+- Live metadata failure without cache -> use the existing package-only fallback and degraded warning.
+- Cache completion after live metadata -> retain the live rows and use cache only for icon diffing.
+
+### 5. Good/Base/Bad Cases
+
+- Good: unchanged applications produce an empty icon diff and no device icon request while the fresh metadata still replaces the optimistic rows.
+- Base: one upgraded application changes `lastUpdateTime`; only that package is requested and its old PNG is pruned after the new index is committed.
+- Good: USB and WiFi transports with one `device_id` share disk and memory cache identity without concurrent index corruption.
+- Bad: keying memory by serial discards every hit when the merged device switches its primary transport.
+- Bad: allowing a late cache callback to call `setApps` after the live result makes stale metadata the final source of truth.
+
+### 6. Tests Required
+
+- Rust tests cover sanitization collisions, long names, PNG validation, round-trip, invalid index cleanup, per-icon corruption, unsafe paths, unstable timestamps, exact-reference preservation, partial updates, pruning, existing-index replacement, device isolation, concurrent same-key writes, and read/write lock sharing.
+- Frontend helper tests cover device-key fallback, USB/WiFi identity sharing, install/uninstall/update diffs, empty icons, unstable timestamps, and package deduplication.
+- Controller tests cover cache-first, live-first, live failure with late cache, and stale request suppression.
+- Run the 60-second Rust test gate, Rust fmt/Clippy, `pnpm test`, and `pnpm build`.
+- Real-device smoke verifies second-load zero icon requests, install/uninstall/update diffs, corrupt-cache recovery, metadata freshness, and USB/WiFi primary switching.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+const cached = await readAppInfoCache(device.serial);
+setApps(cached);
+setApps(await getInstalledApps(device.serial));
+```
+
+#### Correct
+
+```typescript
+const result = await loadAppInfoSources({
+  readCache: () => readAppInfoCache(deviceCacheKey(device)),
+  readFresh: () => getInstalledApps(device.serial),
+  isCurrent: () => loadRequestRef.current === requestId,
+  onOptimisticCache: setApps,
+  onFresh: setApps,
+  onCacheRead: hydrateCachedIcons,
+});
+```
+
+The controller owns the per-request phase flag, so a late cache result cannot become the final metadata state.
 
 ## Scenario: ADB Port Forward Commands
 
@@ -841,20 +929,20 @@ Compatibility fallback is valid only for a proven unsupported option. Device and
 
 ### 2. Signatures
 
-- `list_devices(app: AppHandle) -> Result<Vec<DeviceInfo>, String>`
+- `async list_devices(app: AppHandle) -> Result<Vec<DeviceInfo>, String>`
 - `parse_devices_output(output: &str) -> Vec<DeviceInfo>`
 - `mdns_port_alias_base(serial: &str) -> Option<&str>`
-- `DeviceInfo { serial, state, model, transport, is_network, alias_identity }`
+- `DeviceInfo { serial, state, model, transport, is_network, alias_identity, device_id }`
 
 ### 3. Contracts
 
 - Parse every valid `adb devices -l` row before deduplication so matching is independent of row order.
-- Rust parsing is the only owner of network classification and alias identity. Serialize `is_network` and `alias_identity` with every `DeviceInfo`; frontend code must consume those fields and must not parse serial strings again.
+- Rust is the only owner of network classification, alias identity, and physical-device identity. Serialize `is_network`, `alias_identity`, and `device_id` with every `DeviceInfo`; frontend code must consume those fields and must not parse serial strings or issue a second identity lookup.
 - Recognize only connect services ending in `._adb-tls-connect._tcp` or `._adb._tcp`. Do not fold `._adb-tls-pairing._tcp` or arbitrary serials.
 - Parse a possible alias from the final `:<port>` segment. The port must be a decimal value in `1..=65535`, and the complete base before that segment must end with a supported connect-service suffix.
 - When an alias base exactly equals another reported serial, remove only that bare serial. Keep every alias and every unrelated device in their original relative order.
 - Device state does not change alias detection. If the bare row is online but its port alias is offline, the bare value is still unusable with `adb -s` because ADB prefix matching is ambiguous; preserve the offline alias so the frontend shows the real unusable state.
-- Background device updates and explicit frontend refreshes must both consume the same filtered `list_devices` result.
+- Background device updates and explicit frontend refreshes must both consume the same serialized async `list_devices` entry point. Run its synchronous ADB chain in a blocking worker so the three-second poll does not block an async runtime worker.
 - When a refresh replaces a selected bare serial or old port alias, the frontend may migrate only to an online device with the same backend-provided `alias_identity`. If that identity is absent, use the normal online-device selection order; never jump to an unrelated network device.
 
 ### 4. Validation & Error Matrix
@@ -881,7 +969,7 @@ Compatibility fallback is valid only for a proven unsupported option. Device and
 - Unit-test TLS connect and legacy connect services, alias-before-bare ordering, multiple aliases, isolated bare services, and unchanged unrelated-device order.
 - Unit-test ports `0`, `65535`, `65536`, and nonnumeric suffixes.
 - Unit-test pairing exclusion, service-like text inside an instance name, and online-bare/offline-alias behavior.
-- Unit-test serialized `is_network` / `alias_identity`, frontend bare-to-alias and old-alias-to-new-alias migration, offline bare rejection, and unrelated-network non-migration.
+- Unit-test serialized `is_network` / `alias_identity` / `device_id`, frontend bare-to-alias and old-alias-to-new-alias migration, offline bare rejection, and unrelated-network non-migration.
 - Run the 60-second Rust test gate, target-file rustfmt, and Clippy.
 - Real-device smoke must prove the raw bare serial fails with ADB ambiguity, the retained `:port` alias returns a foreground Activity, and the Tauri device selector contains no duplicate bare option.
 

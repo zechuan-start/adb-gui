@@ -1,0 +1,28 @@
+{
+  "id": "app-info-read-stability",
+  "name": "app-info-read-stability",
+  "title": "应用信息读取稳定性加固",
+  "description": "修复 get_installed_apps 间歇性失败导致应用列表降级为精简信息的问题",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "A1-A5 + C9: get_installed_apps 稳定性加固（图标出关键路径/stdout sentinel/并发串行化/超时重试/失败可见/Context 多级回退）",
+  "package": null,
+  "priority": "P1",
+  "creator": "qi",
+  "assignee": "qi",
+  "createdAt": "2026-09-03",
+  "completedAt": "2026-09-03",
+  "branch": "claude/app-info-read-stability-tj25vt",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "09-03-app-info-cache"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

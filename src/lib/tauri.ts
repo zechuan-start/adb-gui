@@ -17,6 +17,7 @@ export interface DeviceInfo {
   transport: string;
   is_network: boolean;
   alias_identity: string | null;
+  device_id: string | null;
 }
 
 export interface AdbInfo {
@@ -39,6 +40,11 @@ export interface AppInfo {
   firstInstallTime: number;
   lastUpdateTime: number;
   apkSize: number;
+}
+
+export interface AppIconEntry {
+  packageName: string;
+  icon: string;
 }
 
 export interface LogcatLine {
@@ -355,6 +361,25 @@ export async function listPackages(serial: string): Promise<string[]> {
 
 export async function getInstalledApps(serial: string): Promise<AppInfo[]> {
   return invoke<AppInfo[]>("get_installed_apps", { serial });
+}
+
+export async function getInstalledAppIcons(
+  serial: string,
+  packages?: string[],
+): Promise<AppIconEntry[]> {
+  return invoke<AppIconEntry[]>("get_installed_app_icons", { serial, packages });
+}
+
+export async function readAppInfoCache(deviceKey: string): Promise<AppInfo[]> {
+  return invoke<AppInfo[]>("read_app_info_cache", { deviceKey });
+}
+
+export async function writeAppInfoCache(
+  deviceKey: string,
+  apps: AppInfo[],
+  newIcons: AppIconEntry[],
+): Promise<void> {
+  return invoke<void>("write_app_info_cache", { deviceKey, apps, newIcons });
 }
 
 export async function getAppIcon(serial: string, pkg: string): Promise<string> {
