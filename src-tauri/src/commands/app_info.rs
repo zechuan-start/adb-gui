@@ -132,13 +132,7 @@ async fn run_app_info_helper<T: DeserializeOwned>(
         Err(first_error) => {
             ensure_dex_pushed(app, serial, &dex_path, &remote_path, expected_size, true)
                 .await
-                .map_err(|retry_error| {
-                    format!(
-                        "Failed to push app-info dex; retry also failed. First error: {}; retry error: {}",
-                        truncate_detail(&first_error, MAX_ERROR_DETAIL_BYTES / 2),
-                        truncate_detail(&retry_error, MAX_ERROR_DETAIL_BYTES / 2)
-                    )
-                })?
+                .map_err(|retry_error| format_push_retry_error(&first_error, &retry_error))?
         }
     };
 
@@ -288,6 +282,14 @@ fn helper_exit_error(mode: HelperMode, output: &Output, pushed_fresh: bool) -> S
         "{} {context}: {}",
         mode.description(),
         truncate_detail(&adb_output_error(output), MAX_ERROR_DETAIL_BYTES)
+    )
+}
+
+fn format_push_retry_error(first_error: &str, retry_error: &str) -> String {
+    format!(
+        "Failed to push app-info dex; retry also failed. First error: {}; retry error: {}",
+        truncate_detail(first_error, MAX_ERROR_DETAIL_BYTES / 2),
+        truncate_detail(retry_error, MAX_ERROR_DETAIL_BYTES / 2)
     )
 }
 
