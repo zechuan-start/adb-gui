@@ -587,3 +587,37 @@ Validated ADB WiFi transport state after connect, added reconnect regression cov
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: 完成设备传输合并与应用信息缓存
+
+**Date**: 2026-09-03
+**Task**: 完成设备传输合并与应用信息缓存
+**Branch**: `claude/app-info-read-stability-tj25vt`
+
+### Summary
+
+合并同一设备的 USB/WiFi 传输, 并按设备持久化应用元数据与图标缓存; 补齐竞态、路径安全和缓存失效测试.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6ccdfd3` | (see git log) |
+| `0518248` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
