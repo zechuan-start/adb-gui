@@ -110,7 +110,7 @@ export function PerformancePanel({ active }: PerformancePanelProps) {
                 backgroundEnabled && "border-ink bg-ink text-onink hover:bg-ink hover:text-onink",
               )}
             >
-              <span className="flex h-3 w-3 items-center justify-center">
+              <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center border border-current">
                 {backgroundEnabled ? <Check className="h-3 w-3" aria-hidden="true" /> : null}
               </span>
               切换面板时继续采集
