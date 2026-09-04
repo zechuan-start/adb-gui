@@ -1,59 +1,110 @@
 # ADB GUI
 
-**English** | [简体中文](#简体中文)
+**English** | [简体中文](README.zh-CN.md)
 
-ADB GUI is a cross-platform desktop toolbox for Android developers and testers. It turns common `adb` workflows into focused visual tools, keeps the selected device visible across the app, and runs device operations locally through a bundled or existing ADB installation.
+A cross-platform desktop workbench for everyday `adb` work: one device context, six focused workspaces, and a Logcat panel that stays with you wherever you are in the app.
 
-[Download the latest release](https://github.com/zechuan-start/adb-gui/releases/latest) | [View all releases](https://github.com/zechuan-start/adb-gui/releases)
+[![Latest release](https://img.shields.io/github/v/release/zechuan-start/adb-gui?label=release)](https://github.com/zechuan-start/adb-gui/releases/latest)
+[![License](https://img.shields.io/github/license/zechuan-start/adb-gui)](LICENSE)
+![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)
+![Built with Tauri 2](https://img.shields.io/badge/built%20with-Tauri%202%20%2B%20React%2019-informational)
 
-![ADB GUI tools workspace](docs/images/adb-gui-overview.png)
+[Download the latest release](https://github.com/zechuan-start/adb-gui/releases/latest) · [All releases](https://github.com/zechuan-start/adb-gui/releases)
 
-_The tools workspace with a connected Android device. The active target and ADB source stay in the top bar, and the device specification strip carries the current Activity on its own row._
+![ADB GUI tools workspace with the Logcat panel open](docs/images/workspace-tools.png)
+
+> The application interface ships in Simplified Chinese. Screenshots in this README are captured from the real UI with mock device data (see [Development](#development)).
 
 ## Highlights
 
-- **One device context**: automatically discovers USB and Wi-Fi devices, tracks their connection state, and keeps every command scoped to the selected device.
-- **Local-first operation**: screenshots, recordings, logs, reports, APKs, and transferred files stay between your computer and Android device.
-- **ADB included**: resolves ADB from `PATH`, `ANDROID_HOME`, or `ANDROID_SDK_ROOT`, then falls back to the binary bundled for macOS, Windows, or Linux.
-- **Built for repeated debugging**: fast device switching, clear busy/error states, file reveal actions, light/dark themes, and an in-app update checker.
+- **One device context** — USB and Wi-Fi transports of the same phone are merged into a single entry, and every command in every workspace targets the device you picked in the top bar.
+- **Logcat everywhere** — the log panel docks under any workspace, remembers whether it was open per workspace, is resizable, and can go full height when you need to read a stack trace.
+- **Local-first** — screenshots, recordings, logs, reports, APKs, and transferred files stay between your computer and your device. Nothing is uploaded.
+- **ADB included** — resolved from `PATH`, `ANDROID_HOME`, or `ANDROID_SDK_ROOT`, with a bundled binary as a fallback, so a separate Platform Tools install is optional.
+
+## Workspaces
+
+| # | Workspace | What it covers |
+| --- | --- | --- |
+| 01 | Tools | Screenshot, screen recording, APK install, deep links, port forwarding, key events, current app, bug reports |
+| 02 | Apps | Third-party package list with icons, versions, install dates, APK size, and lifecycle actions |
+| 03 | Files | Device file browser with upload, download, folder creation, and image preview |
+| 04 | Codegen | Batch QR code and Code 128 barcode generation |
+| 05 | Decoder | Read codes back out of image files, drag-and-drop, or a pasted screenshot |
+| 06 | Performance | Live CPU, memory, battery, and per-process usage |
+| — | Logcat | Streaming log panel with a query language, shared by every workspace |
 
 ## Features
 
 ### Device and connection
 
 - Continuously discovers attached and network devices and shows online, offline, or unauthorized state.
-- Connects or disconnects devices by IP address, and can switch the selected USB device to ADB over Wi-Fi.
-- Displays the ADB version/source in the top bar, and a specification strip with manufacturer/model, serial, Android version, SDK, ABI, resolution, density, and battery state, plus a dedicated row for the current foreground Activity.
+- Merges the USB and Wi-Fi transports of one physical device, so switching cables never loses your place.
+- Connects or disconnects by `ip:port`, and can flip the selected USB device over to ADB over Wi-Fi.
+- Shows the ADB version and source in the top bar, plus a specification strip with vendor/model, serial, transport, Android version and SDK, ABI, resolution, density, and battery, with the current foreground Activity on its own row.
 
-### Diagnostics and evidence
+### Logcat
 
-- Captures a device screenshot, opens it with the default image app, copies its path, or reveals it in the file manager.
-- Starts and stops Android `screenrecord`, saves the finalized MP4 locally, and handles device switching or natural recording timeout.
-- Streams Logcat with text, level, tag, and app filters; supports pause/follow, device-buffer clearing, and local export.
-- Creates a quick report containing a screenshot, current Activity, device information, and recent logs, or generates a complete `adb bugreport` archive.
+![Logcat panel expanded with a filter query applied](docs/images/logcat.png)
 
-### Apps and device interaction
+- Streams Logcat live, with pause/resume, follow-to-bottom, clear screen, clear the device buffer, and export of the current filtered result.
+- Filters through a small query language: `tag:`, `message:`, `level:`, `package:`, `process:`, and `is:crash` / `is:stacktrace`, combined with `&`, `|`, `-`, and parentheses, with regex or exact-match modifiers and inline completions.
+- Detects crashes and stack traces, highlights them, and can auto-fold long traces so one crash stays one line until you open it.
+- Adjustable view: which columns to show, soft wrap, wide line spacing, and a full-height mode.
+- The panel keeps a per-workspace open state and shows an unread counter while it is hidden.
 
-- Installs APK files by drag-and-drop or file picker.
-- Lists third-party packages with app icons and supports launch, force-stop, clear data, and uninstall actions.
-- Opens custom deep links and URIs on the selected device.
-- Sends common navigation, input, power, and volume key events.
-- Shows the foreground package and provides quick actions for the current app.
+### Apps
 
-### Files and networking
+![Apps workspace with a package selected](docs/images/apps.png)
 
-- Browses device directories with breadcrumb and absolute-path navigation.
-- Creates folders, uploads one or multiple files, downloads files to a user-selected location, and previews PNG, JPEG, WebP, and GIF images.
-- Protects downloads with temporary-file validation and replacement, and avoids silently overwriting existing upload targets.
-- Lists, creates, and removes both `adb forward` and `adb reverse` TCP rules.
+- Lists third-party packages with real launcher icons, display names, version name and code, first install and last update time, and APK size.
+- Search by app name or package name, then launch, force-stop, clear data, or uninstall the selected package.
+- Icons and app metadata are cached per device, so reopening the workspace is fast.
 
-### Code generation and desktop experience
+### Files
 
-- Generates QR codes or Code 128 barcodes from one or many input values.
-- Splits batches by newline, comma, semicolon, tab, or a custom separator, with virtualized result rendering and full-size preview navigation.
-- Supports light and dark themes, native file dialogs, file reveal/open actions, and signed in-app update metadata.
+![File browser with an image preview](docs/images/files.png)
 
-## Platform Support
+- Browses device directories with breadcrumbs and absolute-path navigation.
+- Creates folders, uploads one or many files, and downloads to a location you choose.
+- Previews PNG, JPEG, WebP, and GIF images inline.
+- Downloads are written through a validated temporary file before replacing the target, and uploads never silently overwrite an existing file on the device.
+
+### Codegen and decoder
+
+![Batch QR code generation](docs/images/codegen.png)
+
+- Generates QR codes or Code 128 barcodes from one value or a whole batch (Ctrl/Cmd+Enter to generate).
+- Splits input by newline, comma, semicolon, tab, or a custom separator, renders large batches through a virtualized list, and offers full-size preview navigation.
+- Decodes codes back from PNG, JPG, JPEG, GIF, BMP, and WebP files — picked, dragged into the window, or pasted from the clipboard (Ctrl/Cmd+V) — up to 50 images at a time, with copy and open-link actions on the results.
+
+### Performance
+
+![Device performance workspace](docs/images/performance.png)
+
+- Samples whole-device CPU, used and available memory, and battery level, status, and temperature once per second.
+- Draws CPU and memory history as charts with a hover readout, and keeps up to 30 minutes of samples.
+- Ranks processes by CPU or RSS, and marks processes that appeared during the session.
+- Can pause on demand, or keep sampling in the background while you work in another workspace.
+
+### Desktop experience
+
+![Tools workspace in dark theme](docs/images/dark-theme.png)
+
+- System, light, and dark themes.
+- Native file dialogs, plus reveal-in-file-manager and open-with-default-app actions for everything the app writes.
+- Signed in-app update checks against GitHub releases.
+
+## Keyboard shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl/Cmd + J` | Show or hide the Logcat panel for the current workspace |
+| `Ctrl/Cmd + F` | Open the Logcat panel and focus the query field |
+| `Ctrl/Cmd + Enter` | Generate codes in the Codegen workspace |
+| `Ctrl/Cmd + V` | Decode the image on the clipboard in the Decoder workspace |
+
+## Platform support
 
 | Platform | Release architecture | ADB runtime |
 | --- | --- | --- |
@@ -63,23 +114,23 @@ _The tools workspace with a connected Android device. The active target and ADB 
 
 Every release tag is packaged by GitHub Actions on native macOS, Windows, and Linux runners.
 
-## Getting Started
+## Getting started
 
 1. Download the package for your platform from [GitHub Releases](https://github.com/zechuan-start/adb-gui/releases/latest).
 2. Enable Developer options and USB debugging on the Android device.
 3. Connect the device and approve the computer's debugging fingerprint when Android prompts you.
-4. Open ADB GUI and select the device from the top bar. A separate Platform Tools installation is optional because ADB is bundled.
+4. Open ADB GUI and select the device in the top bar. A separate Platform Tools installation is optional because ADB is bundled.
 
-For Wi-Fi debugging, connect the device over USB first and use the Wi-Fi action in the top bar, or enter an already reachable `ip:port` endpoint.
+For Wi-Fi debugging, connect over USB first and use the Wi-Fi action in the top bar, or enter an already reachable `ip:port` endpoint.
 
-## Local Output
+## Where files land
 
 | Output | Default location |
 | --- | --- |
 | Screenshots and screen recordings | `Pictures/ADB GUI/` |
 | Quick reports and full bugreports | `Documents/ADB GUI/reports/` |
 | Exported Logcat files | `Documents/ADB GUI/logs/` |
-| Downloaded device files | Location selected in the save dialog |
+| Downloaded device files | The location you pick in the save dialog |
 
 ## Development
 
@@ -87,129 +138,32 @@ Prerequisites: [Node.js](https://nodejs.org/), [pnpm](https://pnpm.io/), [Rust](
 
 ```bash
 pnpm install
-pnpm test
-pnpm tauri dev
+pnpm test        # vitest
+pnpm tauri dev   # run the desktop app
 ```
 
 Main stack:
 
 - **Desktop**: Tauri 2, Rust, Tokio
 - **Frontend**: React 19, TypeScript, Vite, Tailwind CSS, Zustand
-- **Device bridge**: Android Debug Bridge, using the system/SDK binary when available and the bundled binary otherwise
+- **Device bridge**: Android Debug Bridge, using the system or SDK binary when available and the bundled binary otherwise
+
+Documentation screenshots are generated, not taken by hand:
+
+```bash
+pnpm screenshots
+```
+
+`scripts/screenshots/capture.mjs` starts the dev server, loads the real frontend in Chromium with the fake IPC layer in `scripts/screenshots/mock-tauri.js`, and rewrites the images in `docs/images/`. The mock data is deterministic, so re-running it only changes what actually changed in the UI. It needs Playwright and its Chromium build (`npm i -g playwright && npx playwright install chromium` if you do not already have them).
 
 Recommended editor setup: [VS Code](https://code.visualstudio.com/) with the [Tauri extension](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) and [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer).
 
-## Packaging and Releases
+## Packaging and releases
 
 - Run the `Package` workflow manually to build downloadable workflow artifacts without publishing a release.
-- Push a `v*` tag, such as `v0.1.3`, to create the release, build all four platform targets, attach installers and updater artifacts, and publish only after every package job succeeds.
+- Push a `v*` tag, such as `v0.1.8`, to create the release, build all platform targets, attach installers and updater artifacts, and publish only after every package job succeeds.
 - Updater artifacts require `plugins.updater.pubkey` plus the `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets.
 
----
+## License
 
-## 简体中文
-
-[English](#adb-gui) | **简体中文**
-
-ADB GUI 是一款面向 Android 开发与测试场景的跨平台桌面工具. 它把常用 `adb` 工作流整理成可视化工具, 在整个应用中保持当前设备上下文, 并通过系统、SDK 或应用内置的 ADB 在本机完成设备操作.
-
-[下载最新版本](https://github.com/zechuan-start/adb-gui/releases/latest) | [查看全部版本](https://github.com/zechuan-start/adb-gui/releases)
-
-![ADB GUI 工具工作区](docs/images/adb-gui-overview.png)
-
-_已连接 Android 设备时的工具工作区. 操作目标和 ADB 来源常驻窗口顶部, 当前 Activity 在设备信息条中单独占一行._
-
-## 核心特点
-
-- **统一设备上下文**: 自动发现 USB 和 Wi-Fi 设备, 跟踪连接状态, 所有命令都明确作用于当前选中的设备.
-- **本地完成操作**: 截图、录屏、日志、报告、APK 和传输文件只在电脑与 Android 设备之间流转.
-- **内置 ADB**: 优先从 `PATH`、`ANDROID_HOME` 或 `ANDROID_SDK_ROOT` 查找 ADB, 找不到时自动使用 macOS、Windows 或 Linux 对应的内置版本.
-- **适合反复调试**: 支持快速切换设备、明确的忙碌与错误状态、文件打开与定位、明暗主题和应用内更新检查.
-
-## 功能介绍
-
-### 设备与连接
-
-- 持续发现 USB 和网络设备, 显示在线、离线或未授权状态.
-- 支持通过 IP 连接或断开设备, 也可以把当前 USB 设备切换到 ADB Wi-Fi 模式.
-- 顶栏显示 ADB 版本与来源; 设备信息条平铺厂商与型号、序列号、Android 版本、SDK、ABI、分辨率、密度、电量, 并用单独一行显示当前前台 Activity.
-
-### 诊断与证据收集
-
-- 一键截取设备屏幕, 自动保存并打开图片, 同时支持复制路径或在文件管理器中定位.
-- 启动和停止 Android `screenrecord`, 将完成写入的 MP4 保存到本地, 并处理切换设备和录制自然结束的状态.
-- 实时查看 Logcat, 支持文本、级别、Tag 和应用过滤, 以及暂停跟随、清理设备日志缓冲区和导出日志.
-- 快速报告会收集截图、当前 Activity、设备信息和最近日志; 完整报告则生成标准 `adb bugreport` 压缩包.
-
-### 应用与设备交互
-
-- 通过拖拽或文件选择器安装 APK.
-- 显示第三方应用列表和图标, 支持启动、强制停止、清除数据与卸载.
-- 在当前设备上打开自定义 Deep Link 或 URI.
-- 发送导航、输入、电源、音量等常用按键事件.
-- 识别当前前台应用, 并提供常用应用操作入口.
-
-### 文件与网络
-
-- 通过面包屑和绝对路径浏览设备目录.
-- 支持新建目录、单文件或多文件上传、下载到用户指定位置, 以及预览 PNG、JPEG、WebP、GIF 图片.
-- 下载使用临时文件校验后再替换目标, 上传时避免静默覆盖设备上的同名文件.
-- 查看、新建和删除 `adb forward` 与 `adb reverse` TCP 端口规则.
-
-### 生码与桌面体验
-
-- 根据单条或批量数据生成二维码和 Code 128 条形码.
-- 支持换行、逗号、分号、Tab 或自定义分隔符, 大批量结果使用虚拟列表渲染, 并支持全尺寸预览切换.
-- 支持明暗主题、原生文件对话框、文件打开与定位, 以及带签名元数据的应用内更新.
-
-## 平台支持
-
-| 平台 | 发布架构 | ADB 运行方式 |
-| --- | --- | --- |
-| macOS | Apple Silicon 和 Intel | 内置、SDK 或 `PATH` |
-| Windows | x64 | 内置、SDK 或 `PATH`; 后台 ADB 命令不会弹出终端窗口 |
-| Linux | x64 | 内置、SDK 或 `PATH` |
-
-每个正式版本标签都会由 GitHub Actions 在原生 macOS、Windows 和 Linux runner 上完成打包.
-
-## 快速开始
-
-1. 从 [GitHub Releases](https://github.com/zechuan-start/adb-gui/releases/latest) 下载对应平台的安装包.
-2. 在 Android 设备上启用开发者选项和 USB 调试.
-3. 连接设备, 并在 Android 弹窗中允许当前电脑的调试指纹.
-4. 打开 ADB GUI, 从顶部选择设备. 应用已内置 ADB, 因此不强制要求单独安装 Platform Tools.
-
-使用 Wi-Fi 调试时, 可以先通过 USB 连接并使用顶部的 Wi-Fi 操作, 也可以直接输入已经可访问的 `ip:port` 地址.
-
-## 本地文件位置
-
-| 内容 | 默认位置 |
-| --- | --- |
-| 截图和屏幕录制 | `Pictures/ADB GUI/` |
-| 快速报告和完整 Bugreport | `Documents/ADB GUI/reports/` |
-| 导出的 Logcat 日志 | `Documents/ADB GUI/logs/` |
-| 从设备下载的文件 | 保存对话框中选择的位置 |
-
-## 本地开发
-
-前置依赖: [Node.js](https://nodejs.org/)、[pnpm](https://pnpm.io/)、[Rust](https://www.rust-lang.org/tools/install), 以及对应平台的 [Tauri 环境依赖](https://tauri.app/start/prerequisites/).
-
-```bash
-pnpm install
-pnpm test
-pnpm tauri dev
-```
-
-主要技术栈:
-
-- **桌面端**: Tauri 2、Rust、Tokio
-- **前端**: React 19、TypeScript、Vite、Tailwind CSS、Zustand
-- **设备桥接**: Android Debug Bridge, 优先使用系统或 SDK 中的 ADB, 否则使用应用内置版本
-
-推荐使用 [VS Code](https://code.visualstudio.com/), 并安装 [Tauri 扩展](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) 和 [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer).
-
-## 打包与发布
-
-- 手动运行 `Package` workflow 可以构建供下载的 workflow artifacts, 但不会发布正式版本.
-- 推送形如 `v0.1.3` 的 `v*` 标签后, CI 会创建 Release, 构建四个平台目标, 上传安装包与更新产物, 并且只在全部打包任务成功后正式发布.
-- 自动更新产物需要配置 `plugins.updater.pubkey`, 以及仓库 Secrets `TAURI_SIGNING_PRIVATE_KEY` 和 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+[MIT](LICENSE)
