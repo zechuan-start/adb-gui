@@ -1,0 +1,13 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Rust/Tauri 后端总览与模块化约定,新增 device_metrics.rs 前需要"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "新 command 模块放置位置与 mod.rs/lib.rs 注册惯例"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "采样会话的 Result<T, String> 错误传播口径"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "禁止 unwrap/panic、ADB 参数不得拼接用户输入(NFR-3 直接相关)、command 必须注册"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "子进程退出与清理失败的 eprintln 约定"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "React 19 + Zustand + Tailwind 技术栈总览"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "新增 components/performance、lib、store、hooks 文件的放置位置"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "deviceMetrics store 的 Zustand v5 写法与订阅粒度"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "useDeviceMetricsSession 的 effect 清理与监听注销要求"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "面板/图表/表格组件的函数式组件与 Tailwind 约定"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "帧契约类型定义与禁用 any"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "本任务刻意复用 logcat 会话机制与既有 process map,复用判断需对齐该指南"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "帧契约跨 Rust/桥接层/store/UI 四层,需按该指南校验数据流一致"}

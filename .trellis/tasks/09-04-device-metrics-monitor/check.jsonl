@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "cargo test/fmt/clippy 验证顺序、forbidden patterns、真机冒烟要求"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "核对采样会话错误路径是否符合项目口径"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "pnpm test/build 验证顺序、forbidden patterns、解析逻辑必须有回归测试"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "核对帧契约类型定义严格性"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "核对 store 订阅粒度与不可变更新"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "核对 Rust 结构体字段与前端类型在四层间是否一致"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "核对是否重复造了 logcat 已有的会话管理与进程名解析"}
