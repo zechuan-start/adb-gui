@@ -621,3 +621,36 @@ Validated ADB WiFi transport state after connect, added reconnect regression cov
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: 设备性能实时监控
+
+**Date**: 2026-09-04
+**Task**: 设备性能实时监控
+**Branch**: `claude/android-device-monitoring-oco3e3`
+
+### Summary
+
+新增 Android 设备 CPU、内存、电池与进程实时监控,完成有界历史、会话清理、异常恢复和真机性能验收;前端 327 项、Rust 109 项及 build、fmt、clippy 全部通过.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ff88d3c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
