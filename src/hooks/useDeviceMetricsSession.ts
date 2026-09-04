@@ -17,6 +17,7 @@ export function useDeviceMetricsSession(active: boolean): void {
   const devices = useDeviceStore((state) => state.devices);
   const selectedDevice = useDeviceStore((state) => state.selectedDevice);
   const backgroundEnabled = useDeviceMetricsStore((state) => state.backgroundEnabled);
+  const paused = useDeviceMetricsStore((state) => state.paused);
   const restartNonce = useDeviceMetricsStore((state) => state.restartNonce);
   const showToast = useFeedbackStore((state) => state.showToast);
   const lastErrorRef = useRef("");
@@ -24,7 +25,7 @@ export function useDeviceMetricsSession(active: boolean): void {
   const onlineDevice = selected?.state === "device" ? selected : null;
   const onlineSerial = onlineDevice?.serial ?? null;
   const deviceKey = onlineDevice ? getDeviceMetricsKey(onlineDevice) : null;
-  const enabled = onlineSerial !== null && (active || backgroundEnabled);
+  const enabled = onlineSerial !== null && !paused && (active || backgroundEnabled);
 
   useEffect(() => {
     useDeviceMetricsStore.getState().bindDevice(deviceKey, onlineSerial);

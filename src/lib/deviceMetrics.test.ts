@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  computeAdaptiveDomain,
   DeviceMetricsRingBuffer,
   downsample,
   formatMemory,
+  formatMemoryParts,
   formatPercent,
+  formatPercentParts,
+  formatSpanLabel,
   formatTemperature,
 } from "@/lib/deviceMetrics";
 
@@ -60,7 +64,47 @@ describe("metric formatting", () => {
     expect(formatMemory(0)).toBe("0.0 MB");
     expect(formatMemory(2 * 1024 * 1024)).toBe("2.00 GB");
     expect(formatMemory(null)).toBe("--");
-    expect(formatTemperature(32.16)).toBe("32.2 C");
+    expect(formatTemperature(32.16)).toBe("32.2°C");
     expect(formatTemperature(null)).toBe("--");
+  });
+
+  it("splits value and unit so the unit can be de-emphasised", () => {
+    expect(formatMemoryParts(2 * 1024 * 1024)).toEqual({ value: "2.00", unit: "GB" });
+    expect(formatMemoryParts(512 * 1024)).toEqual({ value: "512.0", unit: "MB" });
+    expect(formatMemoryParts(null)).toEqual({ value: "--", unit: "" });
+    expect(formatPercentParts(5.94)).toEqual({ value: "5.9", unit: "%" });
+    expect(formatPercentParts(null)).toEqual({ value: "--", unit: "" });
+  });
+
+  it("labels the covered wall-clock span", () => {
+    expect(formatSpanLabel(0)).toBe("最近 0 秒");
+    expect(formatSpanLabel(45_000)).toBe("最近 45 秒");
+    expect(formatSpanLabel(120_000)).toBe("最近 2 分");
+    expect(formatSpanLabel(192_000)).toBe("最近 3 分 12 秒");
+  });
+});
+
+describe("computeAdaptiveDomain", () => {
+  it("falls back to a minimum span window when there is no data", () => {
+    expect(computeAdaptiveDomain([], 0.5)).toEqual({ min: 0, max: 0.5 });
+  });
+
+  it("keeps a floor on the window so noise is not magnified", () => {
+    const domain = computeAdaptiveDomain([3.6, 3.61, 3.6], 0.5);
+    expect(domain.max - domain.min).toBeCloseTo(0.5, 6);
+    expect(domain.min).toBeLessThan(3.6);
+    expect(domain.max).toBeGreaterThan(3.61);
+  });
+
+  it("pads a window that is already wider than the floor", () => {
+    const domain = computeAdaptiveDomain([2, 6], 0.5);
+    expect(domain.min).toBeCloseTo(1.52, 6);
+    expect(domain.max).toBeCloseTo(6.48, 6);
+  });
+
+  it("never produces a negative lower bound", () => {
+    const domain = computeAdaptiveDomain([0.05], 0.5);
+    expect(domain.min).toBe(0);
+    expect(domain.max).toBeCloseTo(0.5, 6);
   });
 });

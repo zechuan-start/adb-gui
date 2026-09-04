@@ -17,7 +17,11 @@ function frame(serial: string, sessionId: number, atMs: number): DeviceMetricsFr
 describe("useDeviceMetricsStore", () => {
   beforeEach(() => {
     useDeviceMetricsStore.getState().bindDevice(null, null);
-    useDeviceMetricsStore.setState({ backgroundEnabled: false, restartNonce: 0 });
+    useDeviceMetricsStore.setState({
+      backgroundEnabled: false,
+      paused: false,
+      restartNonce: 0,
+    });
   });
 
   it("drops late frames from an old session", () => {
@@ -71,5 +75,28 @@ describe("useDeviceMetricsStore", () => {
     const history = useDeviceMetricsStore.getState().history;
     expect(history.count).toBe(capacity);
     expect(history.at(0)?.atMs).toBe(20);
+  });
+
+  it("keeps the pause preference and collected history across device switches", () => {
+    const store = useDeviceMetricsStore.getState();
+    store.bindDevice("physical-a", "usb-a");
+    store.setPaused(true);
+
+    store.bindDevice("physical-b", "usb-b");
+
+    expect(useDeviceMetricsStore.getState().paused).toBe(true);
+  });
+
+  it("resumes collection when an interrupted session is restarted", () => {
+    const store = useDeviceMetricsStore.getState();
+    store.bindDevice("physical-a", "usb-a");
+    store.setPaused(true);
+
+    useDeviceMetricsStore.getState().restart();
+
+    const restarted = useDeviceMetricsStore.getState();
+    expect(restarted.paused).toBe(false);
+    expect(restarted.restartNonce).toBe(1);
+    expect(restarted.error).toBe("");
   });
 });

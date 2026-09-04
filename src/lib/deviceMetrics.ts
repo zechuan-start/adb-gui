@@ -106,20 +106,94 @@ export function downsample<T>(
   return result;
 }
 
+export interface MetricDomain {
+  min: number;
+  max: number;
+}
+
+/**
+ * Y axis window for series whose absolute range is narrow (used memory, for
+ * example). A fixed 0-100 window would flatten those into a straight line, but
+ * a purely data-driven window turns sampling noise into mountains -- so the
+ * window is never allowed to be tighter than `minSpan`.
+ */
+export function computeAdaptiveDomain(
+  values: readonly number[],
+  minSpan: number,
+): MetricDomain {
+  const span = minSpan > 0 ? minSpan : 1;
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+    min = Math.min(min, value);
+    max = Math.max(max, value);
+  }
+  if (min > max) {
+    return { min: 0, max: span };
+  }
+
+  const observed = max - min;
+  if (observed < span) {
+    const center = (min + max) / 2;
+    min = center - span / 2;
+    max = center + span / 2;
+  } else {
+    const padding = observed * 0.12;
+    min -= padding;
+    max += padding;
+  }
+  if (min < 0) {
+    max -= min;
+    min = 0;
+  }
+  return { min, max };
+}
+
+export interface FormattedValue {
+  value: string;
+  unit: string;
+}
+
+export function formatPercentParts(value: number | null): FormattedValue {
+  return value === null || !Number.isFinite(value)
+    ? { value: "--", unit: "" }
+    : { value: value.toFixed(1), unit: "%" };
+}
+
 export function formatPercent(value: number | null): string {
-  return value === null || !Number.isFinite(value) ? "--" : `${value.toFixed(1)}%`;
+  const parts = formatPercentParts(value);
+  return `${parts.value}${parts.unit}`;
+}
+
+export function formatMemoryParts(kilobytes: number | null): FormattedValue {
+  if (kilobytes === null || !Number.isFinite(kilobytes) || kilobytes < 0) {
+    return { value: "--", unit: "" };
+  }
+  if (kilobytes >= 1024 * 1024) {
+    return { value: (kilobytes / 1024 / 1024).toFixed(2), unit: "GB" };
+  }
+  return { value: (kilobytes / 1024).toFixed(1), unit: "MB" };
 }
 
 export function formatMemory(kilobytes: number | null): string {
-  if (kilobytes === null || !Number.isFinite(kilobytes) || kilobytes < 0) {
-    return "--";
-  }
-  if (kilobytes >= 1024 * 1024) {
-    return `${(kilobytes / 1024 / 1024).toFixed(2)} GB`;
-  }
-  return `${(kilobytes / 1024).toFixed(1)} MB`;
+  const parts = formatMemoryParts(kilobytes);
+  return parts.unit === "" ? parts.value : `${parts.value} ${parts.unit}`;
 }
 
 export function formatTemperature(value: number | null): string {
-  return value === null || !Number.isFinite(value) ? "--" : `${value.toFixed(1)} C`;
+  return value === null || !Number.isFinite(value) ? "--" : `${value.toFixed(1)}°C`;
+}
+
+/** Human label for how much wall time the chart window currently covers. */
+export function formatSpanLabel(durationMs: number): string {
+  const seconds = Math.max(0, Math.round(durationMs / 1000));
+  if (seconds < 60) {
+    return `最近 ${seconds} 秒`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return rest === 0 ? `最近 ${minutes} 分` : `最近 ${minutes} 分 ${rest} 秒`;
 }

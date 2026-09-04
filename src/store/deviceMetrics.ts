@@ -36,6 +36,8 @@ interface DeviceMetricsStore {
   battery: DeviceBatteryUsage | null;
   processes: DeviceProcessUsage[] | null;
   backgroundEnabled: boolean;
+  /** User-driven pause. Survives device switches, like `backgroundEnabled`. */
+  paused: boolean;
   restartNonce: number;
   bindDevice: (deviceKey: string | null, serial: string | null) => void;
   markStarting: (deviceKey: string, serial: string) => void;
@@ -45,6 +47,7 @@ interface DeviceMetricsStore {
   failStart: (deviceKey: string, serial: string, detail: string) => void;
   markStopped: (serial: string, sessionId: number) => void;
   setBackgroundEnabled: (enabled: boolean) => void;
+  setPaused: (paused: boolean) => void;
   restart: () => void;
 }
 
@@ -86,6 +89,7 @@ function clearDeviceState(
 
 export const useDeviceMetricsStore = create<DeviceMetricsStore>((set) => ({
   ...clearDeviceState(null, null, false, 0),
+  paused: false,
   bindDevice: (deviceKey, serial) => {
     set((state) => {
       if (state.deviceKey !== deviceKey) {
@@ -165,7 +169,8 @@ export const useDeviceMetricsStore = create<DeviceMetricsStore>((set) => ({
     );
   },
   setBackgroundEnabled: (backgroundEnabled) => set({ backgroundEnabled }),
+  setPaused: (paused) => set({ paused }),
   restart: () => {
-    set((state) => ({ restartNonce: state.restartNonce + 1, error: "" }));
+    set((state) => ({ restartNonce: state.restartNonce + 1, paused: false, error: "" }));
   },
 }));
