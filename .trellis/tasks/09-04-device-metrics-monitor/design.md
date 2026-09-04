@@ -6,8 +6,9 @@
 设备端                     Rust 后端 (device_metrics.rs)              前端
 ────────────────────────   ────────────────────────────────────────   ──────────────────────────
 adb shell 常驻 sh 循环      读 stdout → 按帧切分 → 解析 → 跨帧差分      监听事件 → 环形缓冲 → SVG 渲染
-  每 1s: 轻量帧             持有「上一帧」状态(仅 1 帧)               只持有有界历史 + 最新进程表
-  每 5s: 重量帧             只 emit 结构化小 payload
+  启动时: 初始化帧           持有「上一帧」状态(仅 1 帧)               只持有有界历史 + 最新进程表
+  每 1s: CPU + 内存          每秒只 emit 一个结构化小 payload
+  每 5s: 附加进程 + 电池
 ```
 
 边界划分的核心理由(直接服务 NFR-1 / NFR-2):
@@ -46,23 +47,27 @@ adb shell 常驻 sh 循环      读 stdout → 按帧切分 → 解析 → 跨�
 
 ## 2. 设备端采样脚本
 
-作为**单个字面量参数**传给 `adb -s <serial> shell <script>`,不做任何字符串拼接用户输入
-(唯一变量是数值间隔,已在 Rust 侧做范围校验 —— 见 NFR-3):
+作为**单个字面量参数**传给 `adb -s <serial> shell <script>`,采样频率固定,不做任何字符串插值
+或拼接用户输入(见 NFR-3):
 
 ```sh
 n=0
+page_size=$(getconf PAGE_SIZE 2>/dev/null || echo 4096)
+core_count=$(getconf _NPROCESSORS_ONLN 2>/dev/null || grep -c '^cpu[0-9]' /proc/stat)
+echo "#I $page_size $core_count"
 while true; do
-  echo "#F L"
-  cat /proc/stat | head -1
-  cat /proc/meminfo | head -20
-  echo "#/F"
+  echo "#F"
+  echo "#C"
+  head -1 /proc/stat
+  echo "#M"
+  head -20 /proc/meminfo
   if [ $((n % 5)) = 0 ]; then
-    echo "#F H"
-    cat /proc/[0-9]*/stat
-    echo "#S"
+    echo "#P"
+    cat /proc/[0-9]*/stat 2>/dev/null
+    echo "#B"
     dumpsys battery
-    echo "#/F"
   fi
+  echo "#/F"
   n=$((n+1))
   sleep 1
 done
@@ -70,11 +75,17 @@ done
 
 设计要点:
 
-- **帧用显式定界符**(`#F <kind>` / `#/F` / 段内分隔 `#S`),而不是靠行数或超时判断边界。
+- **帧用显式定界符**(`#F` / `#/F` / 段标记 `#C/#M/#P/#B`),而不是靠行数或超时判断边界。
   读端按行累积,遇到结束符才交付;EOF 时丢弃未闭合的半帧。这让部分读、慢链路、设备卡顿都不会
   产生错位的数据。
+- **每秒只有一个业务帧和一个前端事件。** 重量数据是该秒帧里的可选段,不是第二个独立帧;
+  因此内存字段始终存在,历史也不会在每 5 秒重复追加一个点。
+- **初始化元数据走同一条 stdout。** `#I` 一次性给出页大小与在线 CPU 核数,避免为了 RSS 换算或
+  `core_count` 再启动短命 adb 进程。无效值分别回退 4096 和 1。
 - **重量帧用 glob `cat`**(`cat /proc/[0-9]*/stat`)而不是逐进程 `for` 循环 —— 后者在 toybox sh 里
   每个进程一次 fork,数百次 fork/5s 会在被测设备上制造可观测负载,反过来污染 CPU 曲线本身。
+  `2>/dev/null` 只抑制 glob 展开后 PID 正常退出导致的 `ENOENT`;读取结果为空时前端显示进程统计
+  不可用,整机指标继续。
 - **不用 `top -b -n 1`**:toybox 的单帧 `top` 其 `%CPU` 语义不是「过去一个采样周期的占用」,
   连续调用会得到误导性的数字;而 `/proc/<pid>/stat` 的 utime/stime 是单调累积量,两帧作差语义明确。
 - **不用设备端时间戳**:toybox `date` 对 `%N` 支持不一致。时间戳由宿主机在帧闭合时打。
@@ -100,7 +111,13 @@ struct DeviceMetricsFrame {
 struct CpuUsage { total_percent: f32, core_count: u32 }
 struct MemoryUsage { total_kb: u64, available_kb: u64, used_kb: u64 }
 struct BatteryUsage { level: String, status: String, temperature_c: Option<f32> }
-struct ProcessUsage { pid: String, comm: String, cpu_percent: f32, rss_kb: u64 }
+struct ProcessUsage {
+    pid: String,
+    comm: String,
+    cpu_percent: f32,
+    rss_kb: u64,
+    is_new: bool,
+}
 
 // event: "device-metrics-exit"
 struct DeviceMetricsExit { serial: String, session_id: u64, reason: String, detail: String }
@@ -111,11 +128,12 @@ struct DeviceMetricsExit { serial: String, session_id: u64, reason: String, deta
 ```rust
 #[tauri::command] async fn start_device_metrics(app, serial: String)
     -> Result<DeviceMetricsSessionInfo, String>;   // { serial, session_id }
-#[tauri::command] async fn stop_device_metrics(app, serial: String) -> Result<(), String>;
+#[tauri::command] async fn stop_device_metrics(serial: String, session_id: u64)
+    -> Result<(), String>;
 ```
 
-`session_id` 的作用与 logcat 一致:设备快速切换或重启会话时,旧会话的迟到事件必须被前端丢弃
-(`logcat.rs:85` 的 `session_matches` 是同一模式)。
+`session_id` 的作用与 logcat 一致:设备快速切换或重启会话时,旧会话的迟到事件必须被前端丢弃。
+stop 也必须携带 `session_id`,旧 effect cleanup 只能停止自己启动的会话,不能误杀同 serial 的新会话。
 
 ## 4. 计算口径
 
@@ -147,26 +165,28 @@ struct DeviceMetricsExit { serial: String, session_id: u64, reason: String, deta
 - 触发条件:`onlineSerial != null && (activePane === "perf" || 后台采集开关开启)`。
 - 面板不可见时默认 `stop_device_metrics`(释放设备端 shell 与一路 adb 连接),
   **但保留已有历史**;重新进入面板时继续追加,曲线上留下时间空档,由渲染层按时间轴自然表现。
-- 设备切换或离线:停止会话并**清空**历史(不同设备的数据不能落在同一条曲线上)。
+- 前端同时跟踪 `deviceKey = device_id ?? alias_identity ?? serial` 与命令 serial。deviceKey 变化或离线时
+  停止会话并**清空**历史;仅 serial 变化而 deviceKey 不变表示同一物理设备传输迁移,重启会话但保留历史。
 - 应用退出:`lib.rs` 的 `RunEvent::Exit` 中调用 `shutdown_device_metrics_sessions()`,
   与既有 `shutdown_logcat_sessions()`(`lib.rs:240`)并列,先置关闭标志再 drain 并 kill 子进程。
 
 ## 6. 并发与健壮性(复用 logcat 已验证的模式)
 
-`device_metrics.rs` 复刻以下已在 logcat 里被真机验证过的机制,不重新发明:
+`device_metrics.rs` 复用以下已在 logcat 里被真机验证过的清理机制,但会话所有权收紧为全局单例:
 
 | 机制 | logcat 参考 | 本任务用途 |
 |---|---|---|
-| per-serial start lock | `logcat.rs:71` | 防止快速切换设备时并发 start 抢同一 serial |
-| 先停旧会话再起新会话 | `start_after_stopping` `logcat.rs:122` | 无线 ADB 下旧客户端退出会拆掉刚建立的流 |
+| 全局 start lock | `logcat.rs:71` 的同类模式 | 快速切换时串行 stop/start,保证同时最多一个 metrics adb |
+| 先停当前会话再起新会话 | `start_after_stopping` `logcat.rs:122` | 跨 serial 也先收敛旧流,满足单例约束 |
 | 关闭期拒绝新会话 | `LOGCAT_SHUTTING_DOWN` | 退出过程中不再产生新子进程 |
 | 注册失败时回收子进程 | `logcat.rs:536` | 避免竞态下泄漏 adb 进程 |
+| stop 校验 serial + session_id | `stop_logcat` 的 session 校验 | 迟到 cleanup 不得停止新会话 |
 | kill + 超时 wait | `stop_logcat_session` `logcat.rs:138` | 3s 超时,避免退出被卡死 |
 | stderr tail 限长 | `append_stderr_tail` `logcat.rs:665` | 2KB 上限,退出原因可诊断且内存有界 |
 | `kill_on_drop(true)` | `logcat.rs:504` | 兜底,不留孤儿进程 |
 
-差异点:logcat 需要 50ms 批量聚合(高频行),本任务帧率只有 1Hz,**不需要批处理**,
-每帧闭合即 emit,读循环因此比 logcat 简单得多(无 `batch_deadline` 分支)。
+差异点:logcat 支持多 serial 且需要 50ms 批量聚合;metrics 只监控当前选中设备,使用全局单例会话,
+帧率只有 1Hz,**不需要批处理**,每帧闭合即 emit。
 
 ## 7. 前端内存有界的具体做法
 

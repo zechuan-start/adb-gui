@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import {
   AppWindow,
+  Activity,
   Files,
   Monitor,
   Moon,
@@ -32,6 +33,7 @@ const PANES: readonly {
   { id: "files", index: "03", label: "文件", icon: Files },
   { id: "codegen", index: "04", label: "生码", icon: QrCode },
   { id: "decoder", index: "05", label: "解码", icon: ScanLine },
+  { id: "perf", index: "06", label: "性能", icon: Activity },
 ];
 
 const THEMES = [

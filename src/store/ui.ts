@@ -1,14 +1,14 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-export type PaneId = "tools" | "apps" | "files" | "codegen" | "decoder";
+export type PaneId = "tools" | "apps" | "files" | "codegen" | "decoder" | "perf";
 
 export const MIN_LOG_HEIGHT = 120;
 export const DEFAULT_LOG_HEIGHT = 320;
 
 const LOG_WORKSPACE_RESERVED_HEIGHT = 220;
 const UI_STORAGE_KEY = "adb-gui-ui";
-const PANE_IDS: readonly PaneId[] = ["tools", "apps", "files", "codegen", "decoder"];
+const PANE_IDS: readonly PaneId[] = ["tools", "apps", "files", "codegen", "decoder", "perf"];
 
 export const DEFAULT_LOG_OPEN_BY_PANE: Readonly<Record<PaneId, boolean>> = {
   tools: true,
@@ -16,6 +16,7 @@ export const DEFAULT_LOG_OPEN_BY_PANE: Readonly<Record<PaneId, boolean>> = {
   files: true,
   codegen: false,
   decoder: false,
+  perf: false,
 };
 
 interface PersistedUiPreferences {
