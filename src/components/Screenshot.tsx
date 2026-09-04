@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ClipboardCopy, FolderOpen, RefreshCw, Image as ImageIcon } from "lucide-react";
 import { useDeviceStore } from "@/store/device";
-import { openFile, revealFile, takeScreenshot } from "@/lib/tauri";
+import { copyScreenshot, openFile, revealFile, takeScreenshot } from "@/lib/tauri";
 import { useFeedbackStore } from "@/store/feedback";
 import { getDeviceBySerial, isOnlineDevice } from "@/lib/device";
 import { cn } from "@/lib/utils";
@@ -11,42 +11,72 @@ export function ScreenshotTool() {
   const selectedDevice = useDeviceStore((s) => s.selectedDevice);
   const device = getDeviceBySerial(devices, selectedDevice);
   const showToast = useFeedbackStore((s) => s.showToast);
-  const [busy, setBusy] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"open" | "copy" | null>(null);
   const [lastPath, setLastPath] = useState("");
+  const busy = pendingAction !== null;
 
-  async function handleScreenshot() {
+  async function handleScreenshot(action: "open" | "copy") {
     if (!device || !isOnlineDevice(device) || busy) {
       return;
     }
 
-    setBusy(true);
+    setPendingAction(action);
     try {
-      const result = await takeScreenshot(device.serial);
-      setLastPath(result.path);
-      showToast("success", `截图已保存到 ${result.path}`);
+      if (action === "open") {
+        const result = await takeScreenshot(device.serial);
+        setLastPath(result.path);
+        showToast("success", `截图已保存到 ${result.path}`);
+      } else {
+        await copyScreenshot(device.serial);
+        showToast("success", "截图已复制到剪贴板");
+      }
     } catch (error) {
       showToast("error", `截图失败: ${error}`);
     } finally {
-      setBusy(false);
+      setPendingAction(null);
     }
   }
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <button
-        type="button"
-        onClick={handleScreenshot}
-        disabled={!device || !isOnlineDevice(device) || busy}
-        className={cn(
-          "flex h-9 w-full items-center justify-center gap-2 border border-ink bg-ink px-3 font-data text-xs font-medium text-onink transition-colors",
-          busy && "opacity-80",
-          (!device || !isOnlineDevice(device)) && "cursor-not-allowed opacity-50",
-          !busy && device && isOnlineDevice(device) && "hover:border-ink2 hover:bg-ink2"
-        )}
-      >
-        {busy ? <RefreshCw className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-4 w-4" />}
-        {busy ? "截图中..." : "截图并打开"}
-      </button>
+      <div className="grid h-9 grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => void handleScreenshot("open")}
+          disabled={!device || !isOnlineDevice(device) || busy}
+          className={cn(
+            "flex min-w-0 items-center justify-center gap-2 border border-ink bg-ink px-2 font-data text-xs font-medium text-onink transition-colors",
+            pendingAction === "open" && "opacity-80",
+            (!device || !isOnlineDevice(device)) && "cursor-not-allowed opacity-50",
+            !busy && device && isOnlineDevice(device) && "hover:bg-ink2",
+          )}
+        >
+          {pendingAction === "open" ? (
+            <RefreshCw className="h-4 w-4 shrink-0 animate-spin" />
+          ) : (
+            <ImageIcon className="h-4 w-4 shrink-0" />
+          )}
+          <span className="whitespace-nowrap">{pendingAction === "open" ? "截图中..." : "截图并打开"}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleScreenshot("copy")}
+          disabled={!device || !isOnlineDevice(device) || busy}
+          className={cn(
+            "flex min-w-0 items-center justify-center gap-2 border border-ink bg-ink px-2 font-data text-xs font-medium text-onink transition-colors",
+            pendingAction === "copy" && "opacity-80",
+            (!device || !isOnlineDevice(device)) && "cursor-not-allowed opacity-50",
+            !busy && device && isOnlineDevice(device) && "hover:bg-ink2",
+          )}
+        >
+          {pendingAction === "copy" ? (
+            <RefreshCw className="h-4 w-4 shrink-0 animate-spin" />
+          ) : (
+            <ClipboardCopy className="h-4 w-4 shrink-0" />
+          )}
+          <span className="whitespace-nowrap">{pendingAction === "copy" ? "复制中..." : "截图并复制"}</span>
+        </button>
+      </div>
 
       <div className="mt-3 flex flex-1 flex-col gap-3">
         <div className="min-h-8 break-all border-y border-dashed border-rule2 py-2 font-data text-[11px] text-ink2">

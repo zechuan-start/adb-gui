@@ -1,5 +1,6 @@
 use std::path::PathBuf;
-use tauri::AppHandle;
+use tauri::{image::Image, AppHandle};
+use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::adb;
@@ -13,20 +14,7 @@ pub struct ScreenshotResult {
 
 #[tauri::command]
 pub fn take_screenshot(app: AppHandle, serial: String) -> Result<ScreenshotResult, String> {
-    let adb_path = adb::resolve_adb_path(&app)?;
-
-    let output = adb::prepare_command(&app, &adb_path)
-        .arg("-s")
-        .arg(&serial)
-        .arg("exec-out")
-        .arg("screencap")
-        .arg("-p")
-        .output()
-        .map_err(|e| format!("Failed to take screenshot: {e}"))?;
-
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
-    }
+    let png = capture_screenshot(&app, &serial)?;
 
     let save_dir = screenshot_dir();
     std::fs::create_dir_all(&save_dir).map_err(|e| format!("Failed to create dir: {e}"))?;
@@ -35,7 +23,7 @@ pub fn take_screenshot(app: AppHandle, serial: String) -> Result<ScreenshotResul
     let safe_serial = serial.replace(['/', ':', ' '], "_");
     let file_path = save_dir.join(format!("{}-{}.png", safe_serial, timestamp));
 
-    std::fs::write(&file_path, &output.stdout).map_err(|e| format!("Failed to write file: {e}"))?;
+    std::fs::write(&file_path, png).map_err(|e| format!("Failed to write file: {e}"))?;
 
     let path_str = file_path.to_string_lossy().to_string();
     let mut opened = false;
@@ -58,6 +46,35 @@ pub fn take_screenshot(app: AppHandle, serial: String) -> Result<ScreenshotResul
         opened,
         revealed,
     })
+}
+
+#[tauri::command]
+pub fn copy_screenshot(app: AppHandle, serial: String) -> Result<(), String> {
+    let png = capture_screenshot(&app, &serial)?;
+    let image = Image::from_bytes(&png).map_err(|e| format!("Failed to decode screenshot: {e}"))?;
+
+    app.clipboard()
+        .write_image(&image)
+        .map_err(|e| format!("Failed to copy screenshot: {e}"))
+}
+
+fn capture_screenshot(app: &AppHandle, serial: &str) -> Result<Vec<u8>, String> {
+    let adb_path = adb::resolve_adb_path(app)?;
+
+    let output = adb::prepare_command(app, &adb_path)
+        .arg("-s")
+        .arg(serial)
+        .arg("exec-out")
+        .arg("screencap")
+        .arg("-p")
+        .output()
+        .map_err(|e| format!("Failed to take screenshot: {e}"))?;
+
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+
+    Ok(output.stdout)
 }
 
 fn screenshot_dir() -> PathBuf {

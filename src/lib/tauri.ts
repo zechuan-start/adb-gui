@@ -300,6 +300,10 @@ export async function takeScreenshot(serial: string): Promise<ScreenshotResult> 
   return invoke<ScreenshotResult>("take_screenshot", { serial });
 }
 
+export async function copyScreenshot(serial: string): Promise<void> {
+  return invoke<void>("copy_screenshot", { serial });
+}
+
 export async function pickApkFile(): Promise<string | null> {
   const selected = await open({
     title: "Select APK",

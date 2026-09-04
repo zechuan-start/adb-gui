@@ -195,6 +195,7 @@ pub fn run() {
             commands::app::clear_app_data,
             commands::keys::send_key_event,
             commands::screenshot::take_screenshot,
+            commands::screenshot::copy_screenshot,
             commands::logcat::clear_logcat,
             commands::logcat::get_package_pids,
             commands::logcat::list_device_processes,
