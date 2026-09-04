@@ -80,6 +80,53 @@ export interface LogcatExit {
   detail: string;
 }
 
+export interface DeviceMetricsSessionInfo {
+  serial: string;
+  session_id: number;
+}
+
+export interface DeviceCpuUsage {
+  total_percent: number;
+  core_count: number;
+}
+
+export interface DeviceMemoryUsage {
+  total_kb: number;
+  available_kb: number;
+  used_kb: number;
+}
+
+export interface DeviceBatteryUsage {
+  level: string;
+  status: string;
+  temperature_c: number | null;
+}
+
+export interface DeviceProcessUsage {
+  pid: string;
+  comm: string;
+  cpu_percent: number;
+  rss_kb: number;
+  is_new: boolean;
+}
+
+export interface DeviceMetricsFrame {
+  serial: string;
+  session_id: number;
+  at_ms: number;
+  cpu: DeviceCpuUsage | null;
+  memory: DeviceMemoryUsage;
+  battery: DeviceBatteryUsage | null;
+  processes: DeviceProcessUsage[] | null;
+}
+
+export interface DeviceMetricsExit {
+  serial: string;
+  session_id: number;
+  reason: "eof" | "error";
+  detail: string;
+}
+
 export interface ScreenshotResult {
   path: string;
   opened: boolean;
@@ -394,6 +441,16 @@ export async function stopLogcat(serial: string, sessionId: number): Promise<voi
   return invoke<void>("stop_logcat", { serial, sessionId });
 }
 
+export async function startDeviceMetrics(
+  serial: string,
+): Promise<DeviceMetricsSessionInfo> {
+  return invoke<DeviceMetricsSessionInfo>("start_device_metrics", { serial });
+}
+
+export async function stopDeviceMetrics(serial: string, sessionId: number): Promise<void> {
+  return invoke<void>("stop_device_metrics", { serial, sessionId });
+}
+
 export async function clearLogcat(serial: string): Promise<void> {
   return invoke<void>("clear_logcat", { serial });
 }
@@ -473,6 +530,18 @@ export async function onLogcatBatch(callback: (batch: LogcatBatch) => void): Pro
 
 export async function onLogcatExit(callback: (exit: LogcatExit) => void): Promise<UnlistenFn> {
   return listen<LogcatExit>("logcat-exit", (e) => callback(e.payload));
+}
+
+export async function onDeviceMetricsFrame(
+  callback: (frame: DeviceMetricsFrame) => void,
+): Promise<UnlistenFn> {
+  return listen<DeviceMetricsFrame>("device-metrics-frame", (event) => callback(event.payload));
+}
+
+export async function onDeviceMetricsExit(
+  callback: (exit: DeviceMetricsExit) => void,
+): Promise<UnlistenFn> {
+  return listen<DeviceMetricsExit>("device-metrics-exit", (event) => callback(event.payload));
 }
 
 export async function onDragDrop(callback: (event: DragDropEvent) => void): Promise<UnlistenFn> {

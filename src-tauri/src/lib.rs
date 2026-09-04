@@ -202,6 +202,8 @@ pub fn run() {
             commands::logcat::start_logcat,
             commands::logcat::stop_logcat,
             commands::device_info::get_device_info,
+            commands::device_metrics::start_device_metrics,
+            commands::device_metrics::stop_device_metrics,
             commands::packages::list_packages,
             commands::app_icon::get_app_icon,
             commands::app_info::get_installed_apps,
@@ -240,6 +242,11 @@ pub fn run() {
                 tauri::async_runtime::block_on(commands::logcat::shutdown_logcat_sessions())
             {
                 eprintln!("failed to stop Logcat sessions during application exit: {error}");
+            }
+            if let Err(error) = tauri::async_runtime::block_on(
+                commands::device_metrics::shutdown_device_metrics_sessions(),
+            ) {
+                eprintln!("failed to stop device metrics during application exit: {error}");
             }
             if let Err(error) = adb::shutdown_embedded_adb_server(_app) {
                 eprintln!("failed to stop bundled ADB server during application exit: {error}");

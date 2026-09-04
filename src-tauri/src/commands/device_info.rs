@@ -64,8 +64,21 @@ fn get_battery(app: &AppHandle, serial: &str) -> (String, String) {
     let output =
         run_adb_with_serial(app, serial, &["shell", "dumpsys", "battery"]).unwrap_or_default();
 
+    let battery = parse_battery_output(&output);
+    (battery.level, battery.status)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ParsedBattery {
+    pub level: String,
+    pub status: String,
+    pub temperature_c: Option<f32>,
+}
+
+pub(crate) fn parse_battery_output(output: &str) -> ParsedBattery {
     let mut level = String::new();
     let mut status = String::new();
+    let mut temperature_c = None;
 
     for line in output.lines() {
         let trimmed = line.trim();
@@ -84,8 +97,46 @@ fn get_battery(app: &AppHandle, serial: &str) -> (String, String) {
                 "5" => "已充满".to_string(),
                 _ => code.to_string(),
             };
+        } else if trimmed.starts_with("temperature:") {
+            temperature_c = trimmed
+                .strip_prefix("temperature:")
+                .and_then(|value| value.trim().parse::<f32>().ok())
+                .map(|value| value / 10.0);
         }
     }
 
-    (level, status)
+    ParsedBattery {
+        level,
+        status,
+        temperature_c,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_battery_output, ParsedBattery};
+
+    #[test]
+    fn parses_battery_fields_and_maps_status() {
+        assert_eq!(
+            parse_battery_output("status: 2\nlevel: 87\ntemperature: 321\n"),
+            ParsedBattery {
+                level: "87".to_string(),
+                status: "充电中".to_string(),
+                temperature_c: Some(32.1),
+            }
+        );
+    }
+
+    #[test]
+    fn preserves_unknown_status_and_ignores_invalid_temperature() {
+        assert_eq!(
+            parse_battery_output("status: 9\nlevel: 50\ntemperature: unknown\n"),
+            ParsedBattery {
+                level: "50".to_string(),
+                status: "9".to_string(),
+                temperature_c: None,
+            }
+        );
+    }
 }

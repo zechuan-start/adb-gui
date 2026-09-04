@@ -48,6 +48,7 @@ describe("useUiStore", () => {
         files: true,
         codegen: false,
         decoder: false,
+        perf: false,
       },
       logHeight: DEFAULT_LOG_HEIGHT,
       logMaximized: false,
@@ -68,6 +69,7 @@ describe("useUiStore", () => {
       files: true,
       codegen: true,
       decoder: false,
+      perf: false,
     });
   });
 
@@ -132,6 +134,7 @@ describe("useUiStore", () => {
         files: false,
         codegen: false,
         decoder: false,
+        perf: false,
       },
       logHeight: 420,
     });
@@ -146,6 +149,7 @@ describe("useUiStore", () => {
         files: false,
         codegen: false,
         decoder: false,
+        perf: false,
       },
       logHeight: 420,
       logMaximized: false,

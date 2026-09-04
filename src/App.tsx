@@ -23,6 +23,7 @@ import { TopBar } from "@/components/layout/TopBar";
 import { LogcatPanel } from "@/components/logcat/LogcatPanel";
 import { LogcatRuntime } from "@/components/logcat/LogcatRuntime";
 import { PackageManagerPanel } from "@/components/PackageManager";
+import { PerformancePanel } from "@/components/performance/PerformancePanel";
 import { PortForwardTool } from "@/components/PortForwardTool";
 import { QuickKeysTool } from "@/components/QuickKeys";
 import { ScreenRecordTool } from "@/components/ScreenRecordTool";
@@ -244,6 +245,9 @@ function App() {
         </WorkspacePane>
         <WorkspacePane id="decoder" activePane={activePane}>
           <CodeDecoderPage active={activePane === "decoder"} />
+        </WorkspacePane>
+        <WorkspacePane id="perf" activePane={activePane}>
+          <PerformancePanel active={activePane === "perf"} />
         </WorkspacePane>
       </AppShell>
       <ToastBar />

@@ -612,6 +612,86 @@ const result = await uploadDeviceFile(serial, localPath, currentDirectory.path);
 
 The backend owns normalized device paths, shell quoting, collision checks, final names, and preview validation. The frontend owns selection, rendering, sequential batch orchestration, and stale-response rejection.
 
+## Scenario: Streaming Device Metrics Session
+
+### 1. Scope / Trigger
+
+- Trigger: changing the device CPU, memory, battery, or process metrics sampler; its Tauri commands/events; its session lifecycle; or the frontend history/store/controller.
+- Applies across `commands/device_metrics.rs`, `commands/device_info.rs`, `lib/tauri.ts`, `hooks/useDeviceMetricsSession.ts`, `store/deviceMetrics.ts`, and `components/performance/`.
+
+### 2. Signatures
+
+- `start_device_metrics(app: AppHandle, serial: String) -> Result<DeviceMetricsSessionInfo, String>`
+- `stop_device_metrics(serial: String, session_id: u64) -> Result<(), String>`
+- `shutdown_device_metrics_sessions() -> Result<(), String>`
+- Events: `device-metrics-frame` and `device-metrics-exit`
+- `DeviceMetricsFrame { serial, session_id, at_ms, cpu, memory, battery, processes }`
+- Frontend bridge: `startDeviceMetrics`, `stopDeviceMetrics`, `onDeviceMetricsFrame`, and `onDeviceMetricsExit`
+
+### 3. Contracts
+
+- Keep exactly one metrics ADB child globally. Serialize every start, fully stop/wait the prior child before spawning, and reject registration after application shutdown begins.
+- Spawn only through `adb::prepare_async_command`. Pass the device serial as the `-s` argument and pass one fixed literal sampling script after `shell`; never interpolate device or user input into that script.
+- Use one long-lived ADB stream. Its initialization record supplies page size and CPU core count; every closed `#F` / `#/F` frame contains CPU and memory, while process and battery sections occur every fifth frame.
+- Parse and diff `/proc` data in Rust. Emit at most the union of the top 15 CPU and top 15 RSS processes rather than raw process-stat text.
+- Match stop, reader cleanup, frontend events, and delayed effect cleanup by both `serial` and monotonically increasing `session_id`. A stale cleanup is a no-op.
+- Frontend history uses the fixed-capacity `DeviceMetricsRingBuffer` and overwrites the oldest point at 1,800 samples. Process data keeps only the latest snapshot. A physical-device key change clears history; a transport serial change for the same key preserves it.
+- Start collection only while the performance pane is visible unless the explicit background toggle is enabled. Dispose both event listeners and stop the exact owned session when that lifecycle ends.
+- Application exit closes the metrics registration gate and synchronously drains the active child from `RunEvent::Exit` after Logcat cleanup.
+
+### 4. Validation & Error Matrix
+
+- Invalid initialization page size/core count -> use explicit `4096` / `1` fallbacks without spawning another ADB process.
+- Missing aggregate CPU or required memory fields -> end the session with an `error` exit carrying a non-empty detail.
+- Missing or unreadable `/proc/<pid>/stat` rows -> skip malformed rows; preserve whole-device metrics and emit an empty process snapshot when none are readable.
+- Counter rollback, wrap, or zero total delta -> emit no CPU value for that interval; never draw a false zero.
+- Start races with shutdown or another registration -> kill and wait the candidate before returning a contextual `Err`.
+- Stop or cleanup identity mismatch -> return successfully without touching the active child.
+- Stdout EOF/read failure -> discard any half frame, remove only the matching registered session, stop/wait it, and emit one exit event with bounded stderr detail.
+- Event listener setup or start failure -> remove installed listeners, surface one user-visible error, and do not report a streaming state.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a heavy fifth-second frame emits one event and appends exactly one history point while also replacing battery and process snapshots.
+- Good: USB to WiFi migration for the same `device_id` restarts the child with the new serial and retains history.
+- Base: a newly observed PID reports RSS with `cpu_percent = 0` until a prior heavy frame exists.
+- Bad: a frontend timer that invokes one ADB command per second creates process churn and a second sampling scheduler.
+- Bad: stopping by serial alone lets an old React cleanup terminate a newer A -> B -> A session.
+- Bad: appending with `[...history, frame]` makes memory and garbage-collection work grow with monitoring duration.
+
+### 6. Tests Required
+
+- Rust unit tests cover CPU/memory/battery parsing, process names containing spaces/right parentheses, PID reuse identity, counter rollback, initialization fallbacks, top CPU/RSS union, and incomplete-frame discard.
+- Decoder tests assert that one closed heavy frame yields one business frame and that required CPU/memory fields remain present.
+- Frontend ring-buffer/store tests assert overwrite order, the 1,800-point ceiling, spike-preserving downsampling, stale-session rejection, same-device transport preservation, and different-device clearing.
+- Controller tests cover an event arriving before start resolves, disposal during start, exact-session stop, stale events, and the active exit path.
+- Run the 60-second Rust test gate, `cargo fmt --check`, Clippy with warnings denied, frontend tests, and the production build.
+- Real-device smoke covers live values, chart hover, process sorting/highlight, transport interruption, one-child ownership, application-exit cleanup, 30-minute RSS stability, and three alternating 60-second on/off CPU samples.
+- On Windows, verify that the inherited `CREATE_NO_WINDOW` path prevents a console flash.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+setInterval(() => invoke("read_device_metrics", { serial }), 1_000);
+setHistory((history) => [...history, nextFrame]);
+```
+
+#### Correct
+
+```typescript
+const session = await startDeviceMetrics(serial);
+const unlisten = await onDeviceMetricsFrame((frame) => store.acceptFrame(frame));
+
+return () => {
+  unlisten();
+  void stopDeviceMetrics(session.serial, session.session_id);
+};
+```
+
+One owned stream and one bounded history are the only sources of metrics lifecycle and retention truth.
+
 ## Scenario: Streaming Logcat Format and Parsing
 
 ### 1. Scope / Trigger

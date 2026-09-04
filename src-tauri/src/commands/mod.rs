@@ -7,6 +7,7 @@ pub mod deeplink;
 pub mod device;
 pub mod device_files;
 pub mod device_info;
+pub mod device_metrics;
 pub mod image_file;
 pub mod keys;
 pub mod logcat;
