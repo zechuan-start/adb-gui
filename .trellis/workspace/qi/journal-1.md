@@ -687,3 +687,39 @@ Added separate screenshot-and-copy UI action, copied ADB screenshot bytes direct
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: Ship settings and clipboard changes
+
+**Date**: 2026-09-05
+**Task**: Ship settings and clipboard changes
+**Branch**: `codex/settings-and-clipboard`
+
+### Summary
+
+Created the feature branch and committed unified preferences, manual clipboard transfers, configurable capture output and recording recovery. Revalidated 380 frontend tests, 125 Rust tests, production build, rustfmt, Clippy and the DEX shell script.
+
+### Main Changes
+
+- Committed the existing settings, clipboard, browsing and capture changes with their tests, documentation and rebuilt device helper.
+- Preserved active task directories under the existing no-automatic-archive agreement.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `495f097` | (see git log) |
+
+### Testing
+
+- [OK] Frontend: 37 files and 380 tests passed; TypeScript and Vite production build passed with the existing large-chunk warning.
+- [OK] Rust: 125 tests passed within the 60-second limit; rustfmt and Clippy with warnings denied passed.
+- [OK] DEX build script syntax and staged diff whitespace checks passed.
+
+### Status
+
+[OK] Code committed; remote push follows the journal commit.
+
+### Next Steps
+
+- Push the feature branch and verify remote commit identity. Task archiving remains deferred.
