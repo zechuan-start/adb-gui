@@ -4,6 +4,7 @@ import {
   ArrowLeftRight,
   Bug,
   Camera,
+  Clipboard,
   Keyboard,
   Link2,
   PackageOpen,
@@ -31,6 +32,8 @@ import { ScreenshotTool } from "@/components/Screenshot";
 import { ToastBar } from "@/components/ToastBar";
 import { ToolModule } from "@/components/ToolModule";
 import { UpdateChecker } from "@/components/UpdateChecker";
+import { SettingsDialog } from "@/components/settings/SettingsDialog";
+import { ClipboardTool } from "@/components/ClipboardTool";
 import {
   createActivityPollingController,
   type ActivityPollingController,
@@ -224,6 +227,9 @@ function App() {
                 <ToolModule icon={<Keyboard />} title="快捷按键" reference="A-06">
                   <QuickKeysTool />
                 </ToolModule>
+                <ToolModule icon={<Clipboard />} title="剪贴板" reference="A-09">
+                  <ClipboardTool />
+                </ToolModule>
                 <ToolModule icon={<AppWindow />} title="当前应用" reference="A-07">
                   <CurrentAppActionsTool />
                 </ToolModule>
@@ -252,6 +258,7 @@ function App() {
       </AppShell>
       <ToastBar />
       <UpdateChecker />
+      <SettingsDialog />
     </>
   );
 }

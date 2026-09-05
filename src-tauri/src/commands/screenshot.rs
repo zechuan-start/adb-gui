@@ -1,8 +1,9 @@
-use std::path::PathBuf;
 use tauri::{image::Image, AppHandle};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_opener::OpenerExt;
 
+use super::capture_behavior::{after_save, ScreenshotBehavior};
+use super::capture_output::{capture_id, capture_target, CaptureDestination, CaptureOutput};
 use crate::adb;
 
 #[derive(serde::Serialize, Clone)]
@@ -13,33 +14,40 @@ pub struct ScreenshotResult {
 }
 
 #[tauri::command]
-pub fn take_screenshot(app: AppHandle, serial: String) -> Result<ScreenshotResult, String> {
+pub async fn take_screenshot(
+    app: AppHandle,
+    serial: String,
+    behavior: ScreenshotBehavior,
+    destination: CaptureDestination,
+) -> Result<ScreenshotResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        save_screenshot(app, serial, behavior, destination)
+    })
+    .await
+    .map_err(|error| format!("截图任务失败: {error}"))?
+}
+
+fn save_screenshot(
+    app: AppHandle,
+    serial: String,
+    behavior: ScreenshotBehavior,
+    destination: CaptureDestination,
+) -> Result<ScreenshotResult, String> {
+    let file_path = capture_target(&destination, &serial, &capture_id()?, "png")?;
+    let mut output = CaptureOutput::new(&file_path)?;
     let png = capture_screenshot(&app, &serial)?;
-
-    let save_dir = screenshot_dir();
-    std::fs::create_dir_all(&save_dir).map_err(|e| format!("Failed to create dir: {e}"))?;
-
-    let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
-    let safe_serial = serial.replace(['/', ':', ' '], "_");
-    let file_path = save_dir.join(format!("{}-{}.png", safe_serial, timestamp));
-
-    std::fs::write(&file_path, png).map_err(|e| format!("Failed to write file: {e}"))?;
+    Image::from_bytes(&png).map_err(|error| format!("截图 PNG 无效: {error}"))?;
+    output.write(&png)?;
+    output.verify_size(png.len() as u64)?;
+    output.publish(false)?;
 
     let path_str = file_path.to_string_lossy().to_string();
-    let mut opened = false;
-    let mut revealed = false;
-
-    if let Err(err) = app.opener().open_path(&path_str, None::<&str>) {
-        eprintln!("failed to open screenshot: {err}");
-    } else {
-        opened = true;
-    }
-
-    if let Err(err) = app.opener().reveal_item_in_dir(&path_str) {
-        eprintln!("failed to reveal screenshot: {err}");
-    } else {
-        revealed = true;
-    }
+    let opened = after_save(behavior.open_after_save, || {
+        app.opener().open_path(&path_str, None::<&str>)
+    });
+    let revealed = after_save(behavior.reveal_after_save, || {
+        app.opener().reveal_item_in_dir(&path_str)
+    });
 
     Ok(ScreenshotResult {
         path: path_str,
@@ -75,12 +83,4 @@ fn capture_screenshot(app: &AppHandle, serial: &str) -> Result<Vec<u8>, String> 
     }
 
     Ok(output.stdout)
-}
-
-fn screenshot_dir() -> PathBuf {
-    if let Some(dir) = dirs::picture_dir() {
-        dir.join("ADB GUI")
-    } else {
-        PathBuf::from("/tmp/ADB GUI")
-    }
 }

@@ -2,24 +2,25 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
-use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use crate::adb;
+#[cfg(test)]
+use crate::device_helper::parse_ls_size_matches;
+use crate::device_helper::{
+    ensure_dex_pushed, fnv1a_64, remote_dex_path, resolve_app_info_dex_path,
+};
 
 use super::device::adb_output_error;
 
 // Keep this value in sync with scripts/build-app-info-dex/.../Main.java.
 const PAYLOAD_SENTINEL: &str = "--ADBGUI-APPINFO-V1--";
-const REMOTE_DEX_DIR: &str = "/data/local/tmp";
-const REMOTE_DEX_PREFIX: &str = "adb-gui-app-info-";
 const METADATA_TIMEOUT: Duration = Duration::from_secs(45);
 const ICONS_TIMEOUT: Duration = Duration::from_secs(90);
-const PUSH_TIMEOUT: Duration = Duration::from_secs(30);
 const ICON_FILTER_BATCH: usize = 50;
 const MAX_ERROR_DETAIL_BYTES: usize = 4_000;
 
@@ -172,39 +173,6 @@ async fn run_app_info_helper<T: DeserializeOwned>(
     parse_helper_output(&retry_output.stdout)
 }
 
-async fn ensure_dex_pushed(
-    app: &AppHandle,
-    serial: &str,
-    local_path: &Path,
-    remote_path: &str,
-    expected_size: u64,
-    force: bool,
-) -> Result<bool, String> {
-    if !force {
-        let probe_args = ["-s", serial, "shell", "ls", "-l", remote_path];
-        if let Ok(output) =
-            run_adb_output(app, &probe_args, PUSH_TIMEOUT, "inspect remote dex").await
-        {
-            if output.status.success()
-                && parse_ls_size_matches(&String::from_utf8_lossy(&output.stdout), expected_size)
-            {
-                return Ok(false);
-            }
-        }
-    }
-
-    let local_path = local_path.to_string_lossy().into_owned();
-    let push_args = ["-s", serial, "push", local_path.as_str(), remote_path];
-    let output = run_adb_output(app, &push_args, PUSH_TIMEOUT, "push app-info dex").await?;
-    if !output.status.success() {
-        return Err(format!(
-            "adb push failed: {}",
-            truncate_detail(&adb_output_error(&output), MAX_ERROR_DETAIL_BYTES)
-        ));
-    }
-    Ok(true)
-}
-
 async fn run_helper_once(
     app: &AppHandle,
     serial: &str,
@@ -245,33 +213,6 @@ async fn run_helper_once(
     }
 }
 
-async fn run_adb_output(
-    app: &AppHandle,
-    args: &[&str],
-    timeout: Duration,
-    operation: &str,
-) -> Result<Output, String> {
-    let adb_path = adb::resolve_adb_path(app)?;
-    let mut command = adb::prepare_async_command(app, &adb_path);
-    command
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    let child = command
-        .spawn()
-        .map_err(|error| format!("Failed to {operation}: {error}"))?;
-    tokio::time::timeout(timeout, child.wait_with_output())
-        .await
-        .map_err(|_| {
-            format!(
-                "Timed out after {} seconds while trying to {operation}.",
-                timeout.as_secs()
-            )
-        })?
-        .map_err(|error| format!("Failed to {operation}: {error}"))
-}
-
 fn helper_exit_error(mode: HelperMode, output: &Output, pushed_fresh: bool) -> String {
     let context = if pushed_fresh {
         "failed even though the dex was freshly pushed; this device ROM may be incompatible"
@@ -291,31 +232,6 @@ fn format_push_retry_error(first_error: &str, retry_error: &str) -> String {
         truncate_detail(first_error, MAX_ERROR_DETAIL_BYTES / 2),
         truncate_detail(retry_error, MAX_ERROR_DETAIL_BYTES / 2)
     )
-}
-
-fn resolve_app_info_dex_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let path = app
-        .path()
-        .resource_dir()
-        .map_err(|error| format!("Failed to locate application resources: {error}"))?
-        .join("app-info.dex");
-    if !path.is_file() {
-        return Err(format!(
-            "Bundled app-info.dex was not found at {}. Run scripts/build-app-info-dex/build.sh before packaging.",
-            path.display()
-        ));
-    }
-    Ok(path)
-}
-
-pub(super) fn fnv1a_64(bytes: &[u8]) -> u64 {
-    bytes.iter().fold(0xcbf29ce484222325_u64, |hash, byte| {
-        (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
-    })
-}
-
-fn remote_dex_path(hash: u64) -> String {
-    format!("{REMOTE_DEX_DIR}/{REMOTE_DEX_PREFIX}{hash:016x}.dex")
 }
 
 fn build_helper_command(remote_path: &str, mode: HelperMode, packages: &[String]) -> String {
@@ -394,13 +310,6 @@ fn trim_ascii_whitespace(mut bytes: &[u8]) -> &[u8] {
         bytes = &bytes[..bytes.len() - 1];
     }
     bytes
-}
-
-fn parse_ls_size_matches(output: &str, expected_size: u64) -> bool {
-    output
-        .split_ascii_whitespace()
-        .filter_map(|field| field.parse::<u64>().ok())
-        .any(|size| size == expected_size)
 }
 
 fn should_refresh_cached_dex(

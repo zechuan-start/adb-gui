@@ -4,19 +4,32 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { Download, RefreshCw, X } from "lucide-react";
 import { isTauriRuntime } from "@/lib/tauri";
 import { useFeedbackStore } from "@/store/feedback";
+import { useSettingsStore } from "@/store/settings";
+import { createStartupCheck } from "@/lib/startup";
+
+const initialSettings = useSettingsStore.getState();
+const startupCheck = createStartupCheck(
+  initialSettings.available && initialSettings.preferences.general.checkUpdatesOnStartup,
+  check,
+);
+const unsubscribeSettings = useSettingsStore.subscribe((state) => {
+  if (!state.available || !state.preferences.general.checkUpdatesOnStartup) startupCheck.disable();
+});
+if (import.meta.hot) import.meta.hot.dispose(unsubscribeSettings);
 
 export function UpdateChecker() {
   const [update, setUpdate] = useState<Awaited<ReturnType<typeof check>> | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [installing, setInstalling] = useState(false);
   const showToast = useFeedbackStore((state) => state.showToast);
+  const enabled = useSettingsStore((state) => state.available && state.preferences.general.checkUpdatesOnStartup);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
       return;
     }
     let disposed = false;
-    void check()
+    void startupCheck.run()
       .then((nextUpdate) => {
         if (!disposed && nextUpdate?.available) {
           setUpdate(nextUpdate);
@@ -30,7 +43,7 @@ export function UpdateChecker() {
     };
   }, []);
 
-  if (!update?.available || dismissed) return null;
+  if (!update?.available || dismissed || (!enabled && !installing)) return null;
 
   async function handleInstall(): Promise<void> {
     const currentUpdate = update;

@@ -2,13 +2,34 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { downloadDir, join, sep } from "@tauri-apps/api/path";
-import { readImage } from "@tauri-apps/plugin-clipboard-manager";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { readImage, readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { confirm, open, save } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { getCurrentWebview, type DragDropEvent } from "@tauri-apps/api/webview";
 import { SUPPORTED_IMAGE_EXTENSIONS } from "@/lib/codeDecoder";
 import { deviceDownloadDefaultName } from "@/lib/deviceFiles";
 import type { LogLevel } from "@/lib/logcat";
+import type { SaveBehavior, ScreenshotBehavior } from "@/lib/settings";
+
+export type DeviceClipboard = { kind: "text"; text: string } | { kind: "no_text" };
+
+export async function readHostClipboardText(): Promise<string> {
+  try { return await readText(); }
+  catch { throw new Error("无法读取电脑剪贴板中的文本"); }
+}
+
+export async function writeHostClipboardText(text: string): Promise<void> {
+  try { await writeText(text); }
+  catch { throw new Error("无法写入电脑剪贴板"); }
+}
+
+export async function getDeviceClipboard(serial: string): Promise<DeviceClipboard> {
+  return invoke<DeviceClipboard>("get_device_clipboard", { serial });
+}
+
+export async function setDeviceClipboard(serial: string, text: string): Promise<void> {
+  return invoke<void>("set_device_clipboard", { serial, text });
+}
 
 export interface DeviceInfo {
   serial: string;
@@ -158,15 +179,49 @@ export interface ForwardRule {
 }
 
 export interface ScreenRecordStatus {
-  active: boolean;
+  phase: "idle" | "recording" | "pending_save" | "saving" | "save_failed";
+  session_id: string | null;
   serial: string | null;
   elapsed_secs: number;
-  pending_pull: boolean;
+  local_path: string | null;
+  remote_path: string | null;
+  error: string | null;
+  attempted_path: string | null;
 }
 
 export interface ScreenRecordResult {
   path: string;
   opened: boolean;
+  source_cleanup_error: string | null;
+  serial: string;
+  remote_path: string;
+}
+
+export type CaptureDestination = { kind: "default" } | { kind: "directory"; path: string };
+export type RecordingSaveTarget = { kind: "session" } | { kind: "file"; path: string };
+export interface DiscardRecordingResult { serial: string; remote_path: string; source_cleanup_error: string | null }
+export interface SaveRecordingRequest { sessionId: string; behavior: SaveBehavior; target: RecordingSaveTarget }
+
+export function captureDestination(directory: string | null): CaptureDestination {
+  return directory === null ? { kind: "default" } : { kind: "directory", path: directory };
+}
+
+export async function resolveCaptureDirectory(destination: CaptureDestination): Promise<string> {
+  return invoke<string>("resolve_capture_directory", { destination });
+}
+
+export async function pickCaptureDirectory(): Promise<string | null> {
+  const selected = await open({ title: "选择截图与录屏保存目录", directory: true, multiple: false });
+  if (Array.isArray(selected)) throw new Error("目录选择结果无效");
+  return selected;
+}
+
+export async function pickRecordingSavePath(defaultPath: string): Promise<string | null> {
+  return save({ title: "录屏另存为", defaultPath, filters: [{ name: "MP4", extensions: ["mp4"] }] });
+}
+
+export async function confirmDiscardRecording(serial: string, remotePath: string): Promise<boolean> {
+  return confirm(`放弃当前未保存录屏并删除设备源文件?\n${serial}\n${remotePath}\n删除后无法恢复.`, { title: "放弃保存", kind: "warning", okLabel: "放弃保存", cancelLabel: "取消" });
 }
 
 export function isTauriRuntime(): boolean {
@@ -296,8 +351,8 @@ export async function uninstallApp(serial: string, pkg: string): Promise<string>
   return invoke<string>("uninstall_app", { serial, pkg });
 }
 
-export async function takeScreenshot(serial: string): Promise<ScreenshotResult> {
-  return invoke<ScreenshotResult>("take_screenshot", { serial });
+export async function takeScreenshot(serial: string, behavior: ScreenshotBehavior, destination: CaptureDestination): Promise<ScreenshotResult> {
+  return invoke<ScreenshotResult>("take_screenshot", { serial, behavior, destination });
 }
 
 export async function copyScreenshot(serial: string): Promise<void> {
@@ -508,12 +563,16 @@ export async function removePortForward(
   return invoke<string>("remove_port_forward", { serial, direction, port });
 }
 
-export async function startScreenRecord(serial: string): Promise<ScreenRecordStatus> {
-  return invoke<ScreenRecordStatus>("start_screen_record", { serial });
+export async function startScreenRecord(serial: string, destination: CaptureDestination): Promise<ScreenRecordStatus> {
+  return invoke<ScreenRecordStatus>("start_screen_record", { serial, destination });
 }
 
-export async function stopScreenRecord(): Promise<ScreenRecordResult> {
-  return invoke<ScreenRecordResult>("stop_screen_record");
+export async function stopScreenRecord(request: SaveRecordingRequest): Promise<ScreenRecordResult> {
+  return invoke<ScreenRecordResult>("stop_screen_record", { request });
+}
+
+export async function discardScreenRecord(sessionId: string): Promise<DiscardRecordingResult> {
+  return invoke<DiscardRecordingResult>("discard_screen_record", { sessionId });
 }
 
 export async function getScreenRecordStatus(): Promise<ScreenRecordStatus> {

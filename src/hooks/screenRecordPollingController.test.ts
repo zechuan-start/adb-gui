@@ -1,13 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { createScreenRecordPollingController } from "@/hooks/screenRecordPollingController";
 import type { ScreenRecordStatus } from "@/lib/tauri";
+import { IDLE_RECORDING } from "@/lib/screenRecordSession";
 
-const IDLE_STATUS: ScreenRecordStatus = {
-  active: false,
-  serial: null,
-  elapsed_secs: 0,
-  pending_pull: false,
-};
+const IDLE_STATUS = IDLE_RECORDING;
 
 function deferred<T>() {
   let resolve!: (value: T) => void;

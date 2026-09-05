@@ -1,5 +1,6 @@
 mod adb;
 mod commands;
+mod device_helper;
 
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
@@ -196,6 +197,8 @@ pub fn run() {
             commands::keys::send_key_event,
             commands::screenshot::take_screenshot,
             commands::screenshot::copy_screenshot,
+            commands::clipboard::get_device_clipboard,
+            commands::clipboard::set_device_clipboard,
             commands::logcat::clear_logcat,
             commands::logcat::get_package_pids,
             commands::logcat::list_device_processes,
@@ -220,6 +223,8 @@ pub fn run() {
             commands::port_forward::remove_port_forward,
             commands::screen_record::start_screen_record,
             commands::screen_record::stop_screen_record,
+            commands::screen_record::discard_screen_record,
+            commands::capture_output::resolve_capture_directory,
             commands::screen_record::get_screen_record_status,
             commands::bug_report::collect_quick_bug_report,
             commands::bug_report::collect_full_bugreport,

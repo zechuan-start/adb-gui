@@ -2,16 +2,18 @@ export type CodeType = "qr" | "code128";
 
 export type SeparatorMode = "newline" | "comma" | "semicolon" | "tab" | "custom";
 
-export interface GeneratorDraft {
+export interface GeneratorOptions {
   codeType: CodeType;
   separatorMode: SeparatorMode;
   customSeparator: string;
+}
+
+export interface GeneratorDraft extends GeneratorOptions {
   input: string;
 }
 
-export interface GeneratedBatch {
+export interface GeneratedBatch extends GeneratorOptions {
   id: number;
-  codeType: CodeType;
   sourceRevision: number;
   values: readonly string[];
 }
@@ -29,12 +31,30 @@ export const SEPARATOR_OPTIONS: readonly SeparatorOption[] = [
   { value: "custom", label: "自定义" },
 ];
 
-export const DEFAULT_GENERATOR_DRAFT: GeneratorDraft = {
+export const CODE_TYPE_OPTIONS = [
+  { value: "qr", label: "二维码" },
+  { value: "code128", label: "Code 128" },
+] as const;
+
+export const DEFAULT_GENERATOR_OPTIONS: GeneratorOptions = {
   codeType: "qr",
   separatorMode: "newline",
   customSeparator: "",
+};
+
+export const DEFAULT_GENERATOR_DRAFT: GeneratorDraft = {
+  ...DEFAULT_GENERATOR_OPTIONS,
   input: "",
 };
+
+export function generatorOptionsMatch(left: GeneratorOptions, right: GeneratorOptions): boolean {
+  return left.codeType === right.codeType && left.separatorMode === right.separatorMode &&
+    left.customSeparator === right.customSeparator;
+}
+
+export function isGeneratedBatchStale(batch: GeneratedBatch | null, revision: number, options: GeneratorOptions): boolean {
+  return Boolean(batch && (batch.sourceRevision !== revision || !generatorOptionsMatch(batch, options)));
+}
 
 type ParseBatchErrorCode = "empty-input" | "empty-separator" | "no-values";
 

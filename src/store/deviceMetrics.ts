@@ -35,8 +35,7 @@ interface DeviceMetricsStore {
   latestFrame: DeviceMetricsFrame | null;
   battery: DeviceBatteryUsage | null;
   processes: DeviceProcessUsage[] | null;
-  backgroundEnabled: boolean;
-  /** User-driven pause. Survives device switches, like `backgroundEnabled`. */
+  /** User-driven pause survives device switches. */
   paused: boolean;
   restartNonce: number;
   bindDevice: (deviceKey: string | null, serial: string | null) => void;
@@ -46,7 +45,6 @@ interface DeviceMetricsStore {
   acceptExit: (serial: string, sessionId: number, detail: string) => void;
   failStart: (deviceKey: string, serial: string, detail: string) => void;
   markStopped: (serial: string, sessionId: number) => void;
-  setBackgroundEnabled: (enabled: boolean) => void;
   setPaused: (paused: boolean) => void;
   restart: () => void;
 }
@@ -54,7 +52,6 @@ interface DeviceMetricsStore {
 function clearDeviceState(
   deviceKey: string | null,
   serial: string | null,
-  backgroundEnabled: boolean,
   restartNonce: number,
 ): Pick<
   DeviceMetricsStore,
@@ -68,7 +65,6 @@ function clearDeviceState(
   | "latestFrame"
   | "battery"
   | "processes"
-  | "backgroundEnabled"
   | "restartNonce"
 > {
   return {
@@ -82,13 +78,12 @@ function clearDeviceState(
     latestFrame: null,
     battery: null,
     processes: null,
-    backgroundEnabled,
     restartNonce,
   };
 }
 
 export const useDeviceMetricsStore = create<DeviceMetricsStore>((set) => ({
-  ...clearDeviceState(null, null, false, 0),
+  ...clearDeviceState(null, null, 0),
   paused: false,
   bindDevice: (deviceKey, serial) => {
     set((state) => {
@@ -96,7 +91,6 @@ export const useDeviceMetricsStore = create<DeviceMetricsStore>((set) => ({
         return clearDeviceState(
           deviceKey,
           serial,
-          state.backgroundEnabled,
           state.restartNonce,
         );
       }
@@ -168,7 +162,6 @@ export const useDeviceMetricsStore = create<DeviceMetricsStore>((set) => ({
         : state,
     );
   },
-  setBackgroundEnabled: (backgroundEnabled) => set({ backgroundEnabled }),
   setPaused: (paused) => set({ paused }),
   restart: () => {
     set((state) => ({ restartNonce: state.restartNonce + 1, paused: false, error: "" }));

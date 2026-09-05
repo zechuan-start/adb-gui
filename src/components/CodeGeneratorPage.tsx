@@ -6,56 +6,45 @@ import {
   ChevronRight,
   Eraser,
   QrCode,
-  ScanLine,
+  Settings,
   X,
 } from "lucide-react";
-import { BlueprintSelect } from "@/components/BlueprintSelect";
+import { GeneratorPreferences } from "@/components/settings/GeneratorPreferences";
 import { GeneratedCodeCanvas } from "@/components/GeneratedCodeCanvas";
 import {
-  DEFAULT_GENERATOR_DRAFT,
-  SEPARATOR_OPTIONS,
-  isSeparatorMode,
+  generatorOptionsMatch,
+  isGeneratedBatchStale,
   type GeneratedBatch,
 } from "@/lib/codeGenerator";
 import { cn } from "@/lib/utils";
 import { useCodeGeneratorStore } from "@/store/codeGenerator";
+import { useSettingsStore } from "@/store/settings";
+import { useUiStore } from "@/store/ui";
 
 const EMPTY_VALUES: readonly string[] = [];
 
 export function CodeGeneratorPage() {
-  const draft = useCodeGeneratorStore((state) => state.draft);
-  const draftRevision = useCodeGeneratorStore((state) => state.draftRevision);
+  const input = useCodeGeneratorStore((state) => state.input);
+  const inputRevision = useCodeGeneratorStore((state) => state.inputRevision);
+  const options = useSettingsStore((state) => state.preferences.codegen);
+  const settingsAvailable = useSettingsStore((state) => state.available);
+  const settingsError = useSettingsStore((state) => state.error);
+  const openSettings = useUiStore((state) => state.openSettings);
   const generatedBatch = useCodeGeneratorStore((state) => state.generatedBatch);
   const inputError = useCodeGeneratorStore((state) => state.inputError);
-  const setCodeType = useCodeGeneratorStore((state) => state.setCodeType);
-  const setSeparatorMode = useCodeGeneratorStore((state) => state.setSeparatorMode);
-  const setCustomSeparator = useCodeGeneratorStore((state) => state.setCustomSeparator);
   const setInput = useCodeGeneratorStore((state) => state.setInput);
   const generate = useCodeGeneratorStore((state) => state.generate);
   const clear = useCodeGeneratorStore((state) => state.clear);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const previewTriggerRef = useRef<HTMLButtonElement | null>(null);
 
-  const isStale = Boolean(
-    generatedBatch && generatedBatch.sourceRevision !== draftRevision,
-  );
-  const canClear = Boolean(
-    generatedBatch ||
-      draft.input ||
-      draft.customSeparator ||
-      draft.codeType !== DEFAULT_GENERATOR_DRAFT.codeType ||
-      draft.separatorMode !== DEFAULT_GENERATOR_DRAFT.separatorMode,
-  );
-  const customSeparatorError =
-    inputError &&
-    draft.input.length > 0 &&
-    draft.separatorMode === "custom" &&
-    draft.customSeparator.length === 0
-      ? inputError
-      : "";
-  const dataError = customSeparatorError ? "" : inputError;
+  const isStale = isGeneratedBatchStale(generatedBatch, inputRevision, options);
+  const canClear = Boolean(generatedBatch || input || inputError);
+  const invalidSeparator = options.separatorMode === "custom" && options.customSeparator.length === 0;
+  const dataError = !invalidSeparator && inputError && (!inputError.options || generatorOptionsMatch(inputError.options, options)) ? inputError.message : "";
 
   function handleGenerate() {
+    if (!settingsAvailable || invalidSeparator) return;
     if (generate()) {
       setPreviewIndex(null);
       previewTriggerRef.current = null;
@@ -91,74 +80,11 @@ export function CodeGeneratorPage() {
             <QrCode className="h-4 w-4 text-ink2" />
             <h2 className="text-sm font-semibold text-ink">批量生码</h2>
             <span className="ml-auto font-data text-[10px] text-note">C-01</span>
+            <button type="button" title="生码设置" aria-label="生码设置" onClick={() => openSettings("codegen")} className="flex h-7 w-7 items-center justify-center hover:bg-hover"><Settings className="h-3.5 w-3.5" /></button>
           </header>
           <div className="p-3">
-            <div className="grid grid-cols-2 border border-rule">
-              <button
-                type="button"
-                onClick={() => setCodeType("qr")}
-                aria-pressed={draft.codeType === "qr"}
-                className={cn(
-                  "inline-flex h-8 items-center justify-center gap-2 border-r border-rule font-data text-[11px] last:border-r-0",
-                  draft.codeType === "qr"
-                    ? "bg-ink text-onink"
-                    : "text-ink2 hover:bg-hover hover:text-ink",
-                )}
-              >
-                <QrCode className="h-4 w-4" />
-                二维码
-              </button>
-              <button
-                type="button"
-                onClick={() => setCodeType("code128")}
-                aria-pressed={draft.codeType === "code128"}
-                className={cn(
-                  "inline-flex h-8 items-center justify-center gap-2 border-r border-rule font-data text-[11px] last:border-r-0",
-                  draft.codeType === "code128"
-                    ? "bg-ink text-onink"
-                    : "text-ink2 hover:bg-hover hover:text-ink",
-                )}
-              >
-                <ScanLine className="h-4 w-4" />
-                条形码
-              </button>
-            </div>
-
-            <label
-              className="mt-3 block font-data text-[10.5px] text-ink3"
-              htmlFor="code-separator"
-            >
-              分隔符
-            </label>
-            <BlueprintSelect
-              id="code-separator"
-              value={draft.separatorMode}
-              options={SEPARATOR_OPTIONS}
-              onValueChange={(nextValue) => {
-                if (isSeparatorMode(nextValue)) {
-                  setSeparatorMode(nextValue);
-                }
-              }}
-              ariaLabel="分隔符"
-              containerClassName="mt-1"
-            />
-
-            {draft.separatorMode === "custom" && (
-              <div className="mt-2">
-                <input
-                  type="text"
-                  value={draft.customSeparator}
-                  onChange={(event) => setCustomSeparator(event.target.value)}
-                  placeholder="输入自定义分隔符"
-                  aria-label="自定义分隔符"
-                  aria-invalid={Boolean(customSeparatorError)}
-                  className="h-8 w-full border border-rule bg-paper px-2.5 font-data text-[11.5px] text-ink outline-none placeholder:text-ink3"
-                />
-                {customSeparatorError && (
-                  <div className="pt-1 text-[11px] text-err">{customSeparatorError}</div>
-                )}
-              </div>
-            )}
+            <GeneratorPreferences />
+            {settingsError && <div role="alert" className="mt-2 break-words text-xs text-err">{settingsError}</div>}
 
             <label
               className="mt-3 block font-data text-[10.5px] text-ink3"
@@ -168,7 +94,7 @@ export function CodeGeneratorPage() {
             </label>
             <textarea
               id="code-input"
-              value={draft.input}
+              value={input}
               onChange={(event) => setInput(event.target.value)}
               aria-invalid={Boolean(dataError)}
               spellCheck={false}
@@ -196,8 +122,9 @@ export function CodeGeneratorPage() {
               <button
                 type="button"
                 onClick={handleGenerate}
+                disabled={!settingsAvailable || invalidSeparator}
                 title="生成 (Ctrl/Command+Enter)"
-                className="inline-flex h-8 flex-1 items-center justify-center gap-2 border border-ink bg-ink px-4 font-data text-[11px] font-medium text-onink hover:bg-ink2"
+                className="inline-flex h-8 flex-1 items-center justify-center gap-2 border border-ink bg-ink px-4 font-data text-[11px] font-medium text-onink hover:bg-ink2 disabled:opacity-40"
               >
                 <QrCode className="h-4 w-4" />
                 生成
@@ -279,7 +206,7 @@ function CodeResultsPanel({ batch, isStale, onPreview }: CodeResultsPanelProps) 
         )}
         {isStale && (
           <span className="ml-auto text-xs text-warn">
-            输入已修改
+            输入或参数已修改
           </span>
         )}
       </div>

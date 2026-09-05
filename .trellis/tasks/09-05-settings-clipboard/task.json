@@ -1,0 +1,32 @@
+{
+  "id": "settings-clipboard",
+  "name": "settings-clipboard",
+  "title": "统一设置与手动剪贴板",
+  "description": "集中页面长期偏好并持久化, 扩展现有 app-info.dex 实现电脑与 Android 的手动双向文本剪贴板传输.",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "settings-clipboard",
+  "package": null,
+  "priority": "P1",
+  "creator": "qi",
+  "assignee": "qi",
+  "createdAt": "2026-09-05",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "09-05-unified-settings",
+    "09-05-dex-clipboard"
+  ],
+  "parent": null,
+  "relatedFiles": [
+    ".trellis/tasks/09-05-unified-settings/prd.md",
+    ".trellis/tasks/09-05-dex-clipboard/prd.md"
+  ],
+  "notes": "用户已通过 OK开始执行 授权实现. 两个子任务已完成实现及当前 macOS + Android 16 主要路径验收, 347 项前端和 119 项 Rust 测试通过. 证据与未覆盖范围见 validation.md. 当前保留未提交改动, 不归档.",
+  "meta": {}
+}

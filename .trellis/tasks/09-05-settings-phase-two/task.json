@@ -1,0 +1,32 @@
+{
+  "id": "settings-phase-two",
+  "name": "settings-phase-two",
+  "title": "第二批设置与个性化偏好",
+  "description": "第二批长期偏好: 文件/应用排序与文件起始目录, 生码记住上次选择, 公共截图录屏目录及保存失败恢复.",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "settings",
+  "package": null,
+  "priority": "P1",
+  "creator": "qi",
+  "assignee": "qi",
+  "createdAt": "2026-09-05",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "09-05-browsing-codegen-settings",
+    "09-05-capture-directory-settings"
+  ],
+  "parent": null,
+  "relatedFiles": [
+    ".trellis/tasks/09-05-browsing-codegen-settings/prd.md",
+    ".trellis/tasks/09-05-capture-directory-settings/prd.md"
+  ],
+  "notes": "2026-09-05 用户明确授权主线程安排并执行, 已按 browsing-codegen-settings 后 capture-directory-settings 完成实现和联合检查. 两个子任务 validation.md 记录测试与模拟器实测. 代码未提交, 不自动运行会提交的归档或日志脚本.",
+  "meta": {}
+}

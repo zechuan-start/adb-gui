@@ -28,10 +28,6 @@ function beginSession(sessionId = 7): void {
 describe("useLogcatStore", () => {
   beforeEach(() => {
     useLogcatStore.getState().reset();
-    useLogcatStore.getState().setViewFormat("standard");
-    useLogcatStore.getState().setSoftWrap(false);
-    useLogcatStore.getState().setAutoFold(true);
-    useLogcatStore.getState().setCozyRows(false);
     useLogcatStore.getState().commitQuery("");
     useLogcatStore.setState({ nextSeq: 0 });
   });
@@ -56,22 +52,6 @@ describe("useLogcatStore", () => {
     expect(state.disconnectDetail).toBe("device offline");
   });
 
-  it("applies view presets and independent column overrides without touching the query", () => {
-    useLogcatStore.getState().commitQuery("level:WARN");
-    useLogcatStore.getState().setViewFormat("compact");
-    useLogcatStore.getState().setColumn("tag", true);
-    useLogcatStore.getState().setSoftWrap(true);
-
-    const state = useLogcatStore.getState();
-    expect(state.viewFormat).toBe("compact");
-    expect(state.columns.time).toBe(true);
-    expect(state.columns.level).toBe(true);
-    expect(state.columns.pid).toBe(false);
-    expect(state.columns.tag).toBe(true);
-    expect(state.softWrap).toBe(true);
-    expect(state.activeQuery).toBe("level:WARN");
-  });
-
   it("keeps selection and crash expansion separate from the scroll anchor", () => {
     beginSession();
     useLogcatStore.getState().appendBatch([
@@ -84,15 +64,11 @@ describe("useLogcatStore", () => {
     useLogcatStore.getState().setAnchoredSeq(0);
     useLogcatStore.getState().setSelectedSeq(0);
     useLogcatStore.getState().toggleCrashExpanded(0);
-    useLogcatStore.getState().setAutoFold(false);
-    useLogcatStore.getState().setCozyRows(true);
 
     const state = useLogcatStore.getState();
     expect(state.anchoredSeq).toBe(0);
     expect(state.selectedSeq).toBe(0);
     expect(state.expandedCrashSeqs).toEqual(new Set([0]));
-    expect(state.autoFold).toBe(false);
-    expect(state.cozyRows).toBe(true);
 
     useLogcatStore.getState().setSelectedSeq(0);
     useLogcatStore.getState().toggleCrashExpanded(0);
@@ -687,7 +663,7 @@ describe("useLogcatStore", () => {
     expect(state.filteredCount).toBe(0);
   });
 
-  it("restarts with a fresh session while preserving query and view settings", () => {
+  it("restarts with a fresh session while preserving the query", () => {
     beginSession();
     useLogcatStore.getState().beginProcessMapSession("restart-processes");
     useLogcatStore.getState().completeProcessMapRefresh(
@@ -697,8 +673,6 @@ describe("useLogcatStore", () => {
     );
     useLogcatStore.getState().setCurrentPackage("com.example.app");
     useLogcatStore.getState().commitQuery("package:mine level:WARN tag:Even");
-    useLogcatStore.getState().setViewFormat("compact");
-    useLogcatStore.getState().setSoftWrap(true);
     useLogcatStore.getState().appendBatch([line(0, "W")], 7);
     useLogcatStore.getState().setFollowMode("detached");
     useLogcatStore.getState().setAnchoredSeq(0);
@@ -730,8 +704,6 @@ describe("useLogcatStore", () => {
     expect(state.processMap.size).toBe(0);
     expect(state.processMapUpdatedAt).toBe(0);
     expect(state.processMapKey).toBeNull();
-    expect(state.viewFormat).toBe("compact");
-    expect(state.softWrap).toBe(true);
     expect(state.restartNonce).toBe(previousNonce + 1);
   });
 

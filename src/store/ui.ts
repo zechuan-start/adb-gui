@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import type { SettingsSection } from "@/lib/settings";
 
 export type PaneId = "tools" | "apps" | "files" | "codegen" | "decoder" | "perf";
 
@@ -26,6 +27,9 @@ interface PersistedUiPreferences {
 }
 
 export interface UiState extends PersistedUiPreferences {
+  settingsSection: SettingsSection | null;
+  openSettings: (section: SettingsSection) => void;
+  closeSettings: () => void;
   logMaximized: boolean;
   logReadThroughSeq: number | null;
   logQueryFocusNonce: number;
@@ -67,6 +71,9 @@ export function deriveLogcatUnreadCount(
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
+      settingsSection: null,
+      openSettings: (settingsSection) => set({ settingsSection }),
+      closeSettings: () => set({ settingsSection: null }),
       activePane: "tools",
       logOpenByPane: { ...DEFAULT_LOG_OPEN_BY_PANE },
       logHeight: DEFAULT_LOG_HEIGHT,

@@ -4,6 +4,7 @@ import type { LogcatPackageResolutionState } from "@/hooks/useLogcatPackageResol
 import { cn } from "@/lib/utils";
 import { useLogcatStore } from "@/store/logcat";
 import { useUiStore } from "@/store/ui";
+import { useSettingsStore } from "@/store/settings";
 import { LogcatActions } from "@/components/logcat/LogcatActions";
 import { LogcatLevelMenu } from "@/components/logcat/LogcatLevelMenu";
 import { LogcatQueryInput } from "@/components/logcat/LogcatQueryInput";
@@ -31,15 +32,14 @@ export function LogcatToolbar({
   const streamState = useLogcatStore((state) => state.streamState);
   const streamMode = useLogcatStore((state) => state.streamMode);
   const pausedBacklog = useLogcatStore((state) => state.pausedBacklog);
-  const autoFold = useLogcatStore((state) => state.autoFold);
-  const softWrap = useLogcatStore((state) => state.softWrap);
-  const setAutoFold = useLogcatStore((state) => state.setAutoFold);
-  const setSoftWrap = useLogcatStore((state) => state.setSoftWrap);
+  const logcat = useSettingsStore((state) => state.preferences.logcat);
+  const { autoFold, softWrap } = logcat;
+  const update = useSettingsStore((state) => state.update);
+  const available = useSettingsStore((state) => state.available);
   const activePane = useUiStore((state) => state.activePane);
   const logMaximized = useUiStore((state) => state.logMaximized);
   const setLogMaximized = useUiStore((state) => state.setLogMaximized);
   const setLogOpen = useUiStore((state) => state.setLogOpen);
-  const viewDisabled = !serial && totalCount === 0;
 
   useEffect(() => {
     const toolbar = toolbarRef.current;
@@ -98,8 +98,8 @@ export function LogcatToolbar({
       <div className="flex shrink-0 items-center gap-1 border-l border-rule pl-1.5">
         <button
           type="button"
-          onClick={() => setAutoFold(!autoFold)}
-          disabled={viewDisabled}
+          onClick={() => update("logcat", { ...logcat, autoFold: !autoFold })}
+          disabled={!available}
           aria-pressed={autoFold}
           className={cn(
             "inline-flex h-7 w-7 items-center justify-center border border-rule text-log-dim hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40",
@@ -111,8 +111,8 @@ export function LogcatToolbar({
         </button>
         <button
           type="button"
-          onClick={() => setSoftWrap(!softWrap)}
-          disabled={viewDisabled}
+          onClick={() => update("logcat", { ...logcat, softWrap: !softWrap })}
+          disabled={!available}
           aria-pressed={softWrap}
           className={cn(
             "inline-flex h-7 w-7 items-center justify-center border border-rule text-log-dim hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40",
@@ -122,7 +122,7 @@ export function LogcatToolbar({
         >
           <WrapText className="h-3.5 w-3.5" />
         </button>
-        <LogcatViewMenu disabled={viewDisabled} />
+        <LogcatViewMenu />
       </div>
       <div
         className={cn(

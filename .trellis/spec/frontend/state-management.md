@@ -19,7 +19,7 @@
 | `useDeviceStore` | `store/device.ts` | 设备列表, 选中设备, 当前 Activity/Package |
 | `useFeedbackStore` | `store/feedback.ts` | Toast 通知 (kind + message) |
 | `useThemeStore` | `store/theme.ts` | 明/暗主题切换 |
-| `useCodeGeneratorStore` | `store/codeGenerator.ts` | 生码草稿、修订版本和最近一次生成快照 (无持久化) |
+| `useCodeGeneratorStore` | `store/codeGenerator.ts` | 生码正文、正文修订版本和最近一次生成快照 (无持久化); 长期参数由 useSettingsStore.codegen 唯一持有 |
 | `useLogcatStore` | `store/logcat.ts` | Logcat session identity, ring buffer, incremental filter index, and stream state |
 
 ---

@@ -26,3 +26,20 @@ contract.
 
 Source: scripts/build-app-info-dex/src/com/adbgui/appinfo/Main.java
 Refresh with: scripts/build-app-info-dex/build.sh (requires JDK + Android SDK)
+
+Manual clipboard helper
+
+The same app-info.dex also contains com.adbgui.clipboard.Main. It uses shell
+UID/package attribution and ClipboardManager for primary-user plain text.
+Keep the original app-info entry and protocol compatible when rebuilding.
+Compile against API 31+; D8 min-api remains 28. Intermediate files are temporary.
+
+Requests are version-1 JSON over stdin, with operation get or set (plus text).
+Responses use the complete line --ADBGUI-CLIPBOARD-V1-- followed by one JSON
+envelope. Results are text, no_text or written; written requires readback.
+Use adb shell -T -e none, an 8-second device timeout and a 10-second host timeout.
+Text is limited to 256 KiB UTF-8. Never pass text in shell arguments or log it.
+Lockscreen, non-primary users and permission failures are explicit errors.
+
+Source: scripts/build-app-info-dex/src/com/adbgui/clipboard/
+Shared host deployment: src-tauri/src/device_helper.rs

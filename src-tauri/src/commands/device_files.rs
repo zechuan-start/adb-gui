@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::fs::{self, OpenOptions};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -266,8 +265,9 @@ fn list_directory(
     path: &str,
 ) -> Result<DeviceDirectoryListing, String> {
     let command = shell_script_command(LIST_DIRECTORY_SCRIPT, path);
-    let output = run_adb_bytes_with_serial(app, serial, &["exec-out", &command])
-        .map_err(|error| format!("读取设备目录失败: {error}"))?;
+    // Shell v2 without a PTY preserves NUL records and reports remote failures separately.
+    let output = run_adb_bytes_with_serial(app, serial, &["shell", "-T", &command])
+        .map_err(|error| format!("读取设备目录失败 ({path}): {error}"))?;
     let entries = parse_directory_records(&output, path)?;
 
     Ok(DeviceDirectoryListing {
@@ -326,7 +326,6 @@ fn parse_directory_records(output: &[u8], directory: &str) -> Result<Vec<DeviceF
         });
     }
 
-    entries.sort_by(compare_entries);
     Ok(entries)
 }
 
@@ -338,15 +337,6 @@ fn trim_protocol_line_endings(mut output: &[u8]) -> &[u8] {
         output = &output[..output.len() - 1];
     }
     output
-}
-
-fn compare_entries(left: &DeviceFileEntry, right: &DeviceFileEntry) -> Ordering {
-    let left_directory = matches!(left.kind, DeviceFileKind::Directory);
-    let right_directory = matches!(right.kind, DeviceFileKind::Directory);
-    right_directory
-        .cmp(&left_directory)
-        .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
-        .then_with(|| left.name.cmp(&right.name))
 }
 
 fn utf8_field<'a>(value: &'a [u8], label: &str) -> Result<&'a str, String> {
@@ -418,7 +408,7 @@ fn join_device_path(parent: &str, name: &str) -> String {
     }
 }
 
-fn shell_quote(value: &str) -> String {
+pub(super) fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
@@ -490,7 +480,7 @@ fn remote_path_exists(app: &AppHandle, serial: &str, path: &str) -> Result<bool,
     }
 }
 
-fn remote_file_size(app: &AppHandle, serial: &str, path: &str) -> Result<u64, String> {
+pub(super) fn remote_file_size(app: &AppHandle, serial: &str, path: &str) -> Result<u64, String> {
     let quoted = shell_quote(path);
     let command = format!(
         "if [ ! -f {quoted} ]; then echo '设备路径不是文件' >&2; exit 2; fi; stat -c %s {quoted}"
@@ -510,7 +500,7 @@ fn preview_read_command(path: &str) -> String {
     )
 }
 
-fn validate_download_target(target: &Path) -> Result<(), String> {
+pub(super) fn validate_download_target(target: &Path) -> Result<(), String> {
     if !target.is_absolute() {
         return Err("本地保存路径必须是绝对路径".to_string());
     }
@@ -706,7 +696,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_and_sorts_nul_delimited_directory_records() {
+    fn parses_nul_delimited_directory_records_in_source_order() {
         let output = concat!(
             "file\0",
             "4\0",
@@ -724,11 +714,11 @@ mod tests {
 
         let entries = parse_directory_records(output.as_bytes(), "/sdcard/Download").unwrap();
         assert_eq!(entries.len(), 3);
-        assert_eq!(entries[0].name, "图片");
-        assert_eq!(entries[0].kind, DeviceFileKind::Directory);
-        assert_eq!(entries[1].name, ".hidden");
-        assert_eq!(entries[2].name, "z file.txt");
-        assert!(!entries[2].previewable);
+        assert_eq!(entries[0].name, "z file.txt");
+        assert!(!entries[0].previewable);
+        assert_eq!(entries[1].name, "图片");
+        assert_eq!(entries[1].kind, DeviceFileKind::Directory);
+        assert_eq!(entries[2].name, ".hidden");
     }
 
     #[test]

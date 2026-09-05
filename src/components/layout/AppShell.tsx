@@ -46,6 +46,7 @@ export function AppShell({
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent): void {
+      if (useUiStore.getState().settingsSection !== null) return;
       if (!(event.metaKey || event.ctrlKey) || event.altKey) {
         return;
       }

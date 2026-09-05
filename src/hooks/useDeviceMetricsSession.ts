@@ -12,11 +12,12 @@ import {
 import { useDeviceStore } from "@/store/device";
 import { useDeviceMetricsStore } from "@/store/deviceMetrics";
 import { useFeedbackStore } from "@/store/feedback";
+import { useSettingsStore } from "@/store/settings";
 
 export function useDeviceMetricsSession(active: boolean): void {
   const devices = useDeviceStore((state) => state.devices);
   const selectedDevice = useDeviceStore((state) => state.selectedDevice);
-  const backgroundEnabled = useDeviceMetricsStore((state) => state.backgroundEnabled);
+  const backgroundEnabled = useSettingsStore((state) => state.available && state.preferences.performance.backgroundEnabled);
   const paused = useDeviceMetricsStore((state) => state.paused);
   const restartNonce = useDeviceMetricsStore((state) => state.restartNonce);
   const showToast = useFeedbackStore((state) => state.showToast);

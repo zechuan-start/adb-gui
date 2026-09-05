@@ -2,8 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SOURCE="$ROOT/scripts/build-app-info-dex/src/com/adbgui/appinfo/Main.java"
-OUT="$ROOT/scripts/build-app-info-dex/out"
+SOURCE_DIR="$ROOT/scripts/build-app-info-dex/src"
+OUT="$(mktemp -d "${TMPDIR:-/tmp}/adb-gui-dex.XXXXXX")"
+trap 'rm -rf "$OUT"' EXIT
 CLASS_DIR="$OUT/classes"
 DEX_DIR="$OUT/dex"
 DESTINATION="$ROOT/src-tauri/resources/app-info.dex"
@@ -24,7 +25,7 @@ for candidate in "$SDK_ROOT"/platforms/android-*/android.jar; do
   [[ -f "$candidate" ]] || continue
   platform="$(basename "$(dirname "$candidate")")"
   api="${platform#android-}"
-  if [[ "$api" =~ ^[0-9]+$ ]] && (( api >= 29 )) &&
+  if [[ "$api" =~ ^[0-9]+$ ]] && (( api >= 31 )) &&
     { [[ -z "$ANDROID_JAR" ]] || (( api > selected_api )); }; then
     ANDROID_JAR="$candidate"
     selected_api="$api"
@@ -32,8 +33,8 @@ for candidate in "$SDK_ROOT"/platforms/android-*/android.jar; do
 done
 
 if [[ -z "$ANDROID_JAR" ]]; then
-  echo "No API 29+ android.jar found under $SDK_ROOT/platforms." >&2
-  echo "Install an Android SDK Platform (API 29 or newer) with sdkmanager." >&2
+  echo "No API 31+ android.jar found under $SDK_ROOT/platforms." >&2
+  echo "Install an Android SDK Platform (API 31 or newer) with sdkmanager." >&2
   exit 1
 fi
 
@@ -50,8 +51,12 @@ if [[ -z "$D8" ]]; then
   exit 1
 fi
 
-rm -rf "$OUT"
 mkdir -p "$CLASS_DIR" "$DEX_DIR"
+
+SOURCE_FILES=()
+while IFS= read -r -d '' source_file; do
+  SOURCE_FILES+=("$source_file")
+done < <(find "$SOURCE_DIR" -type f -name '*.java' -print0)
 
 echo "Compiling app-info helper against $ANDROID_JAR"
 javac \
@@ -60,7 +65,7 @@ javac \
   -bootclasspath "$ANDROID_JAR" \
   -classpath "$ANDROID_JAR" \
   -d "$CLASS_DIR" \
-  "$SOURCE"
+  "${SOURCE_FILES[@]}"
 
 MAIN_CLASS="$CLASS_DIR/com/adbgui/appinfo/Main.class"
 if [[ ! -f "$MAIN_CLASS" ]]; then

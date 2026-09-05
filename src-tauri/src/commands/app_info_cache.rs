@@ -8,7 +8,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
-use super::app_info::{fnv1a_64, AppIconEntry, AppInfo};
+use super::app_info::{AppIconEntry, AppInfo};
+use crate::device_helper::fnv1a_64;
 
 const CACHE_VERSION: u32 = 1;
 const PNG_DATA_URI_PREFIX: &str = "data:image/png;base64,";

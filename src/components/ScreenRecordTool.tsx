@@ -1,221 +1,280 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Clock, FolderOpen, RefreshCw, Square, Video } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  Clock,
+  FolderOpen,
+  RefreshCw,
+  Save,
+  Square,
+  Trash2,
+  Video,
+} from "lucide-react";
+import { requireSettings } from "@/store/settings";
 import { useDeviceStore } from "@/store/device";
 import { useFeedbackStore } from "@/store/feedback";
 import {
+  captureDestination,
+  confirmDiscardRecording,
+  discardScreenRecord,
   getScreenRecordStatus,
   isTauriRuntime,
   openFile,
+  pickRecordingSavePath,
   revealFile,
   startScreenRecord,
   stopScreenRecord,
-  type ScreenRecordStatus,
 } from "@/lib/tauri";
+import {
+  createRecordingController,
+  IDLE_RECORDING,
+  type RecordingView,
+} from "@/lib/screenRecordSession";
 import { getDeviceBySerial, isOnlineDevice } from "@/lib/device";
 import { createScreenRecordPollingController } from "@/hooks/screenRecordPollingController";
 import { cn } from "@/lib/utils";
 
-interface ScreenRecordToolProps {
-  active?: boolean;
-}
-
-const IDLE_STATUS: ScreenRecordStatus = {
-  active: false,
-  serial: null,
-  elapsed_secs: 0,
-  pending_pull: false,
-};
-
-function formatElapsed(seconds: number): string {
-  const minutes = Math.floor(seconds / 60).toString().padStart(2, "0");
-  const rest = Math.max(0, seconds % 60).toString().padStart(2, "0");
-  return `${minutes}:${rest}`;
-}
-
-export function ScreenRecordTool({ active = true }: ScreenRecordToolProps) {
-  const devices = useDeviceStore((s) => s.devices);
-  const selectedDevice = useDeviceStore((s) => s.selectedDevice);
-  const showToast = useFeedbackStore((s) => s.showToast);
+export function ScreenRecordTool({ active = true }: { active?: boolean }) {
+  const devices = useDeviceStore((state) => state.devices);
+  const selectedDevice = useDeviceStore((state) => state.selectedDevice);
   const device = getDeviceBySerial(devices, selectedDevice);
   const online = Boolean(device && isOnlineDevice(device));
-
-  const [status, setStatus] = useState<ScreenRecordStatus>(IDLE_STATUS);
-  const [busy, setBusy] = useState<"start" | "stop" | null>(null);
-  const [lastPath, setLastPath] = useState("");
-  const finalizingRef = useRef(false);
-  const activeRef = useRef(active);
-  const refreshSeqRef = useRef(0);
-
-  activeRef.current = active;
-
-  const refreshStatus = useCallback(async () => {
-    const requestSeq = refreshSeqRef.current + 1;
-    refreshSeqRef.current = requestSeq;
-    try {
-      const nextStatus = await getScreenRecordStatus();
-      if (!activeRef.current || refreshSeqRef.current !== requestSeq) {
-        return null;
-      }
-      setStatus(nextStatus);
-      return nextStatus;
-    } catch (error) {
-      if (activeRef.current && refreshSeqRef.current === requestSeq) {
-        showToast("error", `刷新录屏状态失败: ${error}`);
-      }
-      return null;
-    }
-  }, [showToast]);
-
-  const finalizeRecording = useCallback(async (message?: string) => {
-    if (finalizingRef.current) {
-      return;
-    }
-
-    finalizingRef.current = true;
-    setBusy("stop");
-    try {
-      const result = await stopScreenRecord();
-      setLastPath(result.path);
-      setStatus(IDLE_STATUS);
-      showToast("success", message ? `${message}: ${result.path}` : `录屏已保存到 ${result.path}`);
-    } catch (error) {
-      showToast("error", `停止录屏失败: ${error}`);
-      await refreshStatus();
-    } finally {
-      setBusy(null);
-      finalizingRef.current = false;
-    }
-  }, [refreshStatus, showToast]);
+  const [view, setView] = useState<RecordingView>({
+    status: IDLE_RECORDING,
+    busy: null,
+    error: null,
+    saved: null,
+  });
+  const [controller] = useState(() =>
+    createRecordingController({
+      getStatus: getScreenRecordStatus,
+      start: (serial) =>
+        startScreenRecord(
+          serial,
+          captureDestination(requireSettings().capture.directory),
+        ),
+      save: stopScreenRecord,
+      discard: discardScreenRecord,
+      behavior: () => requireSettings().recording,
+      choosePath: pickRecordingSavePath,
+      confirmDiscard: confirmDiscardRecording,
+      onChange: setView,
+      onError: (message) =>
+        useFeedbackStore.getState().showToast("error", message),
+      onSaved: (result, behavior) => {
+        const warnings = [
+          result.source_cleanup_error,
+          behavior.openAfterSave && !result.opened ? "自动打开视频失败" : null,
+        ].filter(Boolean);
+        useFeedbackStore
+          .getState()
+          .showToast(
+            warnings.length ? "error" : "success",
+            `录屏已保存: ${result.path}${warnings.length ? `; ${warnings.join("; ")}` : ""}`,
+          );
+      },
+      onDiscarded: (result) =>
+        useFeedbackStore
+          .getState()
+          .showToast(
+            result.source_cleanup_error ? "error" : "success",
+            result.source_cleanup_error
+              ? `已放弃恢复, 设备源文件可能仍保留: ${result.serial} / ${result.remote_path}; ${result.source_cleanup_error}`
+              : "已放弃保存并删除设备源文件",
+          ),
+    }),
+  );
 
   useEffect(() => {
-    if (!active || busy !== null || !isTauriRuntime()) {
-      refreshSeqRef.current += 1;
-      return;
-    }
-
-    const controller = createScreenRecordPollingController({
-      loadStatus: getScreenRecordStatus,
+    controller.resume();
+    return () => controller.dispose();
+  }, [controller]);
+  useEffect(() => {
+    controller.bindSerial(selectedDevice);
+  }, [controller, selectedDevice]);
+  const shouldPoll = active || view.status.phase !== "idle";
+  useEffect(() => {
+    if (!shouldPoll || !isTauriRuntime()) return;
+    const polling = createScreenRecordPollingController({
+      loadStatus: controller.readStatus,
       schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
       cancelSchedule: (handle) => window.clearTimeout(handle),
-      onStatus: setStatus,
-      onError: (error) => {
-        showToast("error", `刷新录屏状态失败: ${String(error)}`);
-      },
+      onStatus: controller.acceptStatus,
+      onError: (error) =>
+        useFeedbackStore
+          .getState()
+          .showToast("error", `刷新录屏状态失败: ${String(error)}`),
     });
-    controller.run();
+    polling.run();
+    return () => polling.dispose();
+  }, [controller, shouldPoll]);
 
-    return () => {
-      controller.dispose();
-      refreshSeqRef.current += 1;
-    };
-  }, [active, busy, showToast]);
+  const { status, busy, saved } = view;
+  const idle = status.phase === "idle";
+  const failed =
+    status.phase === "save_failed" || (!idle && Boolean(view.error));
+  const error = view.error ?? status.error;
+  const saving = busy !== null || status.phase === "saving";
+  const elapsed = `${Math.floor(status.elapsed_secs / 60)
+    .toString()
+    .padStart(
+      2,
+      "0",
+    )}:${(status.elapsed_secs % 60).toString().padStart(2, "0")}`;
+  const buttonClass =
+    "inline-flex min-h-8 items-center justify-center gap-1.5 border border-rule px-2 text-[11px] hover:bg-hover disabled:opacity-40";
 
-  useEffect(() => {
-    if (active && status.pending_pull) {
-      void finalizeRecording("录屏已结束，文件已保存");
-    }
-  }, [active, finalizeRecording, status.pending_pull]);
-
-  useEffect(() => {
-    if (!active || !status.active || !status.serial || status.serial === selectedDevice) {
-      return;
-    }
-
-    void finalizeRecording("切换设备，已停止并保存上一段录屏");
-  }, [active, finalizeRecording, selectedDevice, status.active, status.serial]);
-
-  async function handleStart() {
-    if (!device || !online || busy || status.active || status.pending_pull) {
-      return;
-    }
-
-    setBusy("start");
+  async function openSaved(reveal: boolean) {
+    if (!saved) return;
     try {
-      const nextStatus = await startScreenRecord(device.serial);
-      setStatus(nextStatus);
-      setLastPath("");
-      showToast("success", "录屏已开始");
-    } catch (error) {
-      showToast("error", `开始录屏失败: ${error}`);
-      await refreshStatus();
-    } finally {
-      setBusy(null);
+      await (reveal ? revealFile(saved.path) : openFile(saved.path));
+    } catch (failure) {
+      useFeedbackStore
+        .getState()
+        .showToast("error", `打开已保存录屏失败: ${String(failure)}`);
     }
   }
-
-  const recording = status.active || status.pending_pull;
-  const buttonDisabled = busy !== null || (!recording && !online);
-  const elapsed = recording ? formatElapsed(status.elapsed_secs) : "00:00";
 
   return (
     <div className="flex h-full min-w-0 flex-col">
       <button
         type="button"
-        onClick={() => recording ? void finalizeRecording() : void handleStart()}
-        disabled={buttonDisabled}
+        disabled={saving || (idle && !online) || failed}
+        onClick={() =>
+          idle
+            ? device && void controller.start(device.serial)
+            : void controller.save(false)
+        }
         className={cn(
-          "flex h-9 w-full items-center justify-center gap-2 border px-3 font-data text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
-          recording
-            ? "border-err text-err hover:bg-err-band"
-            : "border-ink bg-ink text-onink hover:border-ink2 hover:bg-ink2",
-          busy && "opacity-80",
+          "flex h-9 w-full shrink-0 items-center justify-center gap-2 border text-xs font-medium disabled:opacity-40",
+          idle ? "border-ink bg-ink text-onink" : "border-err text-err",
         )}
       >
-        {busy ? (
+        {saving ? (
           <RefreshCw className="h-4 w-4 animate-spin" />
-        ) : recording ? (
-          <Square className="h-4 w-4" />
-        ) : (
+        ) : idle ? (
           <Video className="h-4 w-4" />
+        ) : (
+          <Square className="h-4 w-4" />
         )}
-        {busy === "start" ? "启动中..." : busy === "stop" ? "保存中..." : recording ? "停止录屏" : "开始录屏"}
+        {busy === "start"
+          ? "启动中..."
+          : saving
+            ? "处理中..."
+            : failed
+              ? "等待恢复保存"
+              : idle
+                ? "开始录屏"
+                : "停止并保存"}
       </button>
-
       <div className="mt-3 grid grid-cols-2 border-y border-rule text-xs">
         <div className="border-r border-dashed border-rule px-2.5 py-2">
-          <div className="font-data text-[10.5px] text-ink3">状态</div>
+          <div className="text-[10.5px] text-ink3">状态</div>
           <div className="mt-1 font-medium">
-            {status.pending_pull ? "保存中" : status.active ? "录制中" : online ? "待开始" : "设备在线后可操作"}
+            {failed
+              ? "保存失败"
+              : saving
+                ? "处理中"
+                : status.phase === "recording"
+                  ? "录制中"
+                  : status.phase === "pending_save"
+                    ? "待保存"
+                    : online
+                      ? "待开始"
+                      : "设备离线"}
           </div>
         </div>
         <div className="px-2.5 py-2">
-          <div className="flex items-center gap-1 font-data text-[10.5px] text-ink3">
+          <div className="flex items-center gap-1 text-[10.5px] text-ink3">
             <Clock className="h-3.5 w-3.5" />
             时长
           </div>
           <div className="mt-1 font-mono font-medium">{elapsed}</div>
         </div>
       </div>
-
+      {(error || failed) && (
+        <div
+          role="alert"
+          className="mt-3 border-y border-err py-2 text-[11px] text-err"
+        >
+          <div className="max-h-28 overflow-y-auto break-all">{error}</div>
+          {status.attempted_path && (
+            <div className="mt-1 break-all">
+              保存目标: {status.attempted_path}
+            </div>
+          )}
+          {status.remote_path && (
+            <div className="mt-1 break-all text-ink2">
+              设备源文件: {status.serial} / {status.remote_path}
+            </div>
+          )}
+          {status.remote_path && (
+            <div className="mt-1 text-ink3">退出后需要手动找回设备源文件.</div>
+          )}
+        </div>
+      )}
+      {failed && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            disabled={saving}
+            className={buttonClass}
+            onClick={() => void controller.save(false)}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            重试保存
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            className={buttonClass}
+            onClick={async (event) => {
+              const trigger = event.currentTarget;
+              await controller.save(true);
+              if (trigger.isConnected && trigger.getClientRects().length) trigger.focus();
+            }}
+          >
+            <Save className="h-3.5 w-3.5" />
+            另存为
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            className={buttonClass}
+            onClick={async (event) => {
+              const trigger = event.currentTarget;
+              await controller.discard();
+              if (trigger.isConnected && trigger.getClientRects().length) trigger.focus();
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            放弃保存
+          </button>
+        </div>
+      )}
       <div className="mt-3 min-h-8 break-all border-b border-dashed border-rule2 pb-2 font-data text-[11px] text-ink2">
-        {lastPath ? lastPath : "录屏将保存到截图目录。"}
+        {saved?.path ?? status.local_path ?? "尚无已保存录屏"}
       </div>
-
+      {saved?.source_cleanup_error && (
+        <p className="mt-2 break-all text-[11px] text-err">
+          {saved.source_cleanup_error}
+        </p>
+      )}
       <div className="mt-auto flex flex-wrap gap-1.5 pt-3">
         <button
           type="button"
-          disabled={!lastPath}
-          onClick={() => {
-            if (lastPath) {
-              void revealFile(lastPath);
-            }
-          }}
-          className="inline-flex h-8 items-center gap-2 border border-rule bg-transparent px-2.5 font-data text-[11px] transition-colors hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={!saved}
+          className={buttonClass}
+          onClick={() => void openSaved(true)}
         >
-          <FolderOpen className="h-4 w-4" />
+          <FolderOpen className="h-3.5 w-3.5" />
           在文件管理器中显示
         </button>
         <button
           type="button"
-          disabled={!lastPath}
-          onClick={() => {
-            if (lastPath) {
-              void openFile(lastPath);
-            }
-          }}
-          className="inline-flex h-8 items-center gap-2 border border-rule bg-transparent px-2.5 font-data text-[11px] transition-colors hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={!saved}
+          className={buttonClass}
+          onClick={() => void openSaved(false)}
         >
-          <Video className="h-4 w-4" />
+          <Video className="h-3.5 w-3.5" />
           用默认程序打开
         </button>
       </div>

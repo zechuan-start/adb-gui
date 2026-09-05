@@ -9,7 +9,7 @@ A cross-platform desktop workbench for everyday `adb` work: one device context, 
 ![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)
 ![Built with Tauri 2](https://img.shields.io/badge/built%20with-Tauri%202%20%2B%20React%2019-informational)
 
-[Download the latest release](https://github.com/zechuan-start/adb-gui/releases/latest) · [All releases](https://github.com/zechuan-start/adb-gui/releases)
+[Download the latest release](https://github.com/zechuan-start/adb-gui/releases/latest) · [All releases](https://github.com/zechuan-start/adb-gui/releases) · [macOS first launch](#macos-installation-and-first-launch)
 
 ![ADB GUI tools workspace with the Logcat panel open](docs/images/workspace-tools.png)
 
@@ -93,7 +93,7 @@ A cross-platform desktop workbench for everyday `adb` work: one device context, 
 
 - System, light, and dark themes.
 - Native file dialogs, plus reveal-in-file-manager and open-with-default-app actions for everything the app writes.
-- Signed in-app update checks against GitHub releases.
+- In-app updates from GitHub releases with Tauri update artifact signature verification. This is separate from operating-system code signing.
 
 ## Keyboard shortcuts
 
@@ -116,21 +116,41 @@ Every release tag is packaged by GitHub Actions on native macOS, Windows, and Li
 
 ## Getting started
 
-1. Download the package for your platform from [GitHub Releases](https://github.com/zechuan-start/adb-gui/releases/latest).
+1. Download and install the package for your platform from [GitHub Releases](https://github.com/zechuan-start/adb-gui/releases/latest). On macOS, follow the installation and first-launch instructions below.
 2. Enable Developer options and USB debugging on the Android device.
 3. Connect the device and approve the computer's debugging fingerprint when Android prompts you.
 4. Open ADB GUI and select the device in the top bar. A separate Platform Tools installation is optional because ADB is bundled.
 
 For Wi-Fi debugging, connect over USB first and use the Wi-Fi action in the top bar, or enter an already reachable `ip:port` endpoint.
 
+### macOS installation and first launch
+
+The macOS app is currently **not signed with an Apple Developer ID certificate or notarized by Apple**, so Gatekeeper may block its first launch. A local ad-hoc signature or a Tauri updater signature does not provide Apple developer verification.
+
+1. In **Apple menu > About This Mac**, check your chip or processor. Download the **arm64 / aarch64** `.dmg` for Apple Silicon (M-series), or **x64 / x86_64** for Intel.
+2. Open the `.dmg` and drag **ADB GUI.app** into **Applications**. When upgrading, quit the running app before replacing it. Replacing the app bundle preserves your existing preferences and saved files.
+3. Eject the disk image and open **ADB GUI** from Applications.
+4. If macOS says the developer cannot be verified or Apple cannot check the app for malicious software, dismiss the alert. After confirming that the download came from this project's GitHub Releases, open **System Settings > Privacy & Security**, scroll to **Security**, and click **Open Anyway** beside the ADB GUI warning. Authenticate and confirm **Open** when prompted. On older macOS versions, look under **System Preferences > Security & Privacy > General**.
+
+If **Open Anyway** is unavailable or the app is reported as "damaged", first download the correct package again from this project's releases and reinstall it. If a trusted copy is still blocked by download quarantine, you can remove only this app's quarantine attribute in Terminal:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/ADB GUI.app"
+open "/Applications/ADB GUI.app"
+```
+
+This command removes the download quarantine flag from this app bundle; it does not repair a corrupt package or add Apple signing/notarization. Use it only for a copy whose source you have verified. Do not disable Gatekeeper globally or use it to override an explicit malware warning. See [Apple's instructions for opening apps safely](https://support.apple.com/102445).
+
 ## Where files land
 
 | Output | Default location |
 | --- | --- |
-| Screenshots and screen recordings | `Pictures/ADB GUI/` |
+| Screenshots and screen recordings | `Pictures/ADB GUI/` by default, or the shared folder selected in Settings |
 | Quick reports and full bugreports | `Documents/ADB GUI/reports/` |
 | Exported Logcat files | `Documents/ADB GUI/logs/` |
 | Downloaded device files | The location you pick in the save dialog |
+
+The screenshot and recording folder is shared. A recording keeps the folder selected when it starts. If saving fails, the device source stays available for Retry, Save As, or a confirmed Discard while the app remains open. Recovery is not restored after restarting the app.
 
 ## Development
 
@@ -163,6 +183,7 @@ Recommended editor setup: [VS Code](https://code.visualstudio.com/) with the [Ta
 - Run the `Package` workflow manually to build downloadable workflow artifacts without publishing a release.
 - Push a `v*` tag, such as `v0.1.8`, to create the release, build all platform targets, attach installers and updater artifacts, and publish only after every package job succeeds.
 - Updater artifacts require `plugins.updater.pubkey` plus the `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets.
+- These keys sign Tauri update artifacts only. The current macOS release workflow does not configure Apple Developer ID signing or notarization; users may need the [first-launch steps](#macos-installation-and-first-launch).
 
 ## License
 

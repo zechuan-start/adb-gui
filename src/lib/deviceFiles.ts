@@ -3,6 +3,29 @@ import type {
   DeviceFileEntry,
   DeviceImagePreview,
 } from "@/lib/tauri";
+import type { FilePreferences } from "@/lib/settings";
+
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+export function projectDeviceFiles(entries: DeviceFileEntry[], preferences: FilePreferences): DeviceFileEntry[] {
+  return entries.filter((entry) => preferences.showHidden || !entry.name.startsWith(".")).sort((left, right) => {
+    const leftDir = left.kind === "directory";
+    const rightDir = right.kind === "directory";
+    if (preferences.directoriesFirst && leftDir !== rightDir) return leftDir ? -1 : 1;
+    const name = compareText(left.name.toLowerCase(), right.name.toLowerCase()) || compareText(left.name, right.name);
+    const tie = name || compareText(left.path, right.path);
+    const direction = preferences.sortDirection === "asc" ? 1 : -1;
+    if (preferences.sortBy === "name") return name * direction || compareText(left.path, right.path);
+    if (preferences.sortBy === "size") {
+      if (leftDir !== rightDir) return leftDir ? 1 : -1;
+      if (leftDir) return tie;
+      return (left.size - right.size) * direction || tie;
+    }
+    return (left.modified_at - right.modified_at) * direction || tie;
+  });
+}
 
 export interface DeviceBreadcrumb {
   label: string;
@@ -180,7 +203,6 @@ export function deviceFileManagerReducer(
       }
       return {
         ...state,
-        pathDraft: state.path,
         listLoading: false,
         listError: action.error,
       };

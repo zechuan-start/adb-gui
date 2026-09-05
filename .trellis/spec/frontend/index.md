@@ -20,6 +20,7 @@ React 19 + TypeScript + TailwindCSS v4 + Zustand v5. Tauri 桥接层封装在 li
 | [State Management](./state-management.md) | Zustand v5 stores | ✅ Done |
 | [Quality Guidelines](./quality-guidelines.md) | TypeScript strict, forbidden patterns | ✅ Done |
 | [Type Safety](./type-safety.md) | Strict TS, interface/type conventions | ✅ Done |
+| [Settings and Clipboard](./settings-clipboard.md) | Persisted preferences, startup and transfer lifecycle | Done |
 
 ---
 

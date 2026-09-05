@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { ClipboardCopy, FolderOpen, RefreshCw, Image as ImageIcon } from "lucide-react";
 import { useDeviceStore } from "@/store/device";
-import { copyScreenshot, openFile, revealFile, takeScreenshot } from "@/lib/tauri";
+import { captureDestination, copyScreenshot, openFile, revealFile, takeScreenshot } from "@/lib/tauri";
 import { useFeedbackStore } from "@/store/feedback";
 import { getDeviceBySerial, isOnlineDevice } from "@/lib/device";
 import { cn } from "@/lib/utils";
+import { requireSettings } from "@/store/settings";
 
 export function ScreenshotTool() {
   const devices = useDeviceStore((s) => s.devices);
@@ -15,6 +16,23 @@ export function ScreenshotTool() {
   const [lastPath, setLastPath] = useState("");
   const busy = pendingAction !== null;
 
+  async function handleSavedAction(action: "copy" | "reveal" | "open") {
+    const path = lastPath;
+    if (!path) return;
+    try {
+      if (action === "copy") {
+        await navigator.clipboard.writeText(path);
+        showToast("success", "已复制截图路径");
+      } else if (action === "reveal") {
+        await revealFile(path);
+      } else {
+        await openFile(path);
+      }
+    } catch (error) {
+      showToast("error", `操作已保存截图失败 (${path}): ${String(error)}`);
+    }
+  }
+
   async function handleScreenshot(action: "open" | "copy") {
     if (!device || !isOnlineDevice(device) || busy) {
       return;
@@ -23,9 +41,13 @@ export function ScreenshotTool() {
     setPendingAction(action);
     try {
       if (action === "open") {
-        const result = await takeScreenshot(device.serial);
+        const settings = requireSettings();
+        const behavior = { ...settings.screenshot };
+        const destination = captureDestination(settings.capture.directory);
+        const result = await takeScreenshot(device.serial, behavior, destination);
         setLastPath(result.path);
-        showToast("success", `截图已保存到 ${result.path}`);
+        const failed = (behavior.openAfterSave && !result.opened) || (behavior.revealAfterSave && !result.revealed);
+        showToast(failed ? "error" : "success", `截图已保存到 ${result.path}${failed ? ", 自动打开或定位失败" : ""}`);
       } else {
         await copyScreenshot(device.serial);
         showToast("success", "截图已复制到剪贴板");
@@ -56,7 +78,7 @@ export function ScreenshotTool() {
           ) : (
             <ImageIcon className="h-4 w-4 shrink-0" />
           )}
-          <span className="whitespace-nowrap">{pendingAction === "open" ? "截图中..." : "截图并打开"}</span>
+          <span className="whitespace-nowrap">{pendingAction === "open" ? "截图中..." : "保存截图"}</span>
         </button>
         <button
           type="button"
@@ -86,13 +108,7 @@ export function ScreenshotTool() {
           <button
             type="button"
             disabled={!lastPath}
-            onClick={async () => {
-              if (!lastPath) {
-                return;
-              }
-              await navigator.clipboard.writeText(lastPath);
-              showToast("success", "已复制截图路径");
-            }}
+            onClick={() => void handleSavedAction("copy")}
             className="inline-flex h-8 items-center gap-2 border border-rule bg-transparent px-2.5 font-data text-[11px] transition-colors hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
             <ClipboardCopy className="h-4 w-4" />
@@ -101,12 +117,7 @@ export function ScreenshotTool() {
           <button
             type="button"
             disabled={!lastPath}
-            onClick={async () => {
-              if (!lastPath) {
-                return;
-              }
-              await revealFile(lastPath);
-            }}
+            onClick={() => void handleSavedAction("reveal")}
             className="inline-flex h-8 items-center gap-2 border border-rule bg-transparent px-2.5 font-data text-[11px] transition-colors hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
             <FolderOpen className="h-4 w-4" />
@@ -115,12 +126,7 @@ export function ScreenshotTool() {
           <button
             type="button"
             disabled={!lastPath}
-            onClick={async () => {
-              if (!lastPath) {
-                return;
-              }
-              await openFile(lastPath);
-            }}
+            onClick={() => void handleSavedAction("open")}
             className="inline-flex h-8 items-center gap-2 border border-rule bg-transparent px-2.5 font-data text-[11px] transition-colors hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
             <ImageIcon className="h-4 w-4" />

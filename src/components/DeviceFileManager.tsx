@@ -45,6 +45,7 @@ import {
   isDeviceOperationContextCurrent,
   isDeviceTransferBusy,
   localFileName,
+  projectDeviceFiles,
   updateDeviceOperationContext,
   type DeviceOperationContext,
   type DeviceTransferBatch,
@@ -65,12 +66,18 @@ import {
 import { useDeviceStore } from "@/store/device";
 import { useFeedbackStore } from "@/store/feedback";
 import { cn } from "@/lib/utils";
+import { requireSettings, useSettingsStore } from "@/store/settings";
+import { SortPreferences } from "@/components/settings/SortPreferences";
+import { useUiStore } from "@/store/ui";
 
 interface DeviceFileManagerProps {
   active?: boolean;
 }
 
 export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
+  const preferences = useSettingsStore((state) => state.preferences.files);
+  const settingsAvailable = useSettingsStore((state) => state.available);
+  const settingsError = useSettingsStore((state) => state.error);
   const devices = useDeviceStore((state) => state.devices);
   const selectedDevice = useDeviceStore((state) => state.selectedDevice);
   const showToast = useFeedbackStore((state) => state.showToast);
@@ -101,14 +108,14 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
 
   const contextMatches = state.serial === onlineSerial;
   const visiblePath = contextMatches ? state.path : "";
-  const visibleEntries = contextMatches ? state.entries : [];
+  const visibleEntries = useMemo(() => contextMatches ? projectDeviceFiles(state.entries, preferences) : [], [contextMatches, state.entries, preferences]);
   const visibleTransfer = contextMatches ? state.transfer : null;
   const selectedEntry = useMemo(
     () =>
       contextMatches
-        ? state.entries.find((entry) => entry.path === state.selectedPath) ?? null
+        ? visibleEntries.find((entry) => entry.path === state.selectedPath) ?? null
         : null,
-    [contextMatches, state.entries, state.selectedPath],
+    [contextMatches, visibleEntries, state.selectedPath],
   );
   const breadcrumbs = useMemo(() => buildDeviceBreadcrumbs(visiblePath), [visiblePath]);
   const transferBusy = isDeviceTransferBusy(visibleTransfer);
@@ -137,6 +144,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
   const loadDirectory = useCallback(
     async (serial: string, path: string | null) => {
       const requestId = ++listRequestRef.current;
+      if (path !== null) dispatch({ type: "set-path-draft", value: path });
       dispatch({ type: "list-start", serial, requestId });
       try {
         const listing = await listDeviceDirectory(serial, path);
@@ -160,6 +168,23 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
     },
     [showToast],
   );
+
+  const loadStartDirectory = useCallback((serial: string) => {
+    try {
+      void loadDirectory(serial, requireSettings().files.startDirectory);
+    } catch (error) {
+      const requestId = ++listRequestRef.current;
+      dispatch({ type: "list-start", serial, requestId });
+      dispatch({ type: "list-error", serial, requestId, error: errorMessage(error) });
+    }
+  }, [loadDirectory]);
+
+  useLayoutEffect(() => {
+    if (contextMatches && state.selectedPath && !visibleEntries.some((entry) => entry.path === state.selectedPath)) {
+      previewRequestRef.current += 1;
+      dispatch({ type: "select", path: null });
+    }
+  }, [contextMatches, visibleEntries, state.selectedPath]);
 
   const loadPreview = useCallback(async (serial: string, entry: DeviceFileEntry) => {
     const requestId = ++previewRequestRef.current;
@@ -193,9 +218,9 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
     setFolderName("");
     setFolderError("");
     if (onlineSerial) {
-      void loadDirectory(onlineSerial, null);
+      loadStartDirectory(onlineSerial);
     }
-  }, [active, loadDirectory, onlineSerial]);
+  }, [active, loadStartDirectory, onlineSerial]);
 
   const startUpload = useCallback(
     async (paths: string[], capturedContext?: DeviceOperationContext) => {
@@ -528,10 +553,10 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
       <div className="flex h-[43px] shrink-0 items-center gap-2 border-b border-rule bg-surface px-3">
         <button
           type="button"
-          onClick={() => onlineSerial && void loadDirectory(onlineSerial, null)}
-          disabled={!onlineSerial || operationBusy || transferBusy || folderBusy}
+          onClick={() => onlineSerial && loadStartDirectory(onlineSerial)}
+          disabled={!settingsAvailable || !onlineSerial || operationBusy || transferBusy || folderBusy}
           className={iconButtonClass}
-          title="返回设备下载目录"
+          title="返回起始目录"
         >
           <Home className="h-4 w-4" />
         </button>
@@ -550,7 +575,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
             value={contextMatches ? state.pathDraft : ""}
             onChange={(event) => dispatch({ type: "set-path-draft", value: event.target.value })}
             disabled={!onlineSerial || operationBusy || transferBusy || folderBusy}
-            placeholder={onlineSerial ? "正在读取设备下载目录..." : "连接设备后可浏览文件"}
+            placeholder={onlineSerial ? "设备绝对路径" : "连接设备后可浏览文件"}
             aria-label="设备绝对路径"
             className="h-8 min-w-0 flex-1 border border-rule bg-paper px-3 font-data text-[11.5px] text-ink outline-none placeholder:text-ink3 disabled:cursor-not-allowed disabled:opacity-60"
           />
@@ -591,7 +616,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
         </button>
       </div>
 
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-dashed border-rule bg-surface2 px-3">
+      <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-dashed border-rule bg-surface2 px-3 py-1">
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto font-data text-[10.5px]">
           {breadcrumbs.length > 0 ? (
             breadcrumbs.map((breadcrumb, index) => (
@@ -613,6 +638,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
             <span className="text-ink3">设备文件</span>
           )}
         </div>
+        <SortPreferences section="files" showSettings />
         <button
           type="button"
           onClick={() => {
@@ -637,10 +663,22 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
         </button>
       </div>
 
+      {settingsError && <div role="alert" className="flex items-center gap-2 border-b border-err bg-err-band px-3 py-2 text-xs text-err">
+        <span className="min-w-0 flex-1 break-words">{settingsError}</span>
+        <button type="button" className="shrink-0 border border-rule px-2 py-1" onClick={() => useUiStore.getState().openSettings("files")}>设置</button>
+      </div>}
+      {contextMatches && state.listError && onlineSerial && <div className="flex shrink-0 gap-2 border-b border-rule px-3 py-2 text-xs">
+        <button type="button" disabled={state.listLoading || operationBusy || transferBusy || folderBusy}
+          className={commandButtonClass} onClick={() => state.pathDraft ? void loadDirectory(onlineSerial, state.pathDraft) : loadStartDirectory(onlineSerial)}><RefreshCw className="h-3.5 w-3.5" />重试</button>
+        <button type="button" disabled={state.listLoading || operationBusy || transferBusy || folderBusy}
+          className={commandButtonClass} onClick={() => void loadDirectory(onlineSerial, null)}><Download className="h-3.5 w-3.5" />打开下载目录</button>
+      </div>}
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,7fr)_minmax(260px,3fr)]">
         <DeviceFileList
           directoryPath={visiblePath}
           entries={visibleEntries}
+          hasHiddenEntries={contextMatches && state.entries.length > 0 && visibleEntries.length === 0}
+          sortKey={`${preferences.sortBy}:${preferences.sortDirection}:${preferences.directoriesFirst}:${preferences.showHidden}`}
           selectedPath={contextMatches ? state.selectedPath : null}
           loading={directoryLoading}
           loaded={directoryLoaded}
@@ -736,6 +774,8 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
 interface DeviceFileListProps {
   directoryPath: string;
   entries: DeviceFileEntry[];
+  hasHiddenEntries: boolean;
+  sortKey: string;
   selectedPath: string | null;
   loading: boolean;
   loaded: boolean;
@@ -750,6 +790,8 @@ interface DeviceFileListProps {
 function DeviceFileList({
   directoryPath,
   entries,
+  hasHiddenEntries,
+  sortKey,
   selectedPath,
   loading,
   loaded,
@@ -763,6 +805,7 @@ function DeviceFileList({
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: entries.length,
+    getItemKey: (index) => entries[index].path,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 38,
     overscan: 10,
@@ -772,7 +815,7 @@ function DeviceFileList({
     if (scrollRef.current) {
       scrollRef.current.scrollTop = 0;
     }
-  }, [directoryPath]);
+  }, [directoryPath, sortKey]);
 
   return (
     <div className={cn("relative flex min-h-0 flex-col bg-log-bg/45", dragActive && "bg-hover")}>
@@ -827,7 +870,7 @@ function DeviceFileList({
           <CenteredState icon={<FolderOpen className="h-8 w-8" />} text="先选择一台在线设备" />
         )}
         {online && loaded && !loading && entries.length === 0 && !error && (
-          <CenteredState icon={<Folder className="h-8 w-8" />} text="此目录为空" />
+          <CenteredState icon={<Folder className="h-8 w-8" />} text={hasHiddenEntries ? "没有可显示的文件" : "此目录为空"} />
         )}
         {loading && entries.length === 0 && (
           <CenteredState

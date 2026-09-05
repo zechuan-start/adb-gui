@@ -27,6 +27,7 @@ import {
 import { columnSignature, type LogcatColumn } from "@/lib/logcatView";
 import { useFeedbackStore } from "@/store/feedback";
 import { useLogcatStore } from "@/store/logcat";
+import { useSettingsStore } from "@/store/settings";
 import { LogcatRow } from "@/components/logcat/LogcatRow";
 
 interface LogcatListProps {
@@ -214,11 +215,11 @@ export function LogcatList({ visible, loading }: LogcatListProps) {
   const detachedNewCount = useLogcatStore((state) => state.detachedNewCount);
   const anchoredSeq = useLogcatStore((state) => state.anchoredSeq);
   const selectedSeq = useLogcatStore((state) => state.selectedSeq);
-  const autoFold = useLogcatStore((state) => state.autoFold);
+  const autoFold = useSettingsStore((state) => state.preferences.logcat.autoFold);
   const expandedCrashSeqs = useLogcatStore((state) => state.expandedCrashSeqs);
-  const cozyRows = useLogcatStore((state) => state.cozyRows);
-  const columns = useLogcatStore((state) => state.columns);
-  const softWrap = useLogcatStore((state) => state.softWrap);
+  const cozyRows = useSettingsStore((state) => state.preferences.logcat.cozyRows);
+  const columns = useSettingsStore((state) => state.preferences.logcat.columns);
+  const softWrap = useSettingsStore((state) => state.preferences.logcat.softWrap);
   const setFollowMode = useLogcatStore((state) => state.setFollowMode);
   const setAnchoredSeq = useLogcatStore((state) => state.setAnchoredSeq);
   const setSelectedSeq = useLogcatStore((state) => state.setSelectedSeq);

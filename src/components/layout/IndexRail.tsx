@@ -3,18 +3,16 @@ import {
   AppWindow,
   Activity,
   Files,
-  Monitor,
-  Moon,
   PanelBottomClose,
   PanelBottomOpen,
   QrCode,
   ScanLine,
-  Sun,
+  Settings,
   Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLogcatStore } from "@/store/logcat";
-import { useThemeStore } from "@/store/theme";
+import { useSettingsStore } from "@/store/settings";
 import {
   deriveLogcatUnreadCount,
   logcatReadBaseline,
@@ -36,11 +34,6 @@ const PANES: readonly {
   { id: "perf", index: "06", label: "性能", icon: Activity },
 ];
 
-const THEMES = [
-  { id: "system" as const, label: "跟随系统", icon: Monitor },
-  { id: "light" as const, label: "亮色", icon: Sun },
-  { id: "dark" as const, label: "暗色", icon: Moon },
-];
 
 function LogcatWorkspaceToggle() {
   const activePane = useUiStore((state) => state.activePane);
@@ -99,8 +92,8 @@ function LogcatWorkspaceToggle() {
 export function IndexRail() {
   const activePane = useUiStore((state) => state.activePane);
   const setActivePane = useUiStore((state) => state.setActivePane);
-  const theme = useThemeStore((state) => state.theme);
-  const setTheme = useThemeStore((state) => state.setTheme);
+  const openSettings = useUiStore((state) => state.openSettings);
+  const error = useSettingsStore((state) => state.error);
 
   return (
     <aside className="flex w-[168px] shrink-0 flex-col border-r border-rule bg-surface pt-3.5">
@@ -137,28 +130,10 @@ export function IndexRail() {
       <div className="mt-auto flex flex-col gap-2 border-t border-dashed border-rule p-2">
         <LogcatWorkspaceToggle />
 
-        <div className="flex border border-rule" role="group" aria-label="主题">
-          {THEMES.map((item) => {
-            const Icon = item.icon;
-            const active = theme === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setTheme(item.id)}
-                aria-label={item.label}
-                aria-pressed={active}
-                title={item.label}
-                className={cn(
-                  "flex h-7 flex-1 items-center justify-center border-r border-rule text-ink3 last:border-r-0 hover:bg-hover hover:text-ink",
-                  active && "bg-ink text-onink hover:bg-ink hover:text-onink",
-                )}
-              >
-                <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-            );
-          })}
-        </div>
+        <button type="button" onClick={() => openSettings("general")} aria-haspopup="dialog" aria-controls="settings-dialog"
+          title={error ?? "设置"} className={cn("flex h-[34px] items-center gap-2 border border-rule px-2.5 text-xs hover:bg-hover", error && "border-err text-err")}>
+          <Settings className="h-4 w-4" /><span>{error ? "设置异常" : "设置"}</span>
+        </button>
       </div>
     </aside>
   );

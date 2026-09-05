@@ -83,7 +83,7 @@ pub fn run_adb_bytes_with_serial(
     }
 }
 
-pub(super) fn adb_output_error(output: &Output) -> String {
+pub(crate) fn adb_output_error(output: &Output) -> String {
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     if stderr.is_empty() {
         format!("adb exited with status {}", output.status)

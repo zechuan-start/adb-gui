@@ -30,6 +30,8 @@ import type { AppIconEntry, AppInfo } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { useDeviceStore } from "@/store/device";
 import { useFeedbackStore } from "@/store/feedback";
+import { useSettingsStore } from "@/store/settings";
+import { SortPreferences } from "@/components/settings/SortPreferences";
 
 const iconCache = new Map<string, string>();
 const ICON_BATCH_SIZE = 50;
@@ -81,6 +83,8 @@ function AppIcon({ src, size = 20 }: { src?: string; size?: number }) {
 type DestructiveAction = "clear" | "uninstall";
 
 export function PackageManagerPanel() {
+  const preferences = useSettingsStore((state) => state.preferences.apps);
+  const settingsError = useSettingsStore((state) => state.error);
   const devices = useDeviceStore((state) => state.devices);
   const selectedDevice = useDeviceStore((state) => state.selectedDevice);
   const device = getDeviceBySerial(devices, selectedDevice);
@@ -146,8 +150,8 @@ export function PackageManagerPanel() {
     setIconLoadMode("bulk-pending");
     try {
       const source = await loadAppInfoSources({
-        readCache: async () => sortAppInfo(await readAppInfoCache(deviceKey)),
-        readFresh: async () => sortAppInfo(await getInstalledApps(serial)),
+        readCache: () => readAppInfoCache(deviceKey),
+        readFresh: () => getInstalledApps(serial),
         isCurrent,
         onCacheRead: hydrateCachedIcons,
         onOptimisticCache: (cachedApps) => {
@@ -171,9 +175,7 @@ export function PackageManagerPanel() {
 
         setFallback({ kind: "packages", reason: String(source.error) });
         try {
-          const fallbackApps = sortAppInfo(
-            (await listPackages(serial)).map(fallbackAppInfo),
-          );
+          const fallbackApps = (await listPackages(serial)).map(fallbackAppInfo);
           if (!isCurrent()) {
             return;
           }
@@ -284,8 +286,12 @@ export function PackageManagerPanel() {
   }, [loadApps, online]);
 
   const filtered = useMemo(() => {
-    return filterAppInfo(apps, search);
-  }, [apps, search]);
+    return sortAppInfo(filterAppInfo(apps, search), preferences);
+  }, [apps, search, preferences]);
+
+  useEffect(() => {
+    if (parentRef.current) parentRef.current.scrollTop = 0;
+  }, [preferences]);
 
   const selectedApp = useMemo(
     () => apps.find((app) => app.packageName === selectedPkg) ?? null,
@@ -397,7 +403,7 @@ export function PackageManagerPanel() {
   return (
     <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_minmax(268px,32%)]">
       <section className="flex min-h-0 min-w-0 flex-col border-r border-rule bg-surface">
-        <div className="flex h-[43px] shrink-0 items-center gap-2 border-b border-rule bg-surface2 px-3">
+        <div className="flex min-h-[43px] shrink-0 flex-wrap items-center gap-2 border-b border-rule bg-surface2 px-3 py-1">
           <label className="relative min-w-0 max-w-[340px] flex-1">
             <span className="sr-only">搜索应用名称或包名</span>
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink3" />
@@ -412,6 +418,7 @@ export function PackageManagerPanel() {
               className="h-7 w-full border border-rule bg-paper pl-8 pr-3 font-data text-[11.5px] text-ink outline-none placeholder:text-ink3"
             />
           </label>
+          <SortPreferences section="apps" showSettings />
           <button
             type="button"
             onClick={() => void loadApps()}
@@ -427,6 +434,7 @@ export function PackageManagerPanel() {
           </span>
         </div>
 
+        {settingsError && <div role="alert" className="border-b border-err bg-err-band px-3 py-2 text-xs text-err">{settingsError}</div>}
         {fallback && (
           <div className="shrink-0 border-b border-warn/45 bg-warn-band px-3 py-2 text-[11px] text-warn">
             <div className="flex items-center gap-2">

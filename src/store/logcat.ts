@@ -7,11 +7,7 @@ import {
   type LogcatProcessIdentity,
 } from "@/lib/logcat";
 import {
-  COMPACT_COLUMNS,
   packageFromProcessName,
-  STANDARD_COLUMNS,
-  type LogcatColumn,
-  type ViewFormat,
 } from "@/lib/logcatView";
 import {
   compileQuery,
@@ -66,12 +62,7 @@ export interface LogcatStore {
   processMapLoading: boolean;
   processMapKey: string | null;
   processMapError: string | null;
-  softWrap: boolean;
-  autoFold: boolean;
   expandedCrashSeqs: Set<number>;
-  cozyRows: boolean;
-  viewFormat: ViewFormat;
-  columns: Record<LogcatColumn, boolean>;
   pendingLines: PendingLogcatLine[];
   pendingHead: number;
   nextSeq: number;
@@ -100,15 +91,10 @@ export interface LogcatStore {
   ) => void;
   failProcessMapRefresh: (key: string, error: string) => void;
   clearProcessMap: () => void;
-  setSoftWrap: (enabled: boolean) => void;
-  setViewFormat: (format: ViewFormat) => void;
-  setColumn: (column: LogcatColumn, visible: boolean) => void;
   setFollowMode: (mode: LogcatFollowMode) => void;
   setAnchoredSeq: (seq: number | null) => void;
   setSelectedSeq: (seq: number | null) => void;
-  setAutoFold: (enabled: boolean) => void;
   toggleCrashExpanded: (seq: number) => void;
-  setCozyRows: (enabled: boolean) => void;
   pause: () => void;
   resume: () => void;
   clearScreen: () => void;
@@ -376,12 +362,7 @@ export const useLogcatStore = create<LogcatStore>((set) => ({
   processMapLoading: false,
   processMapKey: null,
   processMapError: null,
-  softWrap: false,
-  autoFold: true,
   expandedCrashSeqs: new Set(),
-  cozyRows: false,
-  viewFormat: "standard",
-  columns: { ...STANDARD_COLUMNS },
   pendingLines: [],
   pendingHead: 0,
   nextSeq: 0,
@@ -543,24 +524,6 @@ export const useLogcatStore = create<LogcatStore>((set) => ({
           },
     );
   },
-  setSoftWrap: (softWrap) => {
-    set((state) => (state.softWrap === softWrap ? state : { softWrap }));
-  },
-  setViewFormat: (viewFormat) => {
-    set(() => ({
-      viewFormat,
-      columns: {
-        ...(viewFormat === "standard" ? STANDARD_COLUMNS : COMPACT_COLUMNS),
-      },
-    }));
-  },
-  setColumn: (column, visible) => {
-    set((state) =>
-      state.columns[column] === visible
-        ? state
-        : { columns: { ...state.columns, [column]: visible } },
-    );
-  },
   setFollowMode: (followMode) => {
     set((state) => {
       if (
@@ -594,9 +557,6 @@ export const useLogcatStore = create<LogcatStore>((set) => ({
       return { selectedSeq };
     });
   },
-  setAutoFold: (autoFold) => {
-    set((state) => (state.autoFold === autoFold ? state : { autoFold }));
-  },
   toggleCrashExpanded: (seq) => {
     set((state) => {
       if (state.buffer.bySeq(seq)?.crashKind !== "crash") {
@@ -610,9 +570,6 @@ export const useLogcatStore = create<LogcatStore>((set) => ({
       }
       return { expandedCrashSeqs };
     });
-  },
-  setCozyRows: (cozyRows) => {
-    set((state) => (state.cozyRows === cozyRows ? state : { cozyRows }));
   },
   pause: () => {
     set((state) => (state.streamMode === "paused" ? state : { streamMode: "paused" }));

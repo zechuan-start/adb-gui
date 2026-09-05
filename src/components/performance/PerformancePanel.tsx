@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { Activity, Battery, Check, Cpu, MemoryStick, Pause, Play, RefreshCw } from "lucide-react";
+import { Activity, Battery, Settings, Cpu, MemoryStick, Pause, Play, RefreshCw } from "lucide-react";
 import { MetricChart } from "@/components/performance/MetricChart";
 import { ProcessTable } from "@/components/performance/ProcessTable";
 import { useDeviceMetricsSession } from "@/hooks/useDeviceMetricsSession";
@@ -13,6 +13,7 @@ import {
 } from "@/lib/deviceMetrics";
 import { cn } from "@/lib/utils";
 import { useDeviceMetricsStore } from "@/store/deviceMetrics";
+import { useUiStore } from "@/store/ui";
 
 interface PerformancePanelProps {
   active: boolean;
@@ -51,8 +52,7 @@ export function PerformancePanel({ active }: PerformancePanelProps) {
   const revision = useDeviceMetricsStore((state) => state.revision);
   const latestFrame = useDeviceMetricsStore((state) => state.latestFrame);
   const battery = useDeviceMetricsStore((state) => state.battery);
-  const backgroundEnabled = useDeviceMetricsStore((state) => state.backgroundEnabled);
-  const setBackgroundEnabled = useDeviceMetricsStore((state) => state.setBackgroundEnabled);
+  const openSettings = useUiStore((state) => state.openSettings);
   const paused = useDeviceMetricsStore((state) => state.paused);
   const setPaused = useDeviceMetricsStore((state) => state.setPaused);
   const restart = useDeviceMetricsStore((state) => state.restart);
@@ -103,17 +103,12 @@ export function PerformancePanel({ active }: PerformancePanelProps) {
             </span>
             <button
               type="button"
-              onClick={() => setBackgroundEnabled(!backgroundEnabled)}
-              aria-pressed={backgroundEnabled}
-              className={cn(
-                "inline-flex h-7 items-center gap-1.5 border border-rule px-2 font-data text-[10px] text-ink2 hover:border-ink3 hover:bg-hover hover:text-ink",
-                backgroundEnabled && "border-ink bg-ink text-onink hover:bg-ink hover:text-onink",
-              )}
+              onClick={() => openSettings("performance")}
+              aria-label="性能设置"
+              title="性能设置"
+              className="inline-flex h-7 w-7 items-center justify-center border border-rule text-ink2 hover:bg-hover hover:text-ink"
             >
-              <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center border border-current">
-                {backgroundEnabled ? <Check className="h-3 w-3" aria-hidden="true" /> : null}
-              </span>
-              切换面板时继续采集
+              <Settings className="h-3.5 w-3.5" />
             </button>
             <button
               type="button"

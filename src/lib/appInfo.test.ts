@@ -10,6 +10,7 @@ import {
   sortAppInfo,
 } from "@/lib/appInfo";
 import type { AppInfo } from "@/lib/tauri";
+import { defaultSettings } from "@/lib/settings";
 
 function app(overrides: Partial<AppInfo>): AppInfo {
   return {
@@ -46,12 +47,27 @@ describe("appInfo", () => {
       app({ packageName: "com.example.b", appName: "Alpha" }),
     ];
 
-    expect(sortAppInfo(apps).map((item) => appDisplayName(item))).toEqual([
+    expect(sortAppInfo(apps, defaultSettings().apps).map((item) => appDisplayName(item))).toEqual([
       "Alpha",
       "com.example.a",
       "Zulu",
     ]);
     expect(apps[0].appName).toBe("Zulu");
+  });
+
+  it.each(["firstInstallTime", "lastUpdateTime", "apkSize"] as const)("sorts %s in either direction with unknown values last and stable ties", (sortBy) => {
+    const rows = [app({ packageName: "unknown", [sortBy]: 0 }), app({ packageName: "large", [sortBy]: 20 }), app({ packageName: "b", [sortBy]: 10 }), app({ packageName: "a", [sortBy]: 10 })];
+    expect(sortAppInfo(rows, { sortBy, sortDirection: "asc" }).map((item) => item.packageName)).toEqual(["a", "b", "large", "unknown"]);
+    expect(sortAppInfo(rows, { sortBy, sortDirection: "desc" }).map((item) => item.packageName)).toEqual(["large", "a", "b", "unknown"]);
+    expect(rows[0].packageName).toBe("unknown");
+  });
+
+  it("uses package sorting independently of names and preserves natural name sorting", () => {
+    const rows = [app({ packageName: "z", appName: "应用2" }), app({ packageName: "a", appName: "应用10" })];
+    expect(sortAppInfo(rows, { sortBy: "name", sortDirection: "asc" })).toEqual(rows);
+    expect(sortAppInfo(rows, { sortBy: "name", sortDirection: "desc" })).toEqual([rows[1], rows[0]]);
+    expect(sortAppInfo(rows, { sortBy: "packageName", sortDirection: "asc" })).toEqual([rows[1], rows[0]]);
+    expect(sortAppInfo(rows, { sortBy: "packageName", sortDirection: "desc" })).toEqual(rows);
   });
 
   it("filters by localized app name or package name", () => {

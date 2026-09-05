@@ -18,7 +18,6 @@ describe("useDeviceMetricsStore", () => {
   beforeEach(() => {
     useDeviceMetricsStore.getState().bindDevice(null, null);
     useDeviceMetricsStore.setState({
-      backgroundEnabled: false,
       paused: false,
       restartNonce: 0,
     });

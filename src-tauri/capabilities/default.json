@@ -8,6 +8,8 @@
     "opener:default",
     "dialog:default",
     "clipboard-manager:allow-read-image",
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text",
     "shell:default",
     "fs:default",
     "process:default",

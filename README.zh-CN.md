@@ -9,7 +9,7 @@
 ![支持平台](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)
 ![技术栈](https://img.shields.io/badge/built%20with-Tauri%202%20%2B%20React%2019-informational)
 
-[下载最新版本](https://github.com/zechuan-start/adb-gui/releases/latest) · [查看全部版本](https://github.com/zechuan-start/adb-gui/releases)
+[下载最新版本](https://github.com/zechuan-start/adb-gui/releases/latest) · [查看全部版本](https://github.com/zechuan-start/adb-gui/releases) · [macOS 首次运行](#macos-安装与首次运行)
 
 ![ADB GUI 工具工作区, 底部为日志面板](docs/images/workspace-tools.png)
 
@@ -93,7 +93,7 @@
 
 - 跟随系统、亮色、暗色三种主题.
 - 原生文件对话框, 应用写出的文件都支持"在文件管理器中显示"和"用默认程序打开".
-- 基于 GitHub Release 的带签名应用内更新检查.
+- 从 GitHub Release 获取应用内更新, 并验证 Tauri 更新产物签名. 此签名与操作系统的应用代码签名不同.
 
 ## 快捷键
 
@@ -116,21 +116,41 @@
 
 ## 快速开始
 
-1. 从 [GitHub Releases](https://github.com/zechuan-start/adb-gui/releases/latest) 下载对应平台的安装包.
+1. 从 [GitHub Releases](https://github.com/zechuan-start/adb-gui/releases/latest) 下载并安装对应平台的安装包. macOS 用户请先按下方说明完成安装与首次放行.
 2. 在 Android 设备上启用开发者选项和 USB 调试.
 3. 连接设备, 并在 Android 弹窗中允许当前电脑的调试指纹.
 4. 打开 ADB GUI, 从顶部选择设备. 应用已内置 ADB, 因此不强制要求单独安装 Platform Tools.
 
 使用 Wi-Fi 调试时, 可以先通过 USB 连接并使用顶部的 Wi-Fi 操作, 也可以直接输入已经可访问的 `ip:port` 地址.
 
+### macOS 安装与首次运行
+
+目前 macOS 应用**尚未使用 Apple Developer ID 证书签名, 也未经过 Apple 公证**, 首次运行可能被 Gatekeeper 拦截. 本机 ad-hoc 签名或 Tauri 更新包签名均不代表通过 Apple 开发者验证.
+
+1. 在 **Apple 菜单 > 关于本机** 中查看芯片或处理器. Apple Silicon (M 系列) 下载 **arm64 / aarch64** 的 `.dmg`, Intel 芯片下载 **x64 / x86_64** 的 `.dmg`.
+2. 打开 `.dmg`, 将 **ADB GUI.app** 拖入 **Applications (应用程序)**. 升级时先退出正在运行的旧版, 再替换应用. 替换应用包会保留现有偏好和已保存文件.
+3. 推出安装磁盘映像, 从应用程序文件夹打开 **ADB GUI**.
+4. 如果提示无法验证开发者, 或 Apple 无法检查应用是否包含恶意软件, 先关闭提示. 确认安装包来自本项目 GitHub Releases 后, 打开 **系统设置 > 隐私与安全性**, 向下找到 **安全性**, 点击 ADB GUI 提示旁的 **仍要打开**, 按提示完成身份验证并确认 **打开**. 旧版 macOS 对应入口为 **系统偏好设置 > 安全性与隐私 > 通用**.
+
+如果没有出现 **仍要打开**, 或提示应用"已损坏", 请先从本项目 Releases 重新下载正确架构的安装包并安装. 确认来源可信的副本仍被下载隔离标记拦截时, 可以在终端中仅移除该应用的隔离属性:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/ADB GUI.app"
+open "/Applications/ADB GUI.app"
+```
+
+该命令只移除这个应用包的下载隔离标记, 不会修复真正损坏的安装包, 也不会补充 Apple 签名或公证. 仅对已经确认来源的副本使用, 不要全局关闭 Gatekeeper, 也不要用它绕过明确的恶意软件警告. 详情参见 [Apple 的安全打开应用说明](https://support.apple.com/102445).
+
 ## 本地文件位置
 
 | 内容 | 默认位置 |
 | --- | --- |
-| 截图和屏幕录制 | `Pictures/ADB GUI/` |
+| 截图和屏幕录制 | 默认 `Pictures/ADB GUI/`, 可在设置中选择公共本机目录 |
 | 快速报告和完整 Bugreport | `Documents/ADB GUI/reports/` |
 | 导出的 Logcat 日志 | `Documents/ADB GUI/logs/` |
 | 从设备下载的文件 | 保存对话框中选择的位置 |
+
+截图与录屏共用保存目录, 每段录屏固定使用开始时的目录. 保存失败会保留设备源文件, 可在当前应用进程内重试、另存为或确认放弃. 重启应用后不会自动恢复未保存会话.
 
 ## 本地开发
 
@@ -163,6 +183,7 @@ pnpm screenshots
 - 手动运行 `Package` workflow 可以构建供下载的 workflow artifacts, 但不会发布正式版本.
 - 推送形如 `v0.1.8` 的 `v*` 标签后, CI 会创建 Release, 构建全部平台目标, 上传安装包与更新产物, 并且只在全部打包任务成功后正式发布.
 - 自动更新产物需要配置 `plugins.updater.pubkey`, 以及仓库 Secrets `TAURI_SIGNING_PRIVATE_KEY` 和 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+- 这些密钥仅用于 Tauri 更新产物签名. 当前 macOS 发布流程未配置 Apple Developer ID 签名与公证, 用户可能需要按 [首次运行说明](#macos-安装与首次运行) 放行.
 
 ## 许可证
 

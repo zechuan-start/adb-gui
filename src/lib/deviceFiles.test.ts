@@ -226,7 +226,7 @@ describe("deviceFileManagerReducer", () => {
     });
 
     expect(state.path).toBe(listing.path);
-    expect(state.pathDraft).toBe(listing.path);
+    expect(state.pathDraft).toBe("/data");
     expect(state.entries).toEqual(listing.entries);
   });
 

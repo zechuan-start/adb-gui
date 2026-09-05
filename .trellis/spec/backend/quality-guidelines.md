@@ -193,11 +193,13 @@ nsExec::ExecToLog 'taskkill /IM adb.exe /F'
 
 ### 3. Contracts
 
-- `scripts/build-app-info-dex/build.sh` accepts `ANDROID_HOME` or `ANDROID_SDK_ROOT`, requires an API 29+ `android.jar`, `javac`, and `d8`, then writes `src-tauri/resources/app-info.dex`.
+- `scripts/build-app-info-dex/build.sh` accepts `ANDROID_HOME` or `ANDROID_SDK_ROOT`, requires an API 31+ `android.jar`, `javac`, and `d8`, compiles every Java source, then writes `src-tauri/resources/app-info.dex`. Keep D8 min-api 28; use a disposable system temporary directory for intermediate output.
 - The build script must run with macOS Bash 3.2; avoid Bash 4-only helpers such as `mapfile` and GNU-only `find`/`sort` flags.
 - Resolve `ActivityThread` through reflection. Prefer `systemMain()` and fall back to a no-argument `ActivityThread` plus `getSystemContext()`; print both failed bootstrap stacks to stderr.
 - Tauri maps `src-tauri/resources/` to the resource root, so Rust resolves `resource_dir().join("app-info.dex")`.
-- Name the remote dex `/data/local/tmp/adb-gui-app-info-<fnv1a64>.dex`. Under one process-wide async mutex, skip `adb push` only when `ls -l` contains the expected byte length; use 30 seconds for inspect/push.
+- Use `device_helper.rs` as the sole owner of DEX lookup, FNV-1a hashing and publication. Name the remote dex `/data/local/tmp/adb-gui-app-info-<fnv1a64>.dex`. Skip push only when the `ls -l` size column matches; preserve the same hash algorithm for application cache keys.
+- Hold one process-wide deployment mutex across inspection, staging, chmod and atomic rename, including USB/WiFi aliases. Bound lock acquisition and each ADB preparation call to 30 seconds. Push to a unique temporary path and publish with `mv -f`; never overwrite an inode another helper may be executing. Clean failed staging explicitly.
+- Release the deployment mutex before executing either helper. The separate app-info query mutex continues to serialize application queries and their existing read-only retries; clipboard operations must not acquire that query mutex.
 - Invoke metadata with `--no-icons` and a 45-second timeout. Invoke icons with `--icons-only [package...]`, 50 packages per frontend batch, and a 90-second timeout per batch.
 - Java writes `--ADBGUI-APPINFO-V1--\n` followed by one UTF-8 JSON array through a buffered `FileDescriptor.out` stream. Rust parses after the last sentinel and accepts unsentinelled whole-array output from the old dex.
 - Return only non-system applications. Icons are 96 x 96 PNG data URIs; APK size is the base APK only. A single field failure produces an empty/zero fallback for that field, while a helper/process/protocol failure rejects the complete command.
@@ -206,7 +208,7 @@ nsExec::ExecToLog 'taskkill /IM adb.exe /F'
 
 ### 4. Validation & Error Matrix
 
-- Missing SDK root, API 29+ platform, `javac`, or `d8` -> the build script exits nonzero with the missing requirement named.
+- Missing SDK root, API 31+ platform, `javac`, or `d8` -> the build script exits nonzero with the missing requirement named.
 - Missing bundled dex or failed `adb push` -> contextual `Err`; do not start `app_process`.
 - Nonempty icon filter whose names are all invalid after `[A-Za-z0-9_.]` validation -> `Err`; never turn it into an unfiltered request. Missing or empty filters mean all icons.
 - Push failure -> force one retry. Nonzero helper exit or invalid payload after a skipped push -> force one push and retry. `adb exec-out` may report success while a corrupt remote dex prints `Aborted`, so host exit status alone is not proof that the helper ran. The same failure after a fresh push -> return a ROM/protocol error without another retry.
@@ -411,60 +413,65 @@ The command already used `-s <serial>`, so parse the scoped output by extracting
 
 ### 2. Signatures
 
-- `start_screen_record(app: AppHandle, serial: String) -> Result<ScreenRecordStatus, String>`
-- `stop_screen_record(app: AppHandle) -> Result<ScreenRecordResult, String>`
+- `start_screen_record(app, serial, destination: CaptureDestination) -> Result<ScreenRecordStatus, String>`
+- `stop_screen_record(app, request: SaveRecordingRequest) -> Result<ScreenRecordResult, String>`
+- `discard_screen_record(app, session_id) -> Result<DiscardRecordingResult, String>`
 - `get_screen_record_status() -> Result<ScreenRecordStatus, String>`
+- `resolve_capture_directory(destination)` and `take_screenshot(app, serial, behavior, destination)` share `capture_output.rs`.
 
 ### 3. Contracts
 
-- Only one recording session may exist globally.
-- Start command spawns `adb -s <serial> shell screenrecord --bugreport --time-limit 180 /sdcard/adb_gui_<timestamp>.mp4`.
-- Status returns `active`, `serial`, `elapsed_secs`, and `pending_pull`.
-- Stop command must pull to `dirs::picture_dir()/ADB GUI/<safe_serial>-<timestamp>.mp4`.
-- Stop command must best-effort delete the remote `/sdcard/adb_gui_*.mp4` file even when pull fails.
-- Stop command should open the MP4 with `tauri_plugin_opener` after a successful non-empty pull.
+- Keep one global recorder owner: Idle, Session, or Busy. Return one phase (`idle`, `recording`, `pending_save`, `saving`, `save_failed`) plus session_id, serial, elapsed_secs, local_path, remote_path, error and attempted_path. Do not restore active/pending_pull booleans.
+- Start freezes a unique session ID, device, remote path and local target. Run `shell -T screenrecord --bugreport --time-limit 180` with a host-safe unique filename. Prepare real local IO before spawning. Freeze elapsed display after stopping; waiting for recovery does not extend recording duration.
+- `CaptureDestination` requires `{kind:"default"}` or `{kind:"directory",path}`. Default resolves Pictures/ADB GUI or returns an error. Custom paths must be existing absolute directories; never create them or redirect to another location when they disappear.
+- Settings resolution does not create directories. Only actual capture preparation may create the default directory. Screenshot copy bypasses output preparation.
+- Move the session into Busy while performing blocking save/discard IO outside the mutex. Bind every operation to the exact session ID, and reject new starts while any session or operation remains.
+- Confirm the matching device-side process stopped, even if the local adb child has already exited. Match the exact remote argument in /proc/PID/cmdline before SIGINT; never signal all screenrecord processes or treat a disconnected local child as completed device output.
+- Save order: stop -> nonzero remote size -> sibling temporary pull -> exact byte-count validation -> sync and publish -> delete exact original source -> optional opener. Preserve source and SaveFailed session on every failure before publication.
+- Use `tempfile::NamedTempFile::persist_noclobber` for automatic outputs. Only an explicit system save-dialog target may use overwrite publication. Do not overwrite directly during pull. Save-as changes only that attempt; retry keeps the original target.
+- Return source_cleanup_error separately after local success. Opener failure keeps the saved path. Do not re-pull an already published file when cleanup or opening fails.
+- Explicitly confirmed discard attempts stop and exact source cleanup, releases the session even when disconnected, and reports any possible residual source. Do not delete source on application exit or promise recovery across application restarts.
 
 ### 4. Validation & Error Matrix
 
-- Start while `active=true` -> `Err("已有录屏正在进行，请先停止当前录屏。")`.
-- Start while prior process exited but not pulled -> `Err("已有录屏已结束但尚未保存，请先停止录屏完成保存。")`.
-- Stop without active or pending session -> `Err("当前没有正在录制或待保存的录屏。")`.
-- Pulled file size is zero -> delete local empty file and return `Err("录屏文件为空，可能录制时间过短或设备端写入失败。")`.
-- Remote cleanup failure -> log with `eprintln!`, do not fail an otherwise successful pull.
+- Non-idle start, concurrent operation or stale session ID -> explicit error without replacing ownership.
+- Missing/unwritable/custom moved target, zero/partial source, pull/validation/publication failure -> retain source and recoverable session, report the stage and attempted target.
+- Successful publication followed by source cleanup or opener failure -> return the saved path and independent warning, never report the local file lost.
+- Cancel save-as/discard -> no save/delete command, preserve session. Late dialog -> revalidate ID before submission and again in Rust.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: Natural `--time-limit` expiry leaves a pending session; frontend calls stop to pull and clean up.
-- Good: Manual stop sends SIGINT to the device-side `screenrecord` process, then pulls a non-empty MP4.
+- Good: Natural expiry and manual/device-switch stop share one finalizer, with at most one automatic attempt per session.
+- Good: A moved output directory leaves the device source available for explicit retry or save-as.
 - Base: Some devices print warnings such as `Could not open module param file ...` while still producing a valid MP4.
 - Bad: Directly killing only the local adb child can interrupt the shell before `screenrecord` finalizes the MP4.
-- Bad: Relying only on `pkill -2 screenrecord` is less reliable than `pidof screenrecord` followed by `kill -2 <pid>`.
+- Bad: removing the source before checking pull/publication success, or polling a failed session into an automatic retry loop.
 
 ### 6. Tests Required
 
-- Unit test safe serial/path sanitization.
-- Build checks: `cargo check`, `cargo clippy --all-targets -- -D warnings`, `npm run build`.
-- Manual device smoke: record about 5 seconds, stop via `pidof` + `kill -2`, pull file, assert file size `> 0`, and confirm remote cleanup.
-- Manual timeout smoke: run a short `--time-limit` recording, pull file, assert file size `> 0`.
+- Test default resolution failure, missing/relative/custom-file targets, unique output IDs, non-clobber publication and explicit replacement.
+- Inject source-size, zero-file, pull, partial-file and publication failures with actual temporary files; assert cleanup never runs. On success assert the final file exists before source cleanup is called.
+- Test exclusive ownership, stale IDs, exact process-argument matching, frozen elapsed time, late dialogs and automatic-attempt suppression including settings failure before invoke.
+- Run frontend tests/build, 60-second Rust tests, fmt/clippy and a LaunchServices native smoke. Exercise moved-directory failure, retry/save-as, source retention/cleanup, cancellation and natural completion on Android.
 
 ### 7. Wrong vs Correct
 
 #### Wrong
 
 ```rust
-child.kill()?;
+pull_result?; // Too late if the remote source was already removed.
 ```
 
 #### Correct
 
 ```rust
-let pid_output = run_adb_with_serial(app, serial, &["shell", "pidof", "screenrecord"])?;
-let mut args = vec!["shell", "kill", "-2"];
-args.extend(pid_output.split_whitespace());
-run_adb_with_serial(app, serial, &args)?;
+pull(output.path())?;
+output.verify_size(expected)?;
+output.publish(overwrite)?;
+let source_cleanup_error = cleanup().err();
 ```
 
-Signal the device-side `screenrecord` process first so Android can finalize the MP4 before the local adb process exits.
+Preserve source ownership until a complete local file has been published.
 
 ## Scenario: ADB Bug Report Collection Commands
 
@@ -539,8 +546,8 @@ Signal the device-side `screenrecord` process first so Android can finalize the 
 - `path = None` means the backend-owned default `/sdcard/Download`; the frontend must not define another default-path constant.
 - Remote paths are absolute, reject NUL, collapse repeated separators and `.`, and reject `..` that crosses root.
 - Shell-bound paths use the shared POSIX single-quote encoder. Frontend strings never become raw shell fragments.
-- Directory enumeration uses `adb exec-out` with a controlled device shell script and NUL-delimited `kind, size, modified_at, absolute_path` records. The parser may remove only trailing CR/LF after the binary payload; do not parse `ls` columns or route the protocol through `adb shell`.
-- Listing order is stable: directories first, then non-directories; each group is sorted case-insensitively by name.
+- Directory enumeration uses `adb shell -T` with a controlled script and NUL-delimited `kind, size, modified_at, absolute_path` records. Require non-PTY shell v2 so remote exit status and stderr remain separate from binary stdout. `exec-out` can merge remote errors and report exit code zero. Never parse `ls` columns or use a PTY for this protocol.
+- Return validated entries in source order. `projectDeviceFiles(entries, preferences)` owns frontend sorting/filtering; default to directories first and case-insensitive names, preserve path identities.
 - `previewable` is a backend hint based on file kind and extension. Preview validity still depends on backend magic-byte verification.
 - Upload accepts one local ordinary file per command. The frontend serializes multi-file batches and preserves per-item results.
 - Frontend device operations capture an immutable `{ serial, revision }` context. Device changes and file-workspace unmounts increment `revision`; serial equality alone is not a freshness check because A -> B -> A reuses the same serial.
@@ -576,14 +583,14 @@ Signal the device-side `screenrecord` process first so Android can finalize the 
 - Base: a non-root device returns permission denied for `/data`; surface that error and keep the previous directory visible.
 - Bad: concatenating `remoteDir + "/" + name` in React or passing an unescaped path to `adb shell` creates a second path authority and shell-injection risk.
 - Bad: parsing `ls -l` with whitespace splitting corrupts names containing spaces and varies across Android versions.
-- Bad: using `adb shell` for NUL-delimited records can append terminal line endings; accepting arbitrary trailing bytes hides protocol corruption.
+- Bad: using a PTY for NUL-delimited records can append terminal line endings; accepting arbitrary trailing bytes hides protocol corruption. Keep `-T` explicit and reject device failures before parsing.
 - Bad: reading `adb exec-out cat` to completion and checking the vector length afterward does not enforce the 20 MiB memory limit.
 - Bad: pulling directly into the final local target can destroy an existing file when ADB fails partway.
 - Bad: restoring `push_file` in `commands/app.rs` recreates a competing upload entry point.
 
 ### 6. Tests Required
 
-- Rust unit tests assert path normalization/root rejection, shell quoting, directory record integrity including trailing CR/LF, stable sorting, and hidden/UTF-8 names.
+- Rust unit tests assert path normalization/root rejection, shell quoting, directory record integrity including trailing CR/LF, source order, and hidden/UTF-8 names. Frontend tests own display sorting. Verify raw NUL preservation and nonzero missing-directory status on Android when changing transport flags.
 - Rust unit tests assert numbering before extensions, preview magic-byte recognition, and device-side `20 MiB + 1` output capping.
 - Frontend reducer/helper tests assert device reset, current-context loading versus loaded empty state, latest-request wins for listings, stale-preview rejection, mixed transfer results, and failure-count summaries.
 - Frontend operation-context tests assert stale snapshots are rejected after A -> B -> A and file-workspace unmount invalidation.

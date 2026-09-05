@@ -1,21 +1,16 @@
 import { create } from "zustand";
 import {
-  DEFAULT_GENERATOR_DRAFT,
   parseBatchInput,
-  type CodeType,
   type GeneratedBatch,
-  type GeneratorDraft,
-  type SeparatorMode,
+  type GeneratorOptions,
 } from "@/lib/codeGenerator";
+import { requireSettings } from "@/store/settings";
 
 interface CodeGeneratorStore {
-  draft: GeneratorDraft;
-  draftRevision: number;
+  input: string;
+  inputRevision: number;
   generatedBatch: GeneratedBatch | null;
-  inputError: string;
-  setCodeType: (codeType: CodeType) => void;
-  setSeparatorMode: (separatorMode: SeparatorMode) => void;
-  setCustomSeparator: (customSeparator: string) => void;
+  inputError: { message: string; options: GeneratorOptions | null } | null;
   setInput: (input: string) => void;
   generate: () => boolean;
   clear: () => void;
@@ -24,66 +19,49 @@ interface CodeGeneratorStore {
 let nextBatchId = 1;
 
 export const useCodeGeneratorStore = create<CodeGeneratorStore>((set, get) => ({
-  draft: { ...DEFAULT_GENERATOR_DRAFT },
-  draftRevision: 0,
+  input: "",
+  inputRevision: 0,
   generatedBatch: null,
-  inputError: "",
-  setCodeType: (codeType) => {
-    set((state) => updateDraft(state, { ...state.draft, codeType }));
-  },
-  setSeparatorMode: (separatorMode) => {
-    set((state) => updateDraft(state, { ...state.draft, separatorMode }));
-  },
-  setCustomSeparator: (customSeparator) => {
-    set((state) => updateDraft(state, { ...state.draft, customSeparator }));
-  },
+  inputError: null,
   setInput: (input) => {
-    set((state) => updateDraft(state, { ...state.draft, input }));
+    if (input !== get().input)
+      set((state) => ({
+        input,
+        inputRevision: state.inputRevision + 1,
+        inputError: null,
+      }));
   },
   generate: () => {
+    let options: GeneratorOptions;
+    try {
+      options = { ...requireSettings().codegen };
+    } catch (error) {
+      set({ inputError: { message: String(error), options: null } });
+      return false;
+    }
     const state = get();
-    const result = parseBatchInput(state.draft);
+    const result = parseBatchInput({ ...options, input: state.input });
     if (!result.ok) {
-      set({ inputError: result.message });
+      set({ inputError: { message: result.message, options } });
       return false;
     }
 
     const generatedBatch: GeneratedBatch = {
       id: nextBatchId,
-      codeType: state.draft.codeType,
-      sourceRevision: state.draftRevision,
+      ...options,
+      sourceRevision: state.inputRevision,
       values: result.values,
     };
     nextBatchId += 1;
-    set({ generatedBatch, inputError: "" });
+    set({ generatedBatch, inputError: null });
     return true;
   },
   clear: () => {
     set((state) => ({
-      draft: { ...DEFAULT_GENERATOR_DRAFT },
-      draftRevision: state.draftRevision + 1,
+      input: "",
+      inputRevision: state.inputRevision + 1,
       generatedBatch: null,
-      inputError: "",
+      inputError: null,
     }));
   },
 }));
-
-function updateDraft(
-  state: Pick<CodeGeneratorStore, "draft" | "draftRevision" | "inputError">,
-  draft: GeneratorDraft,
-) {
-  if (
-    draft.codeType === state.draft.codeType &&
-    draft.separatorMode === state.draft.separatorMode &&
-    draft.customSeparator === state.draft.customSeparator &&
-    draft.input === state.draft.input
-  ) {
-    return state;
-  }
-
-  return {
-    draft,
-    draftRevision: state.draftRevision + 1,
-    inputError: "",
-  };
-}
