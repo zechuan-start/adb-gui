@@ -8,7 +8,9 @@
 
 - `createSettingsStore(storageProvider)`, `useSettingsStore`, `requireSettings()`.
 - `openSettings(section)` / `closeSettings()` in `useUiStore`.
-- `SETTINGS_SECTIONS`, `findSettingsSection(id)`, `sectionResetPlan(section)`, `resetSettingsSection(settings, section)` live in `lib/settingsSections.ts` and own `SettingsSection`.
+- `SETTINGS_SECTIONS`, `findSettingsSection(id)`, `findSettingsRow(id)`, `searchSettingsRows(query)`, `modifiedRowIds(snapshot)`, `sectionResetPlan(section)`, `resetSettingsSection(settings, section)` live in `lib/settingsSections.ts` and own `SettingsSection`.
+- `SettingRow` / `SettingToggle` / `SettingsRowGate` / `SettingsGroup` / `SettingRowLabel` render rows; `SettingsView` supplies the panel's row filter and modified marks.
+- `confirmRestoreDefaults()` in `lib/tauri.ts` is the only confirmation entry for the global reset.
 - `migrateSettings(version, settings)` in `lib/settings.ts` runs before field validation.
 - `takeScreenshot(serial, ScreenshotBehavior, CaptureDestination)` requires a click-time snapshot; `startScreenRecord(serial, CaptureDestination)` freezes the directory; `stopScreenRecord(SaveRecordingRequest)` takes `{sessionId,behavior,target}` at each save attempt.
 - `createClipboardTransfer(deps).bind(device) / transfer(direction) / dispose()`.
@@ -24,6 +26,10 @@
 - Disabled scope follows storage ownership, not the dialog: each section wraps only the controls stored in `adb-gui-settings` in `disabled={!available}`. Theme (`useThemeStore`) and pane visibility (`adb-gui-ui`) stay editable while the settings file is unreadable, and carry no ownership badge in the UI.
 - `sectionResetPlan(section)` is the single source of reset scope, covering settings keys plus the theme and pane resets. Each store resets independently: an unavailable or failing settings write must not suppress the theme or pane reset of the same section.
 - `migrateSettings` accepts the current version as-is, walks the migration chain for older versions and throws when a step is missing, and refuses newer versions instead of reading their fields. Reading never writes; a migrated value reaches storage through the next user write. Add a migration step in the same change that raises `SETTINGS_VERSION`.
+- Row labels and descriptions come from the registry, never from a literal inside a section component, so a search hit always names a row the panel can render. A row rendered with an unknown id throws.
+- Search filters rows in place through `SettingsView`: matching rows keep their real controls, a group title disappears once all of its rows are filtered out, and section reset is disabled while a query is active.
+- Modified markers compare the live snapshot against `defaultSettingsSnapshot()` across all three stores. A row that only presents a value another row owns (the logcat format preset) declares no `modified` predicate instead of duplicating the columns marker.
+- The global reset confirms first, then restores settings, theme and pane visibility together. A confirmation that fails reports the failure and changes nothing.
 - Apply the startup pane before React render. Share one update request across StrictMode effects; disabling permanently invalidates the current launch's check. Enabling during runtime does not initiate a check. Preserve user-initiated installation.
 - Keep the dialog state transient, use a modal focus boundary, restore trigger focus on close, and suppress workspace hotkeys while settings are open.
 - Send a click-time screenshot preference snapshot and a finalization-time recording snapshot to Rust. Compare requested flags with returned opened/revealed flags; saved files remain available if an opener fails.
@@ -52,6 +58,8 @@
 - Cover schema defaults, persistence restart, malformed values, write failures, group reset and runtime isolation.
 - Cover section order, unknown section rejection, every reset plan, and the migration branches (same / older / newer / non-integer version).
 - Cover ownership by SSR-rendering a section with `available: false` and asserting the theme buttons and pane checkboxes fall outside its disabled fieldset.
+- SSR-render every section so an unknown row id fails in tests rather than at runtime, and cover the filtered and marked states.
+- Browser-check the dialog against `scripts/screenshots/mock-tauri.js` at 1200x800 and 900x600 in both themes: dialog size, no horizontal overflow, vertical navigation keys, Escape focus restoration, the corrupted-settings disabled scope, and the global reset. The mock answers `plugin:dialog|message` with the ok button label because plugin-dialog resolves a confirmation by comparing labels; returning a boolean silently reads as cancel.
 - Cover startup zero-call and in-flight invalidation behavior.
 - Cover A -> B -> A, disconnect/authorization loss, transport replacement, stale finally and no retry after writes.
 - Check dialog layout at 1200x800 and 900x600 in both themes, focus trapping, Escape and keyboard tab navigation.

@@ -3,7 +3,7 @@ import { BlueprintSelect } from "@/components/BlueprintSelect";
 import {
   SettingRow,
   SettingsFieldset,
-  Toggle,
+  SettingToggle,
 } from "@/components/settings/SettingRow";
 import { STARTUP_OPTIONS } from "@/lib/settings";
 import { cn } from "@/lib/utils";
@@ -26,7 +26,7 @@ export function GeneralSection() {
   return (
     <>
       {/* The theme lives in its own store and stays editable while settings are unreadable. */}
-      <SettingRow label="主题">
+      <SettingRow id="theme">
         <div className="flex border border-rule" role="group" aria-label="主题">
           {THEMES.map(({ id, label, icon: Icon }) => (
             <button
@@ -47,7 +47,7 @@ export function GeneralSection() {
         </div>
       </SettingRow>
       <SettingsFieldset available={available}>
-        <SettingRow label="启动页面">
+        <SettingRow id="startupPane">
           <BlueprintSelect
             value={preferences.general.startupPane}
             options={STARTUP_OPTIONS}
@@ -65,15 +65,15 @@ export function GeneralSection() {
             }}
           />
         </SettingRow>
-        <Toggle
-          label="启动时检查更新"
+        <SettingToggle
+          id="checkUpdates"
           checked={preferences.general.checkUpdatesOnStartup}
           onChange={(checkUpdatesOnStartup) =>
             update("general", { ...preferences.general, checkUpdatesOnStartup })
           }
         />
-        <Toggle
-          label="离开性能页后继续采集"
+        <SettingToggle
+          id="background"
           checked={preferences.performance.backgroundEnabled}
           onChange={(backgroundEnabled) =>
             update("performance", { backgroundEnabled })

@@ -7,7 +7,7 @@ export function AppsSection() {
 
   return (
     <SettingsFieldset available={available}>
-      <SettingRow label="排序">
+      <SettingRow id="appSort">
         <SortPreferences section="apps" />
       </SettingRow>
     </SettingsFieldset>

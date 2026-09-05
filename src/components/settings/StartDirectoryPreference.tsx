@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { BlueprintSelect } from "@/components/BlueprintSelect";
+import { SettingRowLabel } from "@/components/settings/SettingRow";
 import { deviceStartDirectoryError } from "@/lib/settings";
 import { useSettingsStore } from "@/store/settings";
 
@@ -41,7 +42,7 @@ export function StartDirectoryPreference() {
   return (
     <div className="border-b border-rule py-3 text-xs">
       <div className="flex min-h-8 items-center justify-between gap-4">
-        <span>设备起始目录</span>
+        <SettingRowLabel id="startDirectory" />
         <BlueprintSelect
           value={mode}
           options={OPTIONS}

@@ -1,7 +1,9 @@
 import {
   SettingRow,
   SettingsFieldset,
-  Toggle,
+  SettingsGroup,
+  SettingsRowGate,
+  SettingToggle,
 } from "@/components/settings/SettingRow";
 import { SortPreferences } from "@/components/settings/SortPreferences";
 import { StartDirectoryPreference } from "@/components/settings/StartDirectoryPreference";
@@ -14,24 +16,33 @@ export function FilesSection() {
 
   return (
     <SettingsFieldset available={available}>
-      <SettingRow label="排序">
-        <SortPreferences section="files" />
-      </SettingRow>
-      <Toggle
-        label="文件夹优先"
-        checked={preferences.files.directoriesFirst}
-        onChange={(directoriesFirst) =>
-          update("files", { ...preferences.files, directoriesFirst })
-        }
-      />
-      <Toggle
-        label="显示隐藏文件"
-        checked={preferences.files.showHidden}
-        onChange={(showHidden) =>
-          update("files", { ...preferences.files, showHidden })
-        }
-      />
-      <StartDirectoryPreference />
+      <SettingsGroup
+        title="排序与显示"
+        rowIds={["fileSort", "directoriesFirst", "showHidden"]}
+      >
+        <SettingRow id="fileSort">
+          <SortPreferences section="files" />
+        </SettingRow>
+        <SettingToggle
+          id="directoriesFirst"
+          checked={preferences.files.directoriesFirst}
+          onChange={(directoriesFirst) =>
+            update("files", { ...preferences.files, directoriesFirst })
+          }
+        />
+        <SettingToggle
+          id="showHidden"
+          checked={preferences.files.showHidden}
+          onChange={(showHidden) =>
+            update("files", { ...preferences.files, showHidden })
+          }
+        />
+      </SettingsGroup>
+      <SettingsGroup title="起始目录" rowIds={["startDirectory"]}>
+        <SettingsRowGate id="startDirectory">
+          <StartDirectoryPreference />
+        </SettingsRowGate>
+      </SettingsGroup>
     </SettingsFieldset>
   );
 }

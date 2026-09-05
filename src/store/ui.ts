@@ -1,24 +1,16 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { DEFAULT_LOG_OPEN_BY_PANE, PANE_IDS, type PaneId } from "@/lib/panes";
 import type { SettingsSection } from "@/lib/settingsSections";
 
-export type PaneId = "tools" | "apps" | "files" | "codegen" | "decoder" | "perf";
+// Re-exported so existing consumers keep importing pane identity from the store.
+export { DEFAULT_LOG_OPEN_BY_PANE, type PaneId };
 
 export const MIN_LOG_HEIGHT = 120;
 export const DEFAULT_LOG_HEIGHT = 320;
 
 const LOG_WORKSPACE_RESERVED_HEIGHT = 220;
 const UI_STORAGE_KEY = "adb-gui-ui";
-const PANE_IDS: readonly PaneId[] = ["tools", "apps", "files", "codegen", "decoder", "perf"];
-
-export const DEFAULT_LOG_OPEN_BY_PANE: Readonly<Record<PaneId, boolean>> = {
-  tools: true,
-  apps: true,
-  files: true,
-  codegen: false,
-  decoder: false,
-  perf: false,
-};
 
 interface PersistedUiPreferences {
   activePane: PaneId;

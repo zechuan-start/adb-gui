@@ -1,5 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SettingsView } from "@/components/settings/SettingRow";
+import { AppsSection } from "@/components/settings/sections/AppsSection";
+import { CaptureSection } from "@/components/settings/sections/CaptureSection";
+import { CodegenSection } from "@/components/settings/sections/CodegenSection";
+import { FilesSection } from "@/components/settings/sections/FilesSection";
 import { GeneralSection } from "@/components/settings/sections/GeneralSection";
 import { LogcatSection } from "@/components/settings/sections/LogcatSection";
 import { defaultSettings, type SettingsPreferences } from "@/lib/settings";
@@ -88,5 +93,56 @@ describe("settings section ownership", () => {
       expect(markup).toContain('<fieldset class="min-w-0 disabled:opacity-50">');
       expect(markup).not.toContain("disabled=\"\"");
     }
+  });
+});
+
+describe("settings section rendering", () => {
+  it("renders every section from row metadata", () => {
+    settingsState.preferences = defaultSettings();
+    settingsState.available = true;
+    for (const [Section, sample] of [
+      [GeneralSection, "启动页面"],
+      [LogcatSection, "自动换行"],
+      [CaptureSection, "保存截图后打开图片"],
+      [FilesSection, "文件夹优先"],
+      [AppsSection, "排序"],
+      [CodegenSection, "分隔符"],
+    ] as const) {
+      const markup = renderToStaticMarkup(
+        <SettingsView value={{ visible: () => true, modified: () => false }}>
+          <Section />
+        </SettingsView>,
+      );
+      expect(markup).toContain(sample);
+    }
+  });
+
+  it("keeps only the searched rows and drops their empty groups", () => {
+    settingsState.preferences = defaultSettings();
+    settingsState.available = true;
+    const markup = renderToStaticMarkup(
+      <SettingsView
+        value={{ visible: (id) => id === "showHidden", modified: () => false }}
+      >
+        <FilesSection />
+      </SettingsView>,
+    );
+    expect(markup).toContain("显示隐藏文件");
+    expect(markup).toContain("排序与显示");
+    expect(markup).not.toContain("文件夹优先");
+    expect(markup).not.toContain("起始目录");
+  });
+
+  it("marks a row whose value left its default", () => {
+    settingsState.preferences = defaultSettings();
+    settingsState.available = true;
+    const markup = renderToStaticMarkup(
+      <SettingsView
+        value={{ visible: () => true, modified: (id) => id === "cozyRows" }}
+      >
+        <LogcatSection />
+      </SettingsView>,
+    );
+    expect(markup.match(/title="已改动"/g)).toHaveLength(1);
   });
 });

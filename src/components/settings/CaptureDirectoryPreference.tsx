@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { FolderOpen, RotateCcw } from "lucide-react";
+import { SettingRowLabel } from "@/components/settings/SettingRow";
 import {
   captureDestination,
   isTauriRuntime,
@@ -84,7 +85,7 @@ export function CaptureDirectoryPreference() {
     <div className="border-b border-rule py-3 text-xs">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <div className="font-medium">本机保存目录</div>
+          <SettingRowLabel id="captureDirectory" />
           <div className="mt-2 min-h-8 select-text break-all font-data text-ink2">
             {resolved ??
               directory ??

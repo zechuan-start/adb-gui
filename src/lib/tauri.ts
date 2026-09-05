@@ -224,6 +224,18 @@ export async function confirmDiscardRecording(serial: string, remotePath: string
   return confirm(`放弃当前未保存录屏并删除设备源文件?\n${serial}\n${remotePath}\n删除后无法恢复.`, { title: "放弃保存", kind: "warning", okLabel: "放弃保存", cancelLabel: "取消" });
 }
 
+export async function confirmRestoreDefaults(): Promise<boolean> {
+  const message = "恢复全部设置为默认值? 已保存的截图、录屏和文件不受影响.";
+  // The browser preview has no native dialog plugin but still owns a real confirm.
+  if (!isTauri()) return globalThis.confirm?.(message) ?? false;
+  return confirm(message, {
+    title: "恢复默认设置",
+    kind: "warning",
+    okLabel: "全部恢复",
+    cancelLabel: "取消",
+  });
+}
+
 export function isTauriRuntime(): boolean {
   return isTauri();
 }

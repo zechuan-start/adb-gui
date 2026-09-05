@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { defaultSettings, type SettingsPreferences } from "@/lib/settings";
 import {
+  defaultSettings,
+  logcatPreset,
+  type SettingsPreferences,
+} from "@/lib/settings";
+import {
+  defaultSettingsSnapshot,
+  findSettingsRow,
   findSettingsSection,
+  modifiedRowIds,
+  searchSettingsRows,
   resetSettingsSection,
   sectionResetPlan,
   SETTINGS_SECTIONS,
@@ -47,10 +55,14 @@ describe("settings sections", () => {
   });
 
   it("resolves a known section and rejects an unknown one", () => {
-    expect(findSettingsSection("capture")).toEqual({
-      id: "capture",
-      label: "截图与录屏",
-    });
+    const capture = findSettingsSection("capture");
+    expect(capture.id).toBe("capture");
+    expect(capture.label).toBe("截图与录屏");
+    expect(capture.groups.map((group) => group.title)).toEqual([
+      "保存位置",
+      "截图",
+      "录屏",
+    ]);
     expect(() =>
       findSettingsSection("performance" as SettingsSection),
     ).toThrow("未知设置分组");
@@ -104,3 +116,80 @@ describe("settings sections", () => {
     expect(reset.logcat.softWrap).toBe(true);
   });
 });
+
+describe("settings rows", () => {
+  const ROW_IDS = SETTINGS_SECTIONS.flatMap((section) =>
+    section.groups.flatMap((group) => group.rows.map((row) => row.id)),
+  );
+
+  it("keeps every row id unique and resolvable", () => {
+    expect(new Set(ROW_IDS).size).toBe(ROW_IDS.length);
+    for (const id of ROW_IDS) expect(findSettingsRow(id).id).toBe(id);
+    expect(() => findSettingsRow("nope")).toThrow("未知设置项");
+  });
+
+  it("matches labels, descriptions, keywords and group titles case-insensitively", () => {
+    expect(searchSettingsRows("  ")).toEqual([]);
+    expect(searchSettingsRows("没有这个设置")).toEqual([]);
+    expect(searchSettingsRows("耗电").map(({ row }) => row.id)).toEqual([
+      "background",
+    ]);
+    expect(searchSettingsRows("CODE128").map(({ row }) => row.id)).toEqual([
+      "codeType",
+    ]);
+    expect(searchSettingsRows("录屏").map(({ row }) => row.id)).toContain(
+      "recordingOpen",
+    );
+    const directories = searchSettingsRows("目录").map(({ row }) => row.id);
+    expect(directories).toContain("captureDirectory");
+    expect(directories).toContain("startDirectory");
+    expect(searchSettingsRows("生码").map(({ section }) => section.id)).toEqual([
+      "codegen",
+      "codegen",
+    ]);
+  });
+
+  it("marks only the rows whose stored value left its default", () => {
+    const base = defaultSettingsSnapshot();
+    expect(modifiedRowIds(base).size).toBe(0);
+
+    expect(modifiedRowIds({ ...base, theme: "dark" })).toEqual(
+      new Set(["theme"]),
+    );
+    expect(
+      modifiedRowIds({
+        ...base,
+        logOpenByPane: { ...base.logOpenByPane, codegen: true },
+      }),
+    ).toEqual(new Set(["logPanes"]));
+    expect(
+      modifiedRowIds({
+        ...base,
+        preferences: { ...base.preferences, logcat: logcatCompact(base) },
+      }),
+    ).toEqual(new Set(["logcatColumns"]));
+    expect(
+      modifiedRowIds({
+        ...base,
+        preferences: {
+          ...base.preferences,
+          capture: { directory: "/tmp/shots" },
+          apps: { ...base.preferences.apps, sortDirection: "desc" },
+        },
+      }),
+    ).toEqual(new Set(["captureDirectory", "appSort"]));
+  });
+
+  it("leaves the format row unmarked because the columns row owns that value", () => {
+    const base = defaultSettingsSnapshot();
+    const marks = modifiedRowIds({
+      ...base,
+      preferences: { ...base.preferences, logcat: logcatCompact(base) },
+    });
+    expect(marks.has("logcatFormat")).toBe(false);
+  });
+});
+
+function logcatCompact(base: ReturnType<typeof defaultSettingsSnapshot>) {
+  return { ...base.preferences.logcat, columns: logcatPreset("compact") };
+}

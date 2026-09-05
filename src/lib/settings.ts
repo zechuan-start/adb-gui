@@ -4,7 +4,7 @@ import {
   STANDARD_COLUMNS,
   type LogcatColumn,
 } from "@/lib/logcatView";
-import type { PaneId } from "@/store/ui";
+import type { PaneId } from "@/lib/panes";
 import {
   CODE_TYPE_OPTIONS,
   DEFAULT_GENERATOR_OPTIONS,

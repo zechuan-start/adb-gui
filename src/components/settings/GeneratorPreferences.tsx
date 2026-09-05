@@ -5,6 +5,7 @@ import {
   SEPARATOR_OPTIONS,
   isSeparatorMode,
 } from "@/lib/codeGenerator";
+import { findSettingsRow } from "@/lib/settingsSections";
 import { cn } from "@/lib/utils";
 import { useSettingsStore } from "@/store/settings";
 
@@ -13,6 +14,7 @@ export function GeneratorPreferences({
 }: {
   id?: string;
 }) {
+  const separator = findSettingsRow("separator");
   const preferences = useSettingsStore((state) => state.preferences.codegen);
   const available = useSettingsStore((state) => state.available);
   const update = useSettingsStore((state) => state.update);
@@ -51,7 +53,7 @@ export function GeneratorPreferences({
         ))}
       </div>
       <label className="mt-3 block text-xs text-ink3" htmlFor={id}>
-        分隔符
+        {separator.label}
       </label>
       <BlueprintSelect
         id={id}
@@ -65,6 +67,11 @@ export function GeneratorPreferences({
             update("codegen", { ...preferences, separatorMode: value });
         }}
       />
+      {separator.description && (
+        <p className="mt-1 text-[11px] leading-snug text-ink3">
+          {separator.description}
+        </p>
+      )}
       {preferences.separatorMode === "custom" && (
         <div className="mt-2">
           <input

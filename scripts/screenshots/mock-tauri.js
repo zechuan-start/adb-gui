@@ -542,6 +542,12 @@
     if (cmd === "plugin:updater|check") {
       return Promise.resolve(null);
     }
+    // plugin-dialog resolves confirm()/ask() by comparing the pressed button
+    // label, so the mock answers with the ok label to always confirm.
+    if (cmd === "plugin:dialog|message") {
+      const custom = args?.buttons?.OkCancelCustom ?? args?.buttons?.YesNoCancelCustom;
+      return Promise.resolve(Array.isArray(custom) ? custom[0] : "Ok");
+    }
     if (cmd.startsWith("plugin:window|") || cmd.startsWith("plugin:webview|")) {
       return Promise.resolve(false);
     }

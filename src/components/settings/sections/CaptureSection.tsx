@@ -1,5 +1,10 @@
 import { CaptureDirectoryPreference } from "@/components/settings/CaptureDirectoryPreference";
-import { SettingsFieldset, Toggle } from "@/components/settings/SettingRow";
+import {
+  SettingsFieldset,
+  SettingsGroup,
+  SettingsRowGate,
+  SettingToggle,
+} from "@/components/settings/SettingRow";
 import { useSettingsStore } from "@/store/settings";
 
 export function CaptureSection() {
@@ -9,26 +14,37 @@ export function CaptureSection() {
 
   return (
     <SettingsFieldset available={available}>
-      <CaptureDirectoryPreference />
-      <Toggle
-        label="保存截图后打开图片"
-        checked={preferences.screenshot.openAfterSave}
-        onChange={(openAfterSave) =>
-          update("screenshot", { ...preferences.screenshot, openAfterSave })
-        }
-      />
-      <Toggle
-        label="保存截图后定位所在目录"
-        checked={preferences.screenshot.revealAfterSave}
-        onChange={(revealAfterSave) =>
-          update("screenshot", { ...preferences.screenshot, revealAfterSave })
-        }
-      />
-      <Toggle
-        label="保存录屏后打开视频"
-        checked={preferences.recording.openAfterSave}
-        onChange={(openAfterSave) => update("recording", { openAfterSave })}
-      />
+      <SettingsGroup title="保存位置" rowIds={["captureDirectory"]}>
+        <SettingsRowGate id="captureDirectory">
+          <CaptureDirectoryPreference />
+        </SettingsRowGate>
+      </SettingsGroup>
+      <SettingsGroup
+        title="截图"
+        rowIds={["screenshotOpen", "screenshotReveal"]}
+      >
+        <SettingToggle
+          id="screenshotOpen"
+          checked={preferences.screenshot.openAfterSave}
+          onChange={(openAfterSave) =>
+            update("screenshot", { ...preferences.screenshot, openAfterSave })
+          }
+        />
+        <SettingToggle
+          id="screenshotReveal"
+          checked={preferences.screenshot.revealAfterSave}
+          onChange={(revealAfterSave) =>
+            update("screenshot", { ...preferences.screenshot, revealAfterSave })
+          }
+        />
+      </SettingsGroup>
+      <SettingsGroup title="录屏" rowIds={["recordingOpen"]}>
+        <SettingToggle
+          id="recordingOpen"
+          checked={preferences.recording.openAfterSave}
+          onChange={(openAfterSave) => update("recording", { openAfterSave })}
+        />
+      </SettingsGroup>
     </SettingsFieldset>
   );
 }
