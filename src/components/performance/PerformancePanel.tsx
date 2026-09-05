@@ -103,7 +103,7 @@ export function PerformancePanel({ active }: PerformancePanelProps) {
             </span>
             <button
               type="button"
-              onClick={() => openSettings("performance")}
+              onClick={() => openSettings("general")}
               aria-label="性能设置"
               title="性能设置"
               className="inline-flex h-7 w-7 items-center justify-center border border-rule text-ink2 hover:bg-hover hover:text-ink"

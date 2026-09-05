@@ -8,56 +8,43 @@
 lib/settings.ts            schema/解码/默认值/迁移        无 React 无 store
 lib/settingsSections.ts    分组元数据/重置计划/搜索/diff   无 React 无 store   (新增)
 store/settings.ts          读写与错误态                    zustand
-components/settings/       壳 + 七个分组组件 + 行原语       React
+components/settings/       壳 + 六个分组组件 + 行原语       React
 ~~~
 
-面板只做三件事: 按 id 取分组元数据、渲染对应分组组件、把重置计划交给 store 执行. 不再持有任何分组特例.
+面板只做三件事: 从注册表取分组顺序与标签、按穷尽分支渲染对应分组组件、按重置计划执行复位. 不再持有任何分组特例.
 
 ## 分组注册表
 
-新增 `src/lib/settingsSections.ts`, 只描述"有什么、归谁管、怎么复位", 不持有控件实现与 store 闭包.
+新增 `src/lib/settingsSections.ts`, 只描述"有哪些分组、按什么顺序、复位时动谁", 不含 React, 不持有 store 闭包.
 
 ~~~ts
-export type PreferenceOwner = "settings" | "ui" | "theme";
-
-export interface SettingsRowMeta {
-  id: string;                       // 稳定标识, 供测试/搜索/改动标记使用
-  label: string;
-  description?: string;
-  owner: PreferenceOwner;
-  keywords: readonly string[];      // 中文标签之外的检索词
-}
-
-export interface SettingsGroupMeta {
-  title?: string;                   // 组内子标题, 无标题即紧接分组顶部
-  rows: readonly SettingsRowMeta[];
-}
-
 export interface SettingsSectionMeta {
   id: SettingsSection;
   label: string;
-  icon: LucideIcon;
-  groups: readonly SettingsGroupMeta[];
 }
 
 export const SETTINGS_SECTIONS: readonly SettingsSectionMeta[];
 export function findSettingsSection(id: SettingsSection): SettingsSectionMeta;
 ~~~
 
-- `SETTINGS_SECTIONS` 顺序即导航顺序, 现有七组顺序与标签不变.
-- `findSettingsSection` 找不到即抛错, 取代 `SettingsDialog.tsx:269` 的兜底 `return`. 面板渲染时 `section` 一定非空(打开即有值), 未知值属于编程错误而非用户输入.
-- `icon` 仅用于竖直导航, 沿用 `IndexRail` 已用的 lucide 图标语汇, 不新增图标依赖.
-- 行元数据与控件实现分开: 组件负责画控件并写 store, 元数据负责被搜索、被 diff、决定 disabled. 两者靠 `id` 对齐, 由测试断言"每个分组组件渲染出的行 id 集合等于元数据声明", 防止两边分叉.
+- `SETTINGS_SECTIONS` 顺序即导航顺序: 通用 / 日志 / 截图与录屏 / 文件 / 应用 / 生码. "性能"并入"通用", 六组.
+- 分派不用查表, 用对 `SettingsSection` 联合类型的穷尽 `switch` + `assertNever(section)` 收尾: 新增分组却忘了写分支时 TypeScript 直接编译失败, 比运行期报错更早也更可靠, 同时彻底移除 `SettingsDialog.tsx:269` 的兜底 `return`.
+- `findSettingsSection` 供导航渲染取标签, 未知 id 抛错; 它面向的是编程错误, 不是用户输入.
+- 阶段一不引入行级元数据. 行的标签与说明留在各分组组件里, 避免出现一份没有消费者、又会和组件分叉的平行清单. 搜索与"已改动"标记需要行级元数据, 到阶段二和它们一起引入.
+- 图标同理属于阶段二的竖直导航, 阶段一的横向 tab 不需要.
 
 ## 存储归属与禁用范围
 
 现有 `<fieldset disabled={!available}>` 一刀切禁用整块内容, 越界禁用了不属于设置存储的主题与日志工作区可见性.
 
-- 移除内容区的整块 `fieldset`, 改为逐行 `disabled = row.owner === "settings" && !available`.
-- `owner` 取值与实际存储一一对应: `theme` -> `useThemeStore`; `ui` -> `adb-gui-ui` 的 `logOpenByPane`; 其余全部 `settings`.
+- 移除内容区外层的整块 `fieldset`, 改由各分组组件自己把**设置存储拥有的那部分**包进 `<fieldset disabled={!available}>`; 不属于设置存储的行留在 fieldset 之外.
+  - 通用: 主题行在外(theme 存储), 启动页面 / 启动时检查更新 / 切换页面时继续采集 在内.
+  - 日志: 显示格式、显示列、三个开关在内; "显示日志的工作区"在外(`adb-gui-ui`).
+  - 其余四组整体在内.
+- 用 `fieldset[disabled]` 而不是给每个控件传 `disabled`: 原生行为会禁用全部后代表单控件, 改动面小且不会漏掉某一个控件.
+- 归属只体现为禁用行为, **不在界面上加 owner 标签**; 需要解释时由错误横幅补一句"主题与日志面板可见性来自其他存储, 不受影响".
 - 子组件 `SortPreferences` / `GeneratorPreferences` 已各自按 `available` 处理, 保持不变, 不叠加外层禁用.
-- 错误横幅与"重新读取 / 恢复新设置默认值"保持现状, 只是不再连带锁住另外两个存储的控件.
-- 底部"恢复本组默认"的可用性改为: 该分组存在非 settings 归属的行时仍可用(只复位可复位的部分), 全部行都是 settings 归属时沿用 `!available` 禁用.
+- 底部"恢复本组默认"的可用性改为: 该分组的复位计划含 `resetTheme` 或 `resetLogPanes` 时始终可用(只复位可复位的部分), 否则沿用 `!available` 禁用.
 
 ## 重置计划
 
@@ -74,10 +61,13 @@ export function sectionResetPlan(section: SettingsSection): SectionResetPlan;
 ~~~
 
 - `capture -> { settingsKeys: ["capture", "screenshot", "recording"] }`, 消除 `lib/settings.ts:311-317` 的 if 特例.
-- `general -> { settingsKeys: ["general"], resetTheme: true }`, `logcat -> { settingsKeys: ["logcat"], resetLogPanes: true }`, 消除 `SettingsDialog.tsx:317-320` 的组件内特例.
-- `resetSettingsSection(settings, section)` 改为遍历 `settingsKeys` 覆盖默认值, 行为与现状逐项等价.
-- theme/logOpen 的实际复位放在一个 `applySectionReset(section)` 里(store 层或一个薄 hook), 组件只调用它, 不再 `getState()` 触达两个外部 store.
-- "全部恢复默认" = `restoreDefaults()` + 对所有分组的 `resetTheme`/`resetLogPanes` 求并集后执行一次, 不逐组重复写入.
+- `general -> { settingsKeys: ["general", "performance"], resetTheme: true }` —— 并组后"恢复本组默认"同时复位性能开关, 这是分组合并的直接后果, 已写进验收标准.
+- `logcat -> { settingsKeys: ["logcat"], resetLogPanes: true }`, 消除 `SettingsDialog.tsx:317-320` 的组件内特例.
+- `resetSettingsSection(settings, section)` 改为遍历 `settingsKeys` 覆盖默认值; 除 general 因并组多出 `performance` 外, 各组结果与现状逐项等价.
+- 组件不再知道"哪些组要顺带复位主题或日志面板", 只按计划执行:
+  设置可用时调 `resetSection(section)`, 随后按 `resetTheme` / `resetLogPanes` 复位另外两个存储.
+  这两步互不依赖 —— 设置写入失败不再连带吞掉主题复位, 这正是归属分离要的结果.
+- "全部恢复默认"(阶段二) = `restoreDefaults()` + 各分组 `resetTheme`/`resetLogPanes` 求并集后执行一次, 不逐组重复写入.
 
 ## 版本迁移
 
@@ -106,7 +96,6 @@ export function migrateSettings(version: number, settings: unknown): unknown;
 ├──────────┬──────────────────────────────────────────────────┤
 │ 通用   ● │  [错误横幅]                                       │
 │ 日志     │  子标题                                           │
-│ 性能     │   行: 标签 / 说明               控件              │
 │ 截图与录屏│   行: ...                                        │
 │ 文件     │                                                   │
 │ 应用     │                                                   │
@@ -126,7 +115,7 @@ export function migrateSettings(version: number, settings: unknown): unknown;
 
 ~~~ts
 interface SettingRowProps {
-  id: string;                 // 与 SettingsRowMeta.id 对齐
+  id: string;                 // 稳定标识, 供搜索与改动标记复用
   label: string;
   description?: string;
   control: ReactNode;         // 开关时传 checkbox, 其余传 select/按钮组/输入
@@ -166,9 +155,8 @@ components/settings/
   SettingsDialog.tsx          壳: 尺寸/焦点/tablist/错误横幅/底部按钮  (目标 <150 行)
   SettingRow.tsx              行原语                                   (新增)
   SettingsSearch.tsx          搜索框与结果列表                          (新增)
-  sections/GeneralSection.tsx        七个分组组件                       (新增)
+  sections/GeneralSection.tsx        六个分组组件 (含并入的性能开关)      (新增)
   sections/LogcatSection.tsx
-  sections/PerformanceSection.tsx
   sections/CaptureSection.tsx
   sections/FilesSection.tsx
   sections/AppsSection.tsx
@@ -179,17 +167,17 @@ components/settings/
   GeneratorPreferences.tsx
 ~~~
 
-- 改动集中在 `lib/settings.ts`(重置与迁移)、新增 `lib/settingsSections.ts`、`components/settings/**`; `store/settings.ts` 只增 `applySectionReset` 一类薄封装.
+- 改动集中在 `lib/settings.ts`(分组联合类型、重置、迁移)、新增 `lib/settingsSections.ts`、`components/settings/**`; `store/settings.ts` 不变 —— 复位另外两个存储由弹窗按计划执行, 设置 store 不反向依赖 theme/ui store.
 - 不动 `lib/tauri.ts`、`store/ui.ts` 的 `logOpenByPane` 结构、`store/theme.ts`、任何 Rust 文件.
-- 页面五处快捷入口 `openSettings(section)` 签名不变, 无需改调用方.
+- 页面快捷入口 `openSettings(section)` 签名不变; 因为并组, `PerformancePanel.tsx:106` 由 `openSettings("performance")` 改为 `openSettings("general")`, 其余四处不动.
 
 ## 测试策略
 
 前端无 jsdom, 交互不做 DOM 级断言, 把可测性放进纯函数与 SSR 快照.
 
-- 纯函数: 注册表顺序与 id 唯一性、`findSettingsSection` 未知 id 抛错、`sectionResetPlan` 七组映射、`resetSettingsSection` 与改造前逐组等价、`migrateSettings` 三种版本分支、`searchSettingsRows`、`modifiedRowIds`.
-- SSR 快照(`renderToStaticMarkup`): 每个分组组件渲染出的行 id 集合等于元数据声明; `!available` 时 settings 归属的控件带 `disabled`, theme/ui 归属的控件不带.
-- 等价性回归: 改造前后对同一份存量配置调用 `decodeSettings` + 七组 `resetSettingsSection`, 结果逐字段一致.
+- 纯函数: 注册表顺序与 id 唯一性、`findSettingsSection` 未知 id 抛错、`sectionResetPlan` 六组映射、`resetSettingsSection` 与改造前逐组等价、`migrateSettings` 三种版本分支、`searchSettingsRows`、`modifiedRowIds`.
+- SSR 快照(`renderToStaticMarkup`): 每个分组组件在 `!available` 时只把设置存储拥有的控件放进 disabled fieldset, 主题与日志工作区仍可用; 阶段二再补行级元数据与组件渲染结果的一致性断言.
+- 等价性回归: 改造前后对同一份存量配置调用 `decodeSettings` + 各组 `resetSettingsSection`, 结果逐字段一致(general 因并组多复位 `performance`, 单独断言).
 - 人工检查(改造后一次性): 900×600 与 1200×800 × 亮暗双主题的溢出/换行、竖直导航键盘可达、Escape 与焦点返回、五处快捷入口落点、损坏配置下主题仍可切换.
 
 ## 回滚

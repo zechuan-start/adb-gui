@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { SettingsSection } from "@/lib/settings";
+import type { SettingsSection } from "@/lib/settingsSections";
 
 export type PaneId = "tools" | "apps" | "files" | "codegen" | "decoder" | "perf";
 

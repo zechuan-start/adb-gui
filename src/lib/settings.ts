@@ -81,15 +81,6 @@ export interface SettingsPreferences {
   codegen: GeneratorOptions;
 }
 
-export type SettingsSection =
-  | "general"
-  | "logcat"
-  | "performance"
-  | "capture"
-  | "files"
-  | "apps"
-  | "codegen";
-
 export function defaultSettings(): SettingsPreferences {
   return {
     general: { startupPane: "last", checkUpdatesOnStartup: true },
@@ -172,13 +163,41 @@ function startDirectory(source: Record<string, unknown>): string | null {
   return path;
 }
 
+type SettingsMigration = (
+  settings: Record<string, unknown>,
+) => Record<string, unknown>;
+
+// Keyed by the version a step migrates away from. Add an entry in the same
+// change that raises SETTINGS_VERSION, so stored settings keep being readable.
+const MIGRATIONS: Readonly<Record<number, SettingsMigration>> = {};
+
+export function migrateSettings(
+  version: unknown,
+  settings: unknown,
+): Record<string, unknown> {
+  if (
+    typeof version !== "number" ||
+    !Number.isInteger(version) ||
+    version < 1 ||
+    version > SETTINGS_VERSION
+  ) {
+    throw new Error("不支持此设置版本");
+  }
+  let migrated = record(settings);
+  for (let from = version; from < SETTINGS_VERSION; from += 1) {
+    const migrate = MIGRATIONS[from];
+    if (!migrate) throw new Error("不支持此设置版本");
+    migrated = record(migrate(migrated));
+  }
+  return migrated;
+}
+
 export function decodeSettings(raw: string | null): SettingsPreferences {
   const defaults = defaultSettings();
   if (raw === null) return defaults;
   const envelope = record(JSON.parse(raw));
-  if (envelope.version !== SETTINGS_VERSION)
-    throw new Error("不支持此设置版本");
-  const source = record(envelope.settings);
+  // Migration only shapes the value in memory; it is persisted by the next write.
+  const source = migrateSettings(envelope.version, envelope.settings);
   const general = group(source.general);
   const logcat = group(source.logcat);
   const columns = group(logcat.columns);
@@ -301,21 +320,6 @@ export function decodeSettings(raw: string | null): SettingsPreferences {
       ),
     },
   };
-}
-
-export function resetSettingsSection(
-  settings: SettingsPreferences,
-  section: SettingsSection,
-): SettingsPreferences {
-  const defaults = defaultSettings();
-  if (section === "capture")
-    return {
-      ...settings,
-      capture: defaults.capture,
-      screenshot: defaults.screenshot,
-      recording: defaults.recording,
-    };
-  return { ...settings, [section]: defaults[section] };
 }
 
 export function logcatPreset(

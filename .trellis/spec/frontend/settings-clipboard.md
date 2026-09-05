@@ -8,6 +8,8 @@
 
 - `createSettingsStore(storageProvider)`, `useSettingsStore`, `requireSettings()`.
 - `openSettings(section)` / `closeSettings()` in `useUiStore`.
+- `SETTINGS_SECTIONS`, `findSettingsSection(id)`, `sectionResetPlan(section)`, `resetSettingsSection(settings, section)` live in `lib/settingsSections.ts` and own `SettingsSection`.
+- `migrateSettings(version, settings)` in `lib/settings.ts` runs before field validation.
 - `takeScreenshot(serial, ScreenshotBehavior, CaptureDestination)` requires a click-time snapshot; `startScreenRecord(serial, CaptureDestination)` freezes the directory; `stopScreenRecord(SaveRecordingRequest)` takes `{sessionId,behavior,target}` at each save attempt.
 - `createClipboardTransfer(deps).bind(device) / transfer(direction) / dispose()`.
 - Native clipboard wrappers belong in `lib/tauri.ts`.
@@ -18,6 +20,10 @@
 - Logcat and performance runtime stores must not own persisted view/background preferences. Do not persist rings, logs, queries, selection, pause flags, session IDs or clipboard text.
 - Default to last pane, startup update checks enabled, standard log columns, wrap off, crash folding on, cozy rows off, background metrics off, all three post-save actions on.
 - Derive standard/compact state from columns. Quick controls and dialog controls must write the same settings action.
+- `SETTINGS_SECTIONS` is the only source of section order and labels. Dispatch section content through an exhaustive `switch` over `SettingsSection` closed by `assertNever`; never add a fallback branch that renders one section for unmatched ids. `performance` is a preference key rendered inside the general section, not a section of its own.
+- Disabled scope follows storage ownership, not the dialog: each section wraps only the controls stored in `adb-gui-settings` in `disabled={!available}`. Theme (`useThemeStore`) and pane visibility (`adb-gui-ui`) stay editable while the settings file is unreadable, and carry no ownership badge in the UI.
+- `sectionResetPlan(section)` is the single source of reset scope, covering settings keys plus the theme and pane resets. Each store resets independently: an unavailable or failing settings write must not suppress the theme or pane reset of the same section.
+- `migrateSettings` accepts the current version as-is, walks the migration chain for older versions and throws when a step is missing, and refuses newer versions instead of reading their fields. Reading never writes; a migrated value reaches storage through the next user write. Add a migration step in the same change that raises `SETTINGS_VERSION`.
 - Apply the startup pane before React render. Share one update request across StrictMode effects; disabling permanently invalidates the current launch's check. Enabling during runtime does not initiate a check. Preserve user-initiated installation.
 - Keep the dialog state transient, use a modal focus boundary, restore trigger focus on close, and suppress workspace hotkeys while settings are open.
 - Send a click-time screenshot preference snapshot and a finalization-time recording snapshot to Rust. Compare requested flags with returned opened/revealed flags; saved files remain available if an opener fails.
@@ -44,6 +50,8 @@
 ## 6. Tests Required
 
 - Cover schema defaults, persistence restart, malformed values, write failures, group reset and runtime isolation.
+- Cover section order, unknown section rejection, every reset plan, and the migration branches (same / older / newer / non-integer version).
+- Cover ownership by SSR-rendering a section with `available: false` and asserting the theme buttons and pane checkboxes fall outside its disabled fieldset.
 - Cover startup zero-call and in-flight invalidation behavior.
 - Cover A -> B -> A, disconnect/authorization loss, transport replacement, stale finally and no retry after writes.
 - Check dialog layout at 1200x800 and 900x600 in both themes, focus trapping, Escape and keyboard tab navigation.

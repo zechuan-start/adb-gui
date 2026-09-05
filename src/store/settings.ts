@@ -2,12 +2,14 @@ import { create } from "zustand";
 import {
   decodeSettings,
   defaultSettings,
-  resetSettingsSection,
   SETTINGS_STORAGE_KEY,
   SETTINGS_VERSION,
   type SettingsPreferences,
-  type SettingsSection,
 } from "@/lib/settings";
+import {
+  resetSettingsSection,
+  type SettingsSection,
+} from "@/lib/settingsSections";
 
 type SettingsStorage = Pick<Storage, "getItem" | "setItem">;
 
