@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/settings-clipboard.md", "reason": "设置存储所有权/重置范围/焦点与迁移的既有合约, 重构不得改变其语义"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "行原语/分组组件拆分需遵循既有组件与 Tailwind 约定"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "禁用归属与重置计划涉及三个 store 的边界"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "注册表与迁移链的类型收敛要求"}
