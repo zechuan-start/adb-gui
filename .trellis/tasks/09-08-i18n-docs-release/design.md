@@ -9,9 +9,9 @@
 
 采用方案 1, 并额外用方案 2 做一次人工抽查, 确认两条路径结果一致.
 
-## 输出路径
+## 输出路径 (已确认双目录)
 
-脚本接受语言参数, 输出到 `docs/images/<locale>/`:
+脚本接受语言参数, 输出到 `docs/images/<locale>/`, 即 `docs/images/en/` 与 `docs/images/zh-CN/` 各七张. 顶层的旧 `docs/images/*.png` 在两套图生成后随同一提交删除, 避免仓库里留下一份没人引用的中文图:
 
 ```
 pnpm screenshots            # 两套都出

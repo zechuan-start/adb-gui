@@ -23,9 +23,10 @@
 - 不重写 README 的其他内容.
 - 不做第三语言.
 
-## 待确认
+## 已确认
 
-- 截图输出路径方案. 推荐 `docs/images/en/*.png` 与 `docs/images/zh-CN/*.png` 两个目录, 两份 README 各引各的; 代价是所有现有图片路径都要改. 备选是英文图沿用现路径, 中文图放 `docs/images/zh-CN/`, 改动更小但目录含义不对称.
+- 2026-09-08 用户确认截图输出采用 `docs/images/en/*.png` 与 `docs/images/zh-CN/*.png` 双目录, 两份 README 各引各的, 接受现有七张图片路径全部变更.
+- 旧的 `docs/images/*.png` 在双目录建立后删除, 不保留一份重复的顶层图片.
 
 ## 验收标准
 
