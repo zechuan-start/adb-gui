@@ -171,6 +171,45 @@ fn parse_devices_output(output: &str) -> Vec<DeviceInfo> {
     parse_devices_snapshot(output).0
 }
 
+fn split_device_row(line: &str) -> Option<(&str, &str, &str)> {
+    // ADB emits a connection state followed by key:value fields. Search from
+    // the right so state words inside a DNS-SD instance stay in the serial.
+    line.rmatch_indices(char::is_whitespace)
+        .find_map(|(index, _)| {
+            let serial = line[..index].trim_end();
+            let remainder = line[index..].trim_start();
+            let state_end = remainder
+                .find(char::is_whitespace)
+                .unwrap_or(remainder.len());
+            let state = &remainder[..state_end];
+            let properties = &remainder[state_end..];
+            let is_state = matches!(
+                state,
+                "device"
+                    | "offline"
+                    | "bootloader"
+                    | "host"
+                    | "recovery"
+                    | "rescue"
+                    | "sideload"
+                    | "unauthorized"
+                    | "authorizing"
+                    | "connecting"
+                    | "detached"
+                    | "any"
+                    | "unknown"
+            );
+            let valid_properties = properties
+                .split_whitespace()
+                .all(|field| field.contains(':'));
+            // Preserve the existing token for ADB's multiword permission diagnostic.
+            let no_permissions =
+                state == "no" && properties.split_whitespace().next() == Some("permissions");
+            (!serial.is_empty() && ((is_state && valid_properties) || no_permissions))
+                .then_some((serial, state, properties))
+        })
+}
+
 fn parse_devices_snapshot(output: &str) -> (Vec<DeviceInfo>, HashSet<String>) {
     let mut devices = Vec::new();
     for line in output.lines().skip(1) {
@@ -178,18 +217,17 @@ fn parse_devices_snapshot(output: &str) -> (Vec<DeviceInfo>, HashSet<String>) {
         if line.is_empty() {
             continue;
         }
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 2 {
+        let Some((serial, state, properties)) = split_device_row(line) else {
             continue;
-        }
-        let serial = parts[0].to_string();
-        let state = parts[1].to_string();
+        };
+        let serial = serial.to_string();
+        let state = state.to_string();
         let alias_identity = mdns_alias_identity(&serial).map(str::to_owned);
         let is_network = serial.contains(':') || alias_identity.is_some();
 
         let mut model = String::new();
         let mut transport = String::new();
-        for part in parts.iter().skip(2) {
+        for part in properties.split_whitespace() {
             if let Some(v) = part.strip_prefix("model:") {
                 model = v.to_string();
             } else if let Some(v) = part.strip_prefix("transport_id:") {
@@ -274,6 +312,87 @@ mod tests {
     };
     use std::collections::{HashMap, HashSet};
     use std::sync::Mutex;
+
+    #[test]
+    fn preserves_spaced_mdns_serials_for_network_and_physical_identity() {
+        let serial = "adb-275179f2-BYZBAE (2)._adb-tls-connect._tcp";
+        let output = format!(
+            "List of devices attached\n{serial} device product:vermeer model:23113RKC6C device:vermeer transport_id:2\nadb-275179f2-BYZBAE._adb-tls-connect._tcp device product:vermeer model:23113RKC6C device:vermeer transport_id:1\n"
+        );
+
+        let (mut devices, present_serials) = parse_devices_snapshot(&output);
+        assert_eq!(devices.len(), 2);
+        assert_eq!(devices[0].serial, serial);
+        assert_eq!(devices[0].state, "device");
+        assert_eq!(devices[0].model, "23113RKC6C");
+        assert_eq!(devices[0].transport, "2");
+        assert!(devices[0].is_network);
+        assert_eq!(devices[0].alias_identity.as_deref(), Some(serial));
+        assert!(present_serials.contains(serial));
+
+        let cache = Mutex::new(HashMap::new());
+        for device in &mut devices {
+            device.device_id =
+                resolve_device_id_with(&cache, &device.serial, &device.state, |_| {
+                    "275179f2".to_string()
+                });
+            assert_eq!(device.device_id.as_deref(), Some("275179f2"));
+        }
+        assert!(cache.lock().unwrap().contains_key(serial));
+    }
+
+    #[test]
+    fn preserves_internal_spacing_and_state_words_in_mdns_names() {
+        let serial = "我的  device no permissions Phone (2)._adb-tls-connect._tcp";
+        for state in ["device", "offline", "unauthorized"] {
+            let output =
+                format!("List of devices attached\n{serial}\t{state} model:Phone transport_id:7\n");
+            let devices = parse_devices_output(&output);
+            assert_eq!(devices.len(), 1);
+            assert_eq!(devices[0].serial, serial);
+            assert_eq!(devices[0].state, state);
+            assert!(devices[0].is_network);
+        }
+    }
+
+    #[test]
+    fn deduplicates_port_aliases_without_truncating_spaced_serials() {
+        let serial = "phone (2)._adb-tls-connect._tcp";
+        let alias = format!("{serial}:5555");
+        for rows in [
+            format!("{serial} device transport_id:1\n{alias} offline transport_id:2"),
+            format!("{alias} offline transport_id:2\n{serial} device transport_id:1"),
+        ] {
+            let (devices, present_serials) =
+                parse_devices_snapshot(&format!("List of devices attached\n{rows}\n"));
+            assert_eq!(devices.len(), 1);
+            assert_eq!(devices[0].serial, alias);
+            assert_eq!(devices[0].state, "offline");
+            assert_eq!(devices[0].alias_identity.as_deref(), Some(serial));
+            assert!(present_serials.contains(serial));
+            assert!(present_serials.contains(&alias));
+        }
+    }
+
+    #[test]
+    fn keeps_padded_usb_rows_and_permission_diagnostics_compatible() {
+        let output = "List of devices attached\n\
+USB123                 device usb:1-2 model:Phone transport_id:3\n\
+USB456                 no permissions (missing udev rules); see [http://developer.android.com/tools/device.html] usb:1-3 transport_id:4\n\
+emulator-5554\tbootloader\n\
+malformed\n";
+        let devices = parse_devices_output(output);
+        assert_eq!(devices.len(), 3);
+        assert_eq!(devices[0].serial, "USB123");
+        assert_eq!(devices[0].state, "device");
+        assert_eq!(devices[0].model, "Phone");
+        assert!(!devices[0].is_network);
+        assert_eq!(devices[1].serial, "USB456");
+        assert_eq!(devices[1].state, "no");
+        assert_eq!(devices[1].transport, "4");
+        assert_eq!(devices[2].serial, "emulator-5554");
+        assert_eq!(devices[2].state, "bootloader");
+    }
 
     #[test]
     fn collapses_ambiguous_mdns_service_serial_when_port_alias_exists() {

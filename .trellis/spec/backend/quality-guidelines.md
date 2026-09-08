@@ -1024,6 +1024,7 @@ Compatibility fallback is valid only for a proven unsupported option. Device and
 ### 3. Contracts
 
 - Parse every valid `adb devices -l` row before deduplication so matching is independent of row order.
+- Split a long-list row at the ADB connection-state boundary, before its `key:value` metadata. Preserve internal spaces, repeated spaces, Unicode, and state-like words in the serial; do not take the first two whitespace tokens as serial/state or rebuild the serial by joining tokens. Search from the right and require trailing metadata fields so words inside a DNS-SD instance cannot become the state. Keep the existing `no` token for ADB's multiword `no permissions` diagnostic.
 - Rust is the only owner of network classification, alias identity, and physical-device identity. Serialize `is_network`, `alias_identity`, and `device_id` with every `DeviceInfo`; frontend code must consume those fields and must not parse serial strings or issue a second identity lookup.
 - Recognize only connect services ending in `._adb-tls-connect._tcp` or `._adb._tcp`. Do not fold `._adb-tls-pairing._tcp` or arbitrary serials.
 - Parse a possible alias from the final `:<port>` segment. The port must be a decimal value in `1..=65535`, and the complete base before that segment must end with a supported connect-service suffix.
@@ -1036,6 +1037,7 @@ Compatibility fallback is valid only for a proven unsupported option. Device and
 
 - Supported bare service plus valid port alias -> omit the bare row and keep the alias.
 - Supported bare service without an alias -> keep the bare row.
+- A service such as `adb-275179f2-BYZBAE (2)._adb-tls-connect._tcp` -> preserve the complete serial, report `device` and `is_network: true`, then resolve its hardware identity through the existing ADB lookup. Distinct service names with the same `device_id` merge in the frontend.
 - Port `0`, overflow above `65535`, or a nonnumeric suffix -> do not treat the row as an alias.
 - Pairing service or arbitrary serial with a port -> keep both rows.
 - Multiple valid port aliases for one base -> remove the bare row and preserve every alias in input order.
@@ -1058,6 +1060,7 @@ Compatibility fallback is valid only for a proven unsupported option. Device and
 - Unit-test pairing exclusion, service-like text inside an instance name, and online-bare/offline-alias behavior.
 - Unit-test serialized `is_network` / `alias_identity` / `device_id`, frontend bare-to-alias and old-alias-to-new-alias migration, offline bare rejection, and unrelated-network non-migration.
 - Run the 60-second Rust test gate, target-file rustfmt, and Clippy.
+- Cover a spaced `(2)` instance, repeated spaces and Unicode, a name containing `device` or `no permissions`, both orders of a spaced bare/port pair, and unchanged padded USB/no-permissions rows. Verify that both live service serials resolve to the same hardware identity and appear as one WiFi device in native smoke testing.
 - Real-device smoke must prove the raw bare serial fails with ADB ambiguity, the retained `:port` alias returns a foreground Activity, and the Tauri device selector contains no duplicate bare option.
 
 ### 7. Wrong vs Correct
