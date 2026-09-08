@@ -762,3 +762,39 @@ Created the feature branch and committed unified preferences, manual clipboard t
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: 归档已交付的设置与剪贴板任务
+
+**Date**: 2026-09-08
+**Task**: 归档已交付的设置与剪贴板任务
+**Branch**: `claude/bilingual-project-plan-ng1o7s`
+
+### Summary
+
+按用户要求归档 2 个父任务与 4 个子任务, 更新旧交付状态与归档路径引用. 实现与验收基线为 2026-09-05, 代码已包含于 main 和当前分支. 保留原有未覆盖平台与故障注入说明. 本次仅文档和任务状态整理, 不重跑产品测试, 不提交 Git.
+
+### Main Changes
+
+- 归档统一设置与手动剪贴板, 第二批设置与个性化偏好两个父任务及其四个子任务.
+- 更新状态为 completed, 归档日期为 2026-09-08, 保留父子关系与 2026-09-05 验收基线.
+- 修正归档后的文件引用及过时交付状态, 未修改产品代码或双语规划任务.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `495f097` | feat: add unified settings and clipboard transfers (历史实现提交) |
+
+### Testing
+
+- [OK] 六个任务的状态, 日期, 父子关系, JSON/JSONL 和文档引用检查通过.
+- [OK] git diff --check 通过; HEAD 和暂存区未变化. 本次未重跑产品测试.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 归档完成, 文档改动保留在工作区, 尚未提交 Git.

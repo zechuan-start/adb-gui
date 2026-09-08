@@ -3,7 +3,7 @@
   "name": "browsing-codegen-settings",
   "title": "文件应用与生码偏好",
   "description": "统一保存文件/应用排序, 文件隐藏显示与起始目录, 生码参数; 页面和设置同源且保留运行内容.",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": "fullstack",
   "scope": "settings",
   "package": null,
@@ -11,11 +11,11 @@
   "creator": "qi",
   "assignee": "qi",
   "createdAt": "2026-09-05",
-  "completedAt": null,
+  "completedAt": "2026-09-08",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
+  "commit": "495f097",
   "pr_url": null,
   "subtasks": [],
   "children": [],
@@ -33,6 +33,6 @@
     "src/lib/codeGenerator.ts",
     "src/store/codeGenerator.ts"
   ],
-  "notes": "第一实施子任务, 已于 2026-09-05 按用户授权完成实现和独立检查, validation.md 记录实际结果和覆盖上限. 已允许目录子任务继续串行实施. 当前 main 保留未提交修改, 用户未要求提交或归档.",
+  "notes": "第一实施子任务, 已于 2026-09-05 按用户授权完成实现和独立检查, validation.md 记录实际结果和覆盖上限. 已允许目录子任务继续串行实施. 实现已于 2026-09-05 提交 (`495f097`), 2026-09-08 按用户要求归档.",
   "meta": {}
 }

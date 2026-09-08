@@ -3,7 +3,7 @@
   "name": "unified-settings",
   "title": "统一设置入口与偏好持久化",
   "description": "统一页面长期偏好与设置入口, 保留已有用户配置, 提供截图录屏行为及启动偏好.",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": "fullstack",
   "scope": "settings",
   "package": null,
@@ -11,11 +11,11 @@
   "creator": "qi",
   "assignee": "qi",
   "createdAt": "2026-09-05",
-  "completedAt": null,
+  "completedAt": "2026-09-08",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
+  "commit": "495f097",
   "pr_url": null,
   "subtasks": [],
   "children": [],
@@ -33,6 +33,6 @@
     "src-tauri/src/commands/screenshot.rs",
     "src-tauri/src/commands/screen_record.rs"
   ],
-  "notes": "统一设置已实现, 偏好存储/启动/捕获行为/桌面键盘和布局检查通过. 原生截图四组合, 录屏开关和自然结束已验证. 完整原生性能组合等未覆盖项见总任务 validation.md. 当前未提交/未归档.",
+  "notes": "统一设置已实现, 偏好存储/启动/捕获行为/桌面键盘和布局检查通过. 原生截图四组合, 录屏开关和自然结束已验证. 完整原生性能组合等未覆盖项见总任务 validation.md. 实现已于 2026-09-05 提交 (`495f097`), 2026-09-08 按用户要求归档.",
   "meta": {}
 }

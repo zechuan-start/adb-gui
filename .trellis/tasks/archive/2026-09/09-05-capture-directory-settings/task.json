@@ -3,7 +3,7 @@
   "name": "capture-directory-settings",
   "title": "截图录屏保存目录与失败保留",
   "description": "在统一设置选择公共本机截图录屏目录, 收敛目录解析, 配套失败保留源文件及手动重试/另存为/放弃.",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": "fullstack",
   "scope": "capture",
   "package": null,
@@ -11,11 +11,11 @@
   "creator": "qi",
   "assignee": "qi",
   "createdAt": "2026-09-05",
-  "completedAt": null,
+  "completedAt": "2026-09-08",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
+  "commit": "495f097",
   "pr_url": null,
   "subtasks": [],
   "children": [],
@@ -39,6 +39,6 @@
     "README.md",
     "README.zh-CN.md"
   ],
-  "notes": "第二实施子任务, 已于 2026-09-05 在浏览/生码子任务独立检查后完成实现及 Pixel_10 原生验收. 目录冻结、失败保留、重试/另存为/取消/确认放弃、源清理与持久化均有实测, 见 validation.md. 当前 main 保留未提交修改, 用户未要求提交或归档.",
+  "notes": "第二实施子任务, 已于 2026-09-05 在浏览/生码子任务独立检查后完成实现及 Pixel_10 原生验收. 目录冻结、失败保留、重试/另存为/取消/确认放弃、源清理与持久化均有实测, 见 validation.md. 实现已于 2026-09-05 提交 (`495f097`), 2026-09-08 按用户要求归档.",
   "meta": {}
 }
