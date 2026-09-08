@@ -546,7 +546,9 @@ Preserve source ownership until a complete local file has been published.
 - `path = None` means the backend-owned default `/sdcard/Download`; the frontend must not define another default-path constant.
 - Remote paths are absolute, reject NUL, collapse repeated separators and `.`, and reject `..` that crosses root.
 - Shell-bound paths use the shared POSIX single-quote encoder. Frontend strings never become raw shell fragments.
-- Directory enumeration uses `adb shell -T` with a controlled script and NUL-delimited `kind, size, modified_at, absolute_path` records. Require non-PTY shell v2 so remote exit status and stderr remain separate from binary stdout. `exec-out` can merge remote errors and report exit code zero. Never parse `ls` columns or use a PTY for this protocol.
+- Directory enumeration uses `adb shell -T` with a controlled script and bounded `stat -c '%f %s %Y'` batches. Flush after 128 paths or after accumulated path bytes (including NUL terminators) reach 16 KiB; the byte threshold may be exceeded by the last path. Set `LC_ALL=C` for byte counting and leave argv/environment headroom. Never spawn `stat` per entry.
+- Encode each batch as newline-terminated numeric metadata rows, one NUL, then the same number of NUL-terminated absolute paths in argv order. Toybox `stat -c` does not decode `\0` escapes, and `%x00` means access time plus literal `00`; emit NULs with shell `printf`. Never split filenames on whitespace or newlines. Decode hexadecimal mode bits without following symlinks, sizes as `u64`, and timestamps as `i64`; keep the public `DeviceFileEntry` payload unchanged.
+- Require non-PTY shell v2 so remote exit status and stderr remain separate from binary stdout. Reject the entire listing on a failed batch, even if earlier batches wrote stdout. `exec-out` can merge remote errors and report exit code zero. Never parse `ls` columns or use a PTY for this protocol.
 - Return validated entries in source order. `projectDeviceFiles(entries, preferences)` owns frontend sorting/filtering; default to directories first and case-insensitive names, preserve path identities.
 - `previewable` is a backend hint based on file kind and extension. Preview validity still depends on backend magic-byte verification.
 - Upload accepts one local ordinary file per command. The frontend serializes multi-file batches and preserves per-item results.
@@ -591,6 +593,7 @@ Preserve source ownership until a complete local file has been published.
 ### 6. Tests Required
 
 - Rust unit tests assert path normalization/root rejection, shell quoting, directory record integrity including trailing CR/LF, source order, and hidden/UTF-8 names. Frontend tests own display sorting. Verify raw NUL preservation and nonzero missing-directory status on Android when changing transport flags.
+- For listing changes, test metadata/path count mismatches, multiple batches, numeric failures, names containing quotes/tabs/CR/LF, symlinks, and sizes above 4 GiB. Exercise the actual shell script with a stat test double to verify bounded argv, no stat call for an empty directory, and nonzero status for stat failure. Confirm real Toybox output and metadata equality on Android.
 - Rust unit tests assert numbering before extensions, preview magic-byte recognition, and device-side `20 MiB + 1` output capping.
 - Frontend reducer/helper tests assert device reset, current-context loading versus loaded empty state, latest-request wins for listings, stale-preview rejection, mixed transfer results, and failure-count summaries.
 - Frontend operation-context tests assert stale snapshots are rejected after A -> B -> A and file-workspace unmount invalidation.
@@ -598,26 +601,12 @@ Preserve source ownership until a complete local file has been published.
 - Browser smoke: file tab, no-device state, 1200x800 and 900x600 layout, light/dark themes, and no overlap.
 - Real-device smoke: default listing, absolute path navigation, hidden/UTF-8 names, folder collision, auto-renamed multi-upload, save-dialog download, preview formats/limit, permission failure, and device switching.
 
-### 7. Wrong vs Correct
+### 7. Performance Validation
 
-#### Wrong
-
-```typescript
-await invoke("upload_device_file", {
-  serial,
-  localPath,
-  remotePath: `${currentPath}/${localFileName}`,
-});
-```
-
-#### Correct
-
-```typescript
-const result = await uploadDeviceFile(serial, localPath, currentDirectory.path);
-// Use result.remote_path: the backend selected and validated the final name.
-```
-
-The backend owns normalized device paths, shell quoting, collision checks, final names, and preview validation. The frontend owns selection, rendering, sequential batch orchestration, and stale-response rejection.
+- When changing directory enumeration, compare baseline and candidate scripts on the same device, transport, and unchanged directory contents. Repeat measurements for both versions and report sample counts and medians.
+- Measure host command wall time including ADB startup and transport. Measure UI latency separately when making responsiveness claims.
+- Verify identical paths, kinds, sizes, and modification times before interpreting timing improvements. Include empty and multi-batch directories, unusual filenames, symlinks, large files, and explicit failure cases from Tests Required; remove temporary device fixtures afterward.
+- Keep dated results, baseline revisions, device/Android/Toybox versions, transport details, and validation limits in the issue or task validation record. Do not encode device-specific timings or a single run's speedup as a permanent spec threshold.
 
 ## Scenario: Streaming Device Metrics Session
 

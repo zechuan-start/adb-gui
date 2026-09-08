@@ -14,7 +14,10 @@ const MAX_IMAGE_PREVIEW_BYTES: u64 = 20 * 1024 * 1024;
 const MAX_IMAGE_PREVIEW_READ_BYTES: u64 = MAX_IMAGE_PREVIEW_BYTES + 1;
 const MAX_AUTORENAME_ATTEMPTS: usize = 10_000;
 
-const LIST_DIRECTORY_SCRIPT: &str = r#"target=$1
+// Toybox stat does not interpret NUL escapes. Each batch contains newline-delimited
+// numeric metadata, a NUL, then matching NUL-delimited paths in the same order.
+const LIST_DIRECTORY_SCRIPT: &str = r#"export LC_ALL=C
+target=$1
 if [ ! -d "$target" ]; then
   echo "路径不是可访问目录: $target" >&2
   exit 2
@@ -27,23 +30,29 @@ prefix=$target
 if [ "$prefix" = "/" ]; then
   prefix=""
 fi
+emit_batch() {
+  stat -c '%f %s %Y' "$@" || return 3
+  printf '\000'
+  printf '%s\000' "$@"
+}
+set --
+batch_bytes=0
 for item in "$prefix"/* "$prefix"/.[!.]* "$prefix"/..?*; do
   if [ ! -e "$item" ] && [ ! -L "$item" ]; then
     continue
   fi
-  if [ -L "$item" ]; then
-    kind=symlink
-  elif [ -d "$item" ]; then
-    kind=directory
-  elif [ -f "$item" ]; then
-    kind=file
-  else
-    kind=other
+  set -- "$@" "$item"
+  batch_bytes=$((batch_bytes + ${#item} + 1))
+  # Bound argv bytes and pointer count, leaving room for the environment.
+  if [ "$#" -ge 128 ] || [ "$batch_bytes" -ge 16384 ]; then
+    emit_batch "$@" || exit 3
+    set --
+    batch_bytes=0
   fi
-  size=$(stat -c %s "$item") || exit 3
-  modified=$(stat -c %Y "$item") || exit 3
-  printf '%s\000%s\000%s\000%s\000' "$kind" "$size" "$modified" "$item"
-done"#;
+done
+if [ "$#" -gt 0 ]; then
+  emit_batch "$@" || exit 3
+fi"#;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -286,47 +295,61 @@ fn parse_directory_records(output: &[u8], directory: &str) -> Result<Vec<DeviceF
         return Err("设备目录记录缺少结束分隔符".to_string());
     }
 
-    let mut fields: Vec<&[u8]> = output.split(|byte| *byte == 0).collect();
-    fields.pop();
-    if !fields.len().is_multiple_of(4) {
-        return Err(format!("设备目录记录字段数量无效: {}", fields.len()));
-    }
-
-    let mut entries = Vec::with_capacity(fields.len() / 4);
-    let (records, remainder) = fields.as_chunks::<4>();
-    debug_assert!(remainder.is_empty());
-    for record in records {
-        let kind = match utf8_field(record[0], "类型")? {
-            "directory" => DeviceFileKind::Directory,
-            "file" => DeviceFileKind::File,
-            "symlink" => DeviceFileKind::Symlink,
-            "other" => DeviceFileKind::Other,
-            value => return Err(format!("未知设备文件类型: {value}")),
-        };
-        let size = utf8_field(record[1], "大小")?
-            .parse::<u64>()
-            .map_err(|error| format!("设备文件大小无效: {error}"))?;
-        let modified_at = utf8_field(record[2], "修改时间")?
-            .parse::<i64>()
-            .map_err(|error| format!("设备文件修改时间无效: {error}"))?;
-        let path = normalize_device_path(utf8_field(record[3], "路径")?)?;
-
-        if device_parent_path(&path).as_deref() != Some(directory) {
-            return Err(format!("设备返回了目录范围外的路径: {path}"));
+    let mut fields = output[..output.len() - 1].split(|byte| *byte == 0);
+    let mut entries = Vec::new();
+    while let Some(metadata) = fields.next() {
+        let metadata = utf8_field(metadata, "元数据")?;
+        let rows = metadata
+            .strip_suffix('\n')
+            .filter(|rows| !rows.is_empty())
+            .ok_or("设备目录批次元数据无效")?;
+        for row in rows.split('\n') {
+            let path = fields.next().ok_or("设备目录批次缺少路径")?;
+            entries.push(parse_directory_entry(row, path, directory)?);
         }
-        let name = device_file_name(&path)?;
-        let previewable = matches!(kind, DeviceFileKind::File) && is_previewable_name(&name);
-        entries.push(DeviceFileEntry {
-            name,
-            path,
-            kind,
-            size,
-            modified_at,
-            previewable,
-        });
     }
 
     Ok(entries)
+}
+
+fn parse_directory_entry(
+    metadata: &str,
+    path: &[u8],
+    directory: &str,
+) -> Result<DeviceFileEntry, String> {
+    let fields: Vec<&str> = metadata.split(' ').collect();
+    let [mode, size, modified_at] = fields.as_slice() else {
+        return Err("设备文件元数据字段数量无效".to_string());
+    };
+    let mode =
+        u32::from_str_radix(mode, 16).map_err(|error| format!("设备文件模式无效: {error}"))?;
+    let kind = match mode & 0o170000 {
+        0o040000 => DeviceFileKind::Directory,
+        0o100000 => DeviceFileKind::File,
+        0o120000 => DeviceFileKind::Symlink,
+        0o010000 | 0o020000 | 0o060000 | 0o140000 => DeviceFileKind::Other,
+        _ => return Err(format!("未知设备文件模式: {mode:x}")),
+    };
+    let size = size
+        .parse::<u64>()
+        .map_err(|error| format!("设备文件大小无效: {error}"))?;
+    let modified_at = modified_at
+        .parse::<i64>()
+        .map_err(|error| format!("设备文件修改时间无效: {error}"))?;
+    let path = normalize_device_path(utf8_field(path, "路径")?)?;
+    if device_parent_path(&path).as_deref() != Some(directory) {
+        return Err(format!("设备返回了目录范围外的路径: {path}"));
+    }
+    let name = device_file_name(&path)?;
+    let previewable = matches!(kind, DeviceFileKind::File) && is_previewable_name(&name);
+    Ok(DeviceFileEntry {
+        name,
+        path,
+        kind,
+        size,
+        modified_at,
+        previewable,
+    })
 }
 
 fn trim_protocol_line_endings(mut output: &[u8]) -> &[u8] {
@@ -698,17 +721,9 @@ mod tests {
     #[test]
     fn parses_nul_delimited_directory_records_in_source_order() {
         let output = concat!(
-            "file\0",
-            "4\0",
-            "1700000000\0",
+            "81a4 4 1700000000\n41ed 4096 1700000001\n81a4 8 1700000002\n\0",
             "/sdcard/Download/z file.txt\0",
-            "directory\0",
-            "4096\0",
-            "1700000001\0",
             "/sdcard/Download/图片\0",
-            "file\0",
-            "8\0",
-            "1700000002\0",
             "/sdcard/Download/.hidden\0"
         );
 
@@ -723,14 +738,27 @@ mod tests {
 
     #[test]
     fn rejects_malformed_or_out_of_scope_directory_records() {
-        assert!(parse_directory_records(b"file\0", "/sdcard/Download").is_err());
-        let outside = b"file\0\x31\0\x31\0/sdcard/Pictures/photo.png\0";
-        assert!(parse_directory_records(outside, "/sdcard/Download").is_err());
+        for output in [
+            &b"81a4 1 1\n\0/sdcard/Pictures/photo.png\0"[..],
+            b"81a4 1 1\n\0",
+            b"81a4 1 1\n81a4 2 2\n\0/sdcard/Download/a\0",
+            b"81a4 1 1\n\0/sdcard/Download/a\0/sdcard/Download/b\0",
+            b"\0",
+            b"81a4 1 1\0/sdcard/Download/a\0",
+            b"81a4 1\n\0/sdcard/Download/a\0",
+            b"invalid 1 1\n\0/sdcard/Download/a\0",
+            b"0 1 1\n\0/sdcard/Download/a\0",
+            b"81a4 -1 1\n\0/sdcard/Download/a\0",
+            b"81a4 1 invalid\n\0/sdcard/Download/a\0",
+            b"81a4 1 1\n\0/sdcard/Download/\xff\0",
+        ] {
+            assert!(parse_directory_records(output, "/sdcard/Download").is_err());
+        }
     }
 
     #[test]
     fn tolerates_only_trailing_line_endings_after_directory_records() {
-        let output = b"file\0\x31\0\x31\0/sdcard/Download/photo.png\0\r\n";
+        let output = b"81a4 1 1\n\0/sdcard/Download/photo.png\0\r\n";
         let entries = parse_directory_records(output, "/sdcard/Download").unwrap();
 
         assert_eq!(entries.len(), 1);
@@ -739,10 +767,126 @@ mod tests {
             .unwrap()
             .is_empty());
         assert!(parse_directory_records(
-            b"file\0\x31\0\x31\0/sdcard/Download/photo.png\0 ",
+            b"81a4 1 1\n\0/sdcard/Download/photo.png\0 ",
             "/sdcard/Download"
         )
         .is_err());
+    }
+
+    #[test]
+    fn parses_multiple_batches_with_special_names_and_wide_metadata() {
+        let output = concat!(
+            "81a4 5368709120 -1\na1ff 7 1700000000\n\0",
+            "/sdcard/Download/空 格'\"\t\r\n.png\0",
+            "/sdcard/Download/broken-link\0",
+            "11a4 0 1700000001\n\0/sdcard/Download/pipe\0"
+        );
+        let entries = parse_directory_records(output.as_bytes(), "/sdcard/Download").unwrap();
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].name, "空 格'\"\t\r\n.png");
+        assert_eq!(entries[0].size, 5 * 1024 * 1024 * 1024);
+        assert_eq!(entries[0].modified_at, -1);
+        assert!(entries[0].previewable);
+        assert_eq!(entries[1].kind, DeviceFileKind::Symlink);
+        assert!(!entries[1].previewable);
+        assert_eq!(entries[2].kind, DeviceFileKind::Other);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_script_batches_paths_and_preserves_shell_arguments() {
+        use std::os::unix::fs::symlink;
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("files ' quoted");
+        fs::create_dir(&directory).unwrap();
+        let log = root.path().join("batches");
+        // Stand in for Android stat on macOS. Log actual argv sizes to catch a
+        // regression to per-file calls or unbounded argument lists.
+        let script = format!(
+            r#"stat() {{
+  shift 2
+  bytes=0
+  for path do bytes=$((bytes + ${{#path}} + 1)); done
+  printf '%s %s\n' "$#" "$bytes" >> "$BATCH_LOG"
+  for path do printf '81a4 4 1700000000\n'; done
+}}
+{}"#,
+            super::LIST_DIRECTORY_SCRIPT
+        );
+        let run = || {
+            std::process::Command::new("/bin/sh")
+                .args(["-c", &script, "sh"])
+                .arg(&directory)
+                .env("BATCH_LOG", &log)
+                .output()
+                .unwrap()
+        };
+        let empty = run();
+        assert!(empty.status.success());
+        assert!(empty.stdout.is_empty());
+        assert!(!log.exists());
+
+        let mut names = vec![
+            ".hidden".to_string(),
+            "..hidden".to_string(),
+            "空 格'\"\t\r\n".to_string(),
+        ];
+        names.extend((0..300).map(|i| format!("file-{i:03}")));
+        names.extend((0..150).map(|i| format!("long-{i:03}-{}", "x".repeat(220))));
+        for name in &names {
+            fs::write(directory.join(name), b"data").unwrap();
+        }
+        symlink("missing-target", directory.join("broken-link")).unwrap();
+        names.push("broken-link".to_string());
+
+        let output = run();
+        assert!(output.status.success(), "{:?}", output.stderr);
+        let entries = parse_directory_records(&output.stdout, directory.to_str().unwrap()).unwrap();
+        let mut actual: Vec<_> = entries.into_iter().map(|entry| entry.name).collect();
+        actual.sort();
+        names.sort();
+        assert_eq!(actual, names);
+        let batches = fs::read_to_string(log).unwrap();
+        let batches: Vec<_> = batches
+            .lines()
+            .map(|line| {
+                line.split_whitespace()
+                    .map(|n| n.parse::<usize>().unwrap())
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        assert!(batches.len() < 10);
+        assert!(batches.iter().any(|batch| batch[0] == 128));
+        assert!(batches
+            .iter()
+            .any(|batch| batch[0] < 128 && batch[1] >= 16384));
+        assert!(batches
+            .iter()
+            .all(|batch| batch[0] <= 128 && batch[1] < 16384 + 4096));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_script_propagates_stat_and_missing_directory_failures() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("file"), b"data").unwrap();
+        let script = format!(
+            "stat() {{ echo 'stat failed' >&2; return 7; }}\n{}",
+            super::LIST_DIRECTORY_SCRIPT
+        );
+        for (path, status) in [
+            (root.path().to_path_buf(), 3),
+            (root.path().join("missing"), 2),
+        ] {
+            let output = std::process::Command::new("/bin/sh")
+                .args(["-c", &script, "sh"])
+                .arg(path)
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(status));
+            assert!(output.stdout.is_empty());
+            assert!(!output.stderr.is_empty());
+        }
     }
 
     #[test]
