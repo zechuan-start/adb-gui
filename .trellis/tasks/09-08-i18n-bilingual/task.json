@@ -1,0 +1,32 @@
+{
+  "id": "i18n-bilingual",
+  "name": "i18n-bilingual",
+  "title": "界面中英双语与语言设置",
+  "description": "全应用中英双语: 自研 typed catalog, 语言设置项默认跟随系统, 非中文回落英文, 前端与 Rust 后端文案全部可切换.",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "qi",
+  "assignee": "qi",
+  "createdAt": "2026-09-08",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "claude/bilingual-project-plan-ng1o7s",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "09-08-i18n-foundation",
+    "09-08-i18n-shell-settings",
+    "09-08-i18n-tool-pages",
+    "09-08-i18n-backend-errors",
+    "09-08-i18n-docs-release"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
