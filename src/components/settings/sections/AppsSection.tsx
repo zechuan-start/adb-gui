@@ -1,5 +1,5 @@
-import { SettingRow, SettingsFieldset } from "@/components/settings/SettingRow";
-import { SortPreferences } from "@/components/settings/SortPreferences";
+import { SettingsFieldset } from "@/components/settings/SettingRow";
+import { SortRow } from "@/components/settings/SortPreferences";
 import { useSettingsStore } from "@/store/settings";
 
 export function AppsSection() {
@@ -7,9 +7,7 @@ export function AppsSection() {
 
   return (
     <SettingsFieldset available={available}>
-      <SettingRow id="appSort">
-        <SortPreferences section="apps" />
-      </SettingRow>
+      <SortRow section="apps" />
     </SettingsFieldset>
   );
 }

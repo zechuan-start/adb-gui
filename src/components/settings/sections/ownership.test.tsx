@@ -78,7 +78,7 @@ describe("settings section ownership", () => {
     expect(markup.indexOf("离开性能页后继续采集")).toBeGreaterThan(start);
   });
 
-  it("keeps the log pane checkboxes outside the logcat fieldset", () => {
+  it("keeps the log pane chips outside the logcat fieldset", () => {
     const markup = render("logcat", false);
     const { start, end } = fieldsetRange(markup);
     expect(markup.indexOf('aria-label="显示格式"')).toBeGreaterThan(start);
@@ -109,28 +109,13 @@ describe("settings section rendering", () => {
       [CodegenSection, "分隔符"],
     ] as const) {
       const markup = renderToStaticMarkup(
-        <SettingsView value={{ visible: () => true, modified: () => false }}>
+        <SettingsView value={{ modified: () => false }}>
           <Section />
         </SettingsView>,
       );
       expect(markup).toContain(sample);
+      expect(markup).not.toMatch(/type="checkbo[x]"/);
     }
-  });
-
-  it("keeps only the searched rows and drops their empty groups", () => {
-    settingsState.preferences = defaultSettings();
-    settingsState.available = true;
-    const markup = renderToStaticMarkup(
-      <SettingsView
-        value={{ visible: (id) => id === "showHidden", modified: () => false }}
-      >
-        <FilesSection />
-      </SettingsView>,
-    );
-    expect(markup).toContain("显示隐藏文件");
-    expect(markup).toContain("排序与显示");
-    expect(markup).not.toContain("文件夹优先");
-    expect(markup).not.toContain("起始目录");
   });
 
   it("marks a row whose value left its default", () => {
@@ -138,11 +123,12 @@ describe("settings section rendering", () => {
     settingsState.available = true;
     const markup = renderToStaticMarkup(
       <SettingsView
-        value={{ visible: () => true, modified: (id) => id === "cozyRows" }}
+        value={{ modified: (id) => id === "cozyRows" }}
       >
         <LogcatSection />
       </SettingsView>,
     );
-    expect(markup.match(/title="已改动"/g)).toHaveLength(1);
+    expect(markup.match(/title="当前值与默认不同"/g)).toHaveLength(1);
+    expect(markup.match(/已修改/g)).toHaveLength(1);
   });
 });

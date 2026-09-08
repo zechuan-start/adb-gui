@@ -1,82 +1,74 @@
 import { QrCode, ScanLine } from "lucide-react";
 import { BlueprintSelect } from "@/components/BlueprintSelect";
+import { SegmentedControl } from "@/components/settings/controls/SegmentedControl";
 import {
   CODE_TYPE_OPTIONS,
   SEPARATOR_OPTIONS,
   isSeparatorMode,
+  type CodeType,
 } from "@/lib/codeGenerator";
 import { findSettingsRow } from "@/lib/settingsSections";
 import { cn } from "@/lib/utils";
 import { useSettingsStore } from "@/store/settings";
 
-export function GeneratorPreferences({
-  id = "code-separator",
+const CODE_TYPE_SEGMENTS = CODE_TYPE_OPTIONS.map(({ value, label }) => ({
+  value,
+  label,
+  icon: value === "qr" ? QrCode : ScanLine,
+}));
+
+export function CodeTypeControl({ disabled = false }: { disabled?: boolean }) {
+  const preferences = useSettingsStore((state) => state.preferences.codegen);
+  const update = useSettingsStore((state) => state.update);
+  return (
+    <SegmentedControl<CodeType>
+      value={preferences.codeType}
+      options={CODE_TYPE_SEGMENTS}
+      disabled={disabled}
+      ariaLabel="码类型"
+      onChange={(codeType) =>
+        update("codegen", { ...preferences, codeType })
+      }
+    />
+  );
+}
+
+export function SeparatorControl({
+  id,
+  disabled = false,
+  containerClassName,
 }: {
   id?: string;
+  disabled?: boolean;
+  containerClassName?: string;
 }) {
-  const separator = findSettingsRow("separator");
   const preferences = useSettingsStore((state) => state.preferences.codegen);
-  const available = useSettingsStore((state) => state.available);
   const update = useSettingsStore((state) => state.update);
   const invalid =
     preferences.separatorMode === "custom" &&
     preferences.customSeparator.length === 0;
+
   return (
-    <fieldset disabled={!available} className="min-w-0 disabled:opacity-50">
-      <div
-        className="grid grid-cols-2 border border-rule"
-        role="group"
-        aria-label="码类型"
-      >
-        {CODE_TYPE_OPTIONS.map(({ value, label }) => (
-          <button
-            key={value}
-            type="button"
-            onClick={() =>
-              update("codegen", { ...preferences, codeType: value })
-            }
-            aria-pressed={preferences.codeType === value}
-            className={cn(
-              "inline-flex h-8 items-center justify-center gap-2 border-r border-rule text-xs last:border-r-0",
-              preferences.codeType === value
-                ? "bg-ink text-onink"
-                : "text-ink2 hover:bg-hover",
-            )}
-          >
-            {value === "qr" ? (
-              <QrCode className="h-4 w-4" />
-            ) : (
-              <ScanLine className="h-4 w-4" />
-            )}
-            {label}
-          </button>
-        ))}
-      </div>
-      <label className="mt-3 block text-xs text-ink3" htmlFor={id}>
-        {separator.label}
-      </label>
+    <>
       <BlueprintSelect
         id={id}
         value={preferences.separatorMode}
         options={SEPARATOR_OPTIONS}
-        disabled={!available}
+        disabled={disabled}
         ariaLabel="分隔符"
-        containerClassName="mt-1"
+        containerClassName={containerClassName}
         onValueChange={(value) => {
-          if (isSeparatorMode(value))
+          if (isSeparatorMode(value)) {
             update("codegen", { ...preferences, separatorMode: value });
+          }
         }}
       />
-      {separator.description && (
-        <p className="mt-1 text-[11px] leading-snug text-ink3">
-          {separator.description}
-        </p>
-      )}
       {preferences.separatorMode === "custom" && (
         <div className="mt-2">
           <input
             type="text"
             value={preferences.customSeparator}
+            disabled={disabled}
             onChange={(event) =>
               update("codegen", {
                 ...preferences,
@@ -86,12 +78,35 @@ export function GeneratorPreferences({
             aria-label="自定义分隔符"
             aria-invalid={invalid}
             placeholder="输入自定义分隔符"
-            className="h-8 w-full border border-rule bg-paper px-2.5 text-xs outline-none"
+            className="h-8 w-full border border-rule bg-paper px-2.5 text-xs outline-none disabled:opacity-40"
           />
           {invalid && (
             <div className="pt-1 text-xs text-err">请输入自定义分隔符</div>
           )}
         </div>
+      )}
+    </>
+  );
+}
+
+export function GeneratorPreferences({
+  id = "code-separator",
+}: {
+  id?: string;
+}) {
+  const separator = findSettingsRow("separator");
+  const available = useSettingsStore((state) => state.available);
+  return (
+    <fieldset disabled={!available} className="min-w-0 disabled:opacity-50">
+      <CodeTypeControl disabled={!available} />
+      <label className="mt-3 block text-xs text-ink2" htmlFor={id}>
+        {separator.label}
+      </label>
+      <SeparatorControl id={id} disabled={!available} containerClassName="mt-1" />
+      {separator.description && (
+        <p className={cn("mt-1 text-[11px] leading-snug text-ink2")}>
+          {separator.description}
+        </p>
       )}
     </fieldset>
   );

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { BlueprintSelect } from "@/components/BlueprintSelect";
-import { SettingRowLabel } from "@/components/settings/SettingRow";
+import { SettingRow } from "@/components/settings/SettingRow";
 import { deviceStartDirectoryError } from "@/lib/settings";
 import { useSettingsStore } from "@/store/settings";
 
@@ -40,9 +40,8 @@ export function StartDirectoryPreference() {
   }
 
   return (
-    <div className="border-b border-rule py-3 text-xs">
-      <div className="flex min-h-8 items-center justify-between gap-4">
-        <SettingRowLabel id="startDirectory" />
+    <SettingRow id="startDirectory" layout="stacked">
+      <div className="text-xs">
         <BlueprintSelect
           value={mode}
           options={OPTIONS}
@@ -61,37 +60,37 @@ export function StartDirectoryPreference() {
             }
           }}
         />
-      </div>
-      {mode === "custom" && (
-        <div className="mt-2">
-          <input
-            value={draft}
-            aria-label="自定义设备起始目录"
-            aria-invalid={Boolean(error)}
-            spellCheck={false}
-            onChange={(event) => {
-              setDraft(event.target.value);
-              setError(null);
-            }}
-            onBlur={commit}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                commit();
-              }
-              if (event.key === "Escape") {
-                event.preventDefault();
-                event.stopPropagation();
-                setDraft(path ?? "");
-                setMode(initialMode);
+        {mode === "custom" && (
+          <div className="mt-2">
+            <input
+              value={draft}
+              aria-label="自定义设备起始目录"
+              aria-invalid={Boolean(error)}
+              spellCheck={false}
+              onChange={(event) => {
+                setDraft(event.target.value);
                 setError(null);
-              }
-            }}
-            className="h-8 w-full border border-rule bg-paper px-2.5 font-data outline-none"
-          />
-          {error && <p className="mt-1 text-err">{error}</p>}
-        </div>
-      )}
-    </div>
+              }}
+              onBlur={commit}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  commit();
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setDraft(path ?? "");
+                  setMode(initialMode);
+                  setError(null);
+                }
+              }}
+              className="h-8 w-full border border-rule bg-paper px-2.5 font-data outline-none"
+            />
+            {error && <p className="mt-1 text-err">{error}</p>}
+          </div>
+        )}
+      </div>
+    </SettingRow>
   );
 }

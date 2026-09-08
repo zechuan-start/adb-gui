@@ -1,28 +1,33 @@
 import {
   SettingRow,
   SettingsFieldset,
-  SettingsGroup,
-  SettingsRowGate,
-  SettingToggle,
+  SettingSwitchRow,
 } from "@/components/settings/SettingRow";
+import { ChipGroup } from "@/components/settings/controls/ChipGroup";
+import { SegmentedControl } from "@/components/settings/controls/SegmentedControl";
 import {
   columnsMatch,
   COMPACT_COLUMNS,
   LOGCAT_COLUMNS,
   STANDARD_COLUMNS,
+  type LogcatColumn,
+  type ViewFormat,
 } from "@/lib/logcatView";
 import { logcatPreset, STARTUP_OPTIONS } from "@/lib/settings";
-import { cn } from "@/lib/utils";
 import { useSettingsStore } from "@/store/settings";
 import { useUiStore, type PaneId } from "@/store/ui";
 
-const DISPLAY_ROWS = [
-  "logcatFormat",
-  "logcatColumns",
-  "softWrap",
-  "autoFold",
-  "cozyRows",
+const FORMAT_OPTIONS: ReadonlyArray<{ value: ViewFormat; label: string }> = [
+  { value: "standard", label: "标准" },
+  { value: "compact", label: "紧凑" },
 ];
+
+const COLUMN_OPTIONS: ReadonlyArray<{ value: LogcatColumn; label: string }> =
+  LOGCAT_COLUMNS.map(({ column, label }) => ({ value: column, label }));
+
+const LOG_PANE_OPTIONS = STARTUP_OPTIONS.filter(
+  (item): item is { value: PaneId; label: string } => item.value !== "last",
+);
 
 export function LogcatSection() {
   const preferences = useSettingsStore((s) => s.preferences);
@@ -30,121 +35,80 @@ export function LogcatSection() {
   const update = useSettingsStore((s) => s.update);
   const logOpen = useUiStore((s) => s.logOpenByPane);
   const setLogOpen = useUiStore((s) => s.setLogOpen);
+  const format = columnsMatch(preferences.logcat.columns, STANDARD_COLUMNS)
+    ? "standard"
+    : columnsMatch(preferences.logcat.columns, COMPACT_COLUMNS)
+      ? "compact"
+      : undefined;
 
   return (
     <>
-      <SettingsGroup title="显示" rowIds={DISPLAY_ROWS}>
-        <SettingsFieldset available={available}>
-          <SettingRow id="logcatFormat">
-            <div
-              className="flex border border-rule"
-              role="group"
-              aria-label="显示格式"
-            >
-              {(["standard", "compact"] as const).map((format) => (
-                <button
-                  type="button"
-                  key={format}
-                  aria-pressed={columnsMatch(
-                    preferences.logcat.columns,
-                    format === "standard" ? STANDARD_COLUMNS : COMPACT_COLUMNS,
-                  )}
-                  onClick={() =>
-                    update("logcat", {
-                      ...preferences.logcat,
-                      columns: logcatPreset(format),
-                    })
-                  }
-                  className={cn(
-                    "h-8 border-r border-rule px-4 text-xs last:border-r-0 hover:bg-hover",
-                    columnsMatch(
-                      preferences.logcat.columns,
-                      logcatPreset(format),
-                    ) && "bg-ink text-onink hover:bg-ink",
-                  )}
-                >
-                  {format === "standard" ? "标准" : "紧凑"}
-                </button>
-              ))}
-            </div>
-          </SettingRow>
-          <SettingsRowGate id="logcatColumns">
-            <div
-              className="grid grid-cols-2 gap-x-6 border-b border-rule py-2"
-              role="group"
-              aria-label="显示列"
-            >
-              {LOGCAT_COLUMNS.map(({ column, label }) => (
-                <label
-                  key={column}
-                  className="flex min-h-9 items-center gap-2 text-xs"
-                >
-                  <input
-                    type="checkbox"
-                    checked={preferences.logcat.columns[column]}
-                    onChange={(event) =>
-                      update("logcat", {
-                        ...preferences.logcat,
-                        columns: {
-                          ...preferences.logcat.columns,
-                          [column]: event.currentTarget.checked,
-                        },
-                      })
-                    }
-                    className="h-3.5 w-3.5 accent-ink"
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
-          </SettingsRowGate>
-          <SettingToggle
-            id="softWrap"
-            checked={preferences.logcat.softWrap}
-            onChange={(softWrap) =>
-              update("logcat", { ...preferences.logcat, softWrap })
+      <SettingsFieldset available={available}>
+        <SettingRow id="logcatFormat">
+          <SegmentedControl
+            value={format}
+            options={FORMAT_OPTIONS}
+            disabled={!available}
+            ariaLabel="显示格式"
+            onChange={(nextFormat) =>
+              update("logcat", {
+                ...preferences.logcat,
+                columns: logcatPreset(nextFormat),
+              })
             }
           />
-          <SettingToggle
-            id="autoFold"
-            checked={preferences.logcat.autoFold}
-            onChange={(autoFold) =>
-              update("logcat", { ...preferences.logcat, autoFold })
+        </SettingRow>
+        <SettingRow id="logcatColumns" layout="stacked">
+          <ChipGroup
+            options={COLUMN_OPTIONS}
+            selected={preferences.logcat.columns}
+            disabled={!available}
+            ariaLabel="显示列"
+            onToggle={(column, selected) =>
+              update("logcat", {
+                ...preferences.logcat,
+                columns: {
+                  ...preferences.logcat.columns,
+                  [column]: selected,
+                },
+              })
             }
           />
-          <SettingToggle
-            id="cozyRows"
-            checked={preferences.logcat.cozyRows}
-            onChange={(cozyRows) =>
-              update("logcat", { ...preferences.logcat, cozyRows })
-            }
-          />
-        </SettingsFieldset>
-      </SettingsGroup>
-      {/* Pane visibility belongs to the window store, so it survives a broken settings file. */}
-      <SettingsGroup title="显示日志的工作区" rowIds={["logPanes"]}>
-        <div className="grid grid-cols-2 gap-x-6">
-          {STARTUP_OPTIONS.filter(
-            (item): item is { value: PaneId; label: string } =>
-              item.value !== "last",
-          ).map(({ value, label }) => (
-            <label
-              key={value}
-              className="flex min-h-9 items-center gap-2 text-xs"
-            >
-              <input
-                type="checkbox"
-                checked={logOpen[value]}
-                onChange={(event) =>
-                  setLogOpen(value, event.currentTarget.checked)
-                }
-                className="h-3.5 w-3.5 accent-ink"
-              />
-              {label}
-            </label>
-          ))}
-        </div>
-      </SettingsGroup>
+        </SettingRow>
+        <SettingSwitchRow
+          id="softWrap"
+          checked={preferences.logcat.softWrap}
+          disabled={!available}
+          onChange={(softWrap) =>
+            update("logcat", { ...preferences.logcat, softWrap })
+          }
+        />
+        <SettingSwitchRow
+          id="autoFold"
+          checked={preferences.logcat.autoFold}
+          disabled={!available}
+          onChange={(autoFold) =>
+            update("logcat", { ...preferences.logcat, autoFold })
+          }
+        />
+        <SettingSwitchRow
+          id="cozyRows"
+          checked={preferences.logcat.cozyRows}
+          disabled={!available}
+          onChange={(cozyRows) =>
+            update("logcat", { ...preferences.logcat, cozyRows })
+          }
+        />
+      </SettingsFieldset>
+      {/* Pane visibility belongs to the window store and remains editable. */}
+      <SettingRow id="logPanes" layout="stacked">
+        <ChipGroup
+          options={LOG_PANE_OPTIONS}
+          selected={logOpen}
+          ariaLabel="显示日志的工作区"
+          onToggle={setLogOpen}
+        />
+      </SettingRow>
     </>
   );
 }

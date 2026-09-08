@@ -1,11 +1,8 @@
 import {
-  SettingRow,
   SettingsFieldset,
-  SettingsGroup,
-  SettingsRowGate,
-  SettingToggle,
+  SettingSwitchRow,
 } from "@/components/settings/SettingRow";
-import { SortPreferences } from "@/components/settings/SortPreferences";
+import { SortRow } from "@/components/settings/SortPreferences";
 import { StartDirectoryPreference } from "@/components/settings/StartDirectoryPreference";
 import { useSettingsStore } from "@/store/settings";
 
@@ -16,33 +13,24 @@ export function FilesSection() {
 
   return (
     <SettingsFieldset available={available}>
-      <SettingsGroup
-        title="排序与显示"
-        rowIds={["fileSort", "directoriesFirst", "showHidden"]}
-      >
-        <SettingRow id="fileSort">
-          <SortPreferences section="files" />
-        </SettingRow>
-        <SettingToggle
-          id="directoriesFirst"
-          checked={preferences.files.directoriesFirst}
-          onChange={(directoriesFirst) =>
-            update("files", { ...preferences.files, directoriesFirst })
-          }
-        />
-        <SettingToggle
-          id="showHidden"
-          checked={preferences.files.showHidden}
-          onChange={(showHidden) =>
-            update("files", { ...preferences.files, showHidden })
-          }
-        />
-      </SettingsGroup>
-      <SettingsGroup title="起始目录" rowIds={["startDirectory"]}>
-        <SettingsRowGate id="startDirectory">
-          <StartDirectoryPreference />
-        </SettingsRowGate>
-      </SettingsGroup>
+      <SortRow section="files" />
+      <SettingSwitchRow
+        id="directoriesFirst"
+        checked={preferences.files.directoriesFirst}
+        disabled={!available}
+        onChange={(directoriesFirst) =>
+          update("files", { ...preferences.files, directoriesFirst })
+        }
+      />
+      <SettingSwitchRow
+        id="showHidden"
+        checked={preferences.files.showHidden}
+        disabled={!available}
+        onChange={(showHidden) =>
+          update("files", { ...preferences.files, showHidden })
+        }
+      />
+      <StartDirectoryPreference />
     </SettingsFieldset>
   );
 }

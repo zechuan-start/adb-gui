@@ -14,6 +14,9 @@ const HIDE_WINDOW_MENU_ID: &str = "hide-window";
 #[cfg(target_os = "macos")]
 const HIDE_WINDOW_FROM_WINDOW_MENU_ID: &str = "hide-window-from-window-menu";
 
+#[cfg(target_os = "macos")]
+const OPEN_SETTINGS_MENU_ID: &str = "open-settings";
+
 fn start_device_poll(app: &AppHandle) {
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -59,6 +62,8 @@ fn macos_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
         true,
         &[
             &PredefinedMenuItem::about(app, None, Some(about_metadata))?,
+            &PredefinedMenuItem::separator(app)?,
+            &MenuItem::with_id(app, OPEN_SETTINGS_MENU_ID, "设置…", true, Some("Cmd+,"))?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::services(app, None)?,
             &PredefinedMenuItem::separator(app)?,
@@ -234,6 +239,11 @@ pub fn run() {
     let builder = builder.menu(macos_menu).on_menu_event(|app, event| {
         if event.id() == HIDE_WINDOW_MENU_ID || event.id() == HIDE_WINDOW_FROM_WINDOW_MENU_ID {
             hide_primary_window(app);
+        } else if event.id() == OPEN_SETTINGS_MENU_ID {
+            show_primary_window(app);
+            if let Err(error) = app.emit("open-settings", ()) {
+                eprintln!("failed to open settings: {error}");
+            }
         }
     });
 

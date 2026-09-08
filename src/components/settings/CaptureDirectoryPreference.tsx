@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { FolderOpen, RotateCcw } from "lucide-react";
-import { SettingRowLabel } from "@/components/settings/SettingRow";
+import { SettingRow } from "@/components/settings/SettingRow";
 import {
   captureDestination,
   isTauriRuntime,
@@ -82,11 +82,10 @@ export function CaptureDirectoryPreference() {
   const buttonClass =
     "flex h-8 w-8 shrink-0 items-center justify-center border border-rule hover:bg-hover disabled:opacity-40";
   return (
-    <div className="border-b border-rule py-3 text-xs">
-      <div className="flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <SettingRowLabel id="captureDirectory" />
-          <div className="mt-2 min-h-8 select-text break-all font-data text-ink2">
+    <SettingRow id="captureDirectory" layout="stacked">
+      <div className="text-xs">
+        <div className="flex items-start gap-2">
+          <div className="min-h-8 min-w-0 flex-1 select-text break-all font-data text-ink2">
             {resolved ??
               directory ??
               (native
@@ -95,34 +94,34 @@ export function CaptureDirectoryPreference() {
                   : "读取目录..."
                 : "本机目录不可用")}
           </div>
+          <button
+            ref={chooseRef}
+            type="button"
+            disabled={!native || busy}
+            className={buttonClass}
+            title="选择保存目录"
+            aria-label="选择保存目录"
+            onClick={() => void choose()}
+          >
+            <FolderOpen className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            disabled={directory === null}
+            className={buttonClass}
+            title="恢复默认保存目录"
+            aria-label="恢复默认保存目录"
+            onClick={() => update("capture", { directory: null })}
+          >
+            <RotateCcw className="h-4 w-4" />
+          </button>
         </div>
-        <button
-          ref={chooseRef}
-          type="button"
-          disabled={!native || busy}
-          className={buttonClass}
-          title="选择保存目录"
-          aria-label="选择保存目录"
-          onClick={() => void choose()}
-        >
-          <FolderOpen className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          disabled={directory === null}
-          className={buttonClass}
-          title="恢复默认保存目录"
-          aria-label="恢复默认保存目录"
-          onClick={() => update("capture", { directory: null })}
-        >
-          <RotateCcw className="h-4 w-4" />
-        </button>
+        {error && (
+          <p role="alert" className="mt-2 break-all text-err">
+            {error}
+          </p>
+        )}
       </div>
-      {error && (
-        <p role="alert" className="mt-2 break-all text-err">
-          {error}
-        </p>
-      )}
-    </div>
+    </SettingRow>
   );
 }

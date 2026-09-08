@@ -152,6 +152,8 @@ Use `BlueprintSelect` when an expanded option menu must match the Blueprint ligh
 - Support Arrow keys, Home, End, Enter, Space, Escape, outside-click closing, and trigger focus restoration.
 - Disable an empty selector instead of opening a menu with one non-actionable placeholder.
 - Close an open dynamic selector when its option set changes so focus cannot remain on a removed item.
+- Place dropdowns within the intersection of the viewport and their clipping ancestors. Open above when the menu cannot fit below and more room is available above; constrain long menus to the available height. Re-measure while open on scroll and resize.
+- Keep these clipped dropdowns free of transform-based entrance animations. Recheck any animation change in the packaged macOS WebKit app; browser visibility checks alone do not cover native painting.
 
 ### Blueprint Floating Surfaces
 
@@ -187,6 +189,18 @@ Keep menus, dialogs, update prompts, and toasts visually separate from the grid 
 ```
 
 Browser smoke must cover light and dark rendering, the 900 px layout, Escape focus restoration, and a long toast message that wraps without covering index controls.
+
+### Settings Controls
+
+Settings rows use a fixed control vocabulary so persisted preferences have one visual and accessibility contract:
+
+- Use the subdued `settings-grid` variant of `blueprint-grid` only in the scrolling settings content. Keep the header, index, framed controls, and expanded menus opaque; reduce grid contrast further in dark mode.
+- Boolean values use `Switch` through `SettingSwitchRow`. Render `role="switch"`, expose `aria-checked`, keep the whole row clickable, and pass the unavailable state explicitly so a disabled fieldset cannot leave the row click active.
+- Single-choice values with at most three options use `SegmentedControl`. Keep one 32 px height, `radiogroup` / `radio` semantics, text labels with optional lucide icons, and ArrowLeft / ArrowRight keyboard selection.
+- Single-choice values with more than three options use `BlueprintSelect`.
+- Multi-choice values use `ChipGroup` with wrapping `aria-pressed` buttons. Do not use native checkboxes inside the settings dialog.
+- Rows with a path or conditional custom input use `SettingRow layout="stacked"`; all other rows keep label and control inline within the constrained content column.
+- Shared quick controls and settings controls must call the same store update functions. Do not mirror a preference into local component state.
 
 ---
 

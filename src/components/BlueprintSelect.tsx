@@ -2,12 +2,14 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
 import { ChevronDown } from "lucide-react";
+import { dropdownPlacement, type DropdownPlacement } from "@/lib/dropdownPlacement";
 import { cn } from "@/lib/utils";
 
 export interface BlueprintSelectOption {
@@ -53,6 +55,11 @@ export function BlueprintSelect({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [placement, setPlacement] = useState<DropdownPlacement>({
+    side: "below",
+    maxHeight: 240,
+  });
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const initialFocusIndexRef = useRef(0);
   const shouldFocusOptionRef = useRef(false);
@@ -70,6 +77,48 @@ export function BlueprintSelect({
       triggerRef.current?.focus();
     }
   }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    function updatePlacement(): void {
+      const trigger = triggerRef.current;
+      const menu = menuRef.current;
+      if (!trigger || !menu) return;
+      const bounds = { top: 0, bottom: window.innerHeight };
+      // Absolute menus are clipped by scroll containers, including the modal's
+      // content area. Measure their intersection, not just the viewport.
+      for (let parent = trigger.parentElement; parent; parent = parent.parentElement) {
+        if (!/(auto|scroll|hidden|clip)/.test(getComputedStyle(parent).overflowY)) {
+          continue;
+        }
+        const rect = parent.getBoundingClientRect();
+        bounds.top = Math.max(bounds.top, rect.top + parent.clientTop);
+        bounds.bottom = Math.min(
+          bounds.bottom,
+          rect.top + parent.clientTop + parent.clientHeight,
+        );
+      }
+      const next = dropdownPlacement(
+        trigger.getBoundingClientRect(),
+        bounds,
+        Math.min(240, menu.scrollHeight + 2),
+      );
+      setPlacement((previous) =>
+        previous.side === next.side && previous.maxHeight === next.maxHeight
+          ? previous
+          : next,
+      );
+    }
+
+    updatePlacement();
+    window.addEventListener("resize", updatePlacement);
+    window.addEventListener("scroll", updatePlacement, true);
+    return () => {
+      window.removeEventListener("resize", updatePlacement);
+      window.removeEventListener("scroll", updatePlacement, true);
+    };
+  }, [open, optionSignature]);
 
   useEffect(() => {
     if (!open) {
@@ -242,11 +291,14 @@ export function BlueprintSelect({
 
       {open && (
         <div
+          ref={menuRef}
           id={menuId}
           role="listbox"
           aria-label={ariaLabel}
+          style={{ maxHeight: placement.maxHeight }}
           className={cn(
-            "absolute left-0 right-0 top-full z-50 mt-2 max-h-60 origin-top-left overflow-y-auto border border-rule bg-paper p-0 text-ink shadow-[4px_4px_0_var(--color-hard-shadow)] motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-150",
+            "absolute left-0 right-0 z-50 overflow-y-auto overscroll-contain border border-rule bg-paper p-0 text-ink shadow-[4px_4px_0_var(--color-hard-shadow)]",
+            placement.side === "above" ? "bottom-full mb-2" : "top-full mt-2",
             menuClassName,
           )}
         >

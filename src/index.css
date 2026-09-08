@@ -138,10 +138,23 @@ body {
 }
 
 .blueprint-grid {
+  --blueprint-grid-line: var(--color-grid);
   background:
-    linear-gradient(var(--color-grid) 1px, transparent 1px) 0 0 / 100% 22px,
-    linear-gradient(90deg, var(--color-grid) 1px, transparent 1px) 0 0 / 22px 100%,
+    linear-gradient(var(--blueprint-grid-line) 1px, transparent 1px) 0 0 / 100% 22px,
+    linear-gradient(90deg, var(--blueprint-grid-line) 1px, transparent 1px) 0 0 / 22px 100%,
     var(--color-paper);
+}
+
+.settings-grid {
+  --blueprint-grid-line: color-mix(in srgb, var(--color-grid) 60%, transparent);
+}
+
+.dark .settings-grid {
+  --blueprint-grid-line: color-mix(in srgb, var(--color-grid) 50%, transparent);
+}
+
+.settings-grid :where([role="radiogroup"], [role="group"], [aria-haspopup="listbox"], [role="switch"][aria-checked="false"], input, textarea) {
+  background-color: var(--color-paper);
 }
 
 .font-data,

@@ -1,9 +1,7 @@
 import { CaptureDirectoryPreference } from "@/components/settings/CaptureDirectoryPreference";
 import {
   SettingsFieldset,
-  SettingsGroup,
-  SettingsRowGate,
-  SettingToggle,
+  SettingSwitchRow,
 } from "@/components/settings/SettingRow";
 import { useSettingsStore } from "@/store/settings";
 
@@ -14,37 +12,29 @@ export function CaptureSection() {
 
   return (
     <SettingsFieldset available={available}>
-      <SettingsGroup title="保存位置" rowIds={["captureDirectory"]}>
-        <SettingsRowGate id="captureDirectory">
-          <CaptureDirectoryPreference />
-        </SettingsRowGate>
-      </SettingsGroup>
-      <SettingsGroup
-        title="截图"
-        rowIds={["screenshotOpen", "screenshotReveal"]}
-      >
-        <SettingToggle
-          id="screenshotOpen"
-          checked={preferences.screenshot.openAfterSave}
-          onChange={(openAfterSave) =>
-            update("screenshot", { ...preferences.screenshot, openAfterSave })
-          }
-        />
-        <SettingToggle
-          id="screenshotReveal"
-          checked={preferences.screenshot.revealAfterSave}
-          onChange={(revealAfterSave) =>
-            update("screenshot", { ...preferences.screenshot, revealAfterSave })
-          }
-        />
-      </SettingsGroup>
-      <SettingsGroup title="录屏" rowIds={["recordingOpen"]}>
-        <SettingToggle
-          id="recordingOpen"
-          checked={preferences.recording.openAfterSave}
-          onChange={(openAfterSave) => update("recording", { openAfterSave })}
-        />
-      </SettingsGroup>
+      <CaptureDirectoryPreference />
+      <SettingSwitchRow
+        id="screenshotOpen"
+        checked={preferences.screenshot.openAfterSave}
+        disabled={!available}
+        onChange={(openAfterSave) =>
+          update("screenshot", { ...preferences.screenshot, openAfterSave })
+        }
+      />
+      <SettingSwitchRow
+        id="screenshotReveal"
+        checked={preferences.screenshot.revealAfterSave}
+        disabled={!available}
+        onChange={(revealAfterSave) =>
+          update("screenshot", { ...preferences.screenshot, revealAfterSave })
+        }
+      />
+      <SettingSwitchRow
+        id="recordingOpen"
+        checked={preferences.recording.openAfterSave}
+        disabled={!available}
+        onChange={(openAfterSave) => update("recording", { openAfterSave })}
+      />
     </SettingsFieldset>
   );
 }

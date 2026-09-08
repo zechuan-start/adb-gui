@@ -9,8 +9,8 @@ import {
   findSettingsRow,
   findSettingsSection,
   modifiedRowIds,
-  searchSettingsRows,
   resetSettingsSection,
+  sectionRowIds,
   sectionResetPlan,
   SETTINGS_SECTIONS,
   type SettingsSection,
@@ -58,10 +58,11 @@ describe("settings sections", () => {
     const capture = findSettingsSection("capture");
     expect(capture.id).toBe("capture");
     expect(capture.label).toBe("截图与录屏");
-    expect(capture.groups.map((group) => group.title)).toEqual([
-      "保存位置",
-      "截图",
-      "录屏",
+    expect(capture.rows.map((row) => row.id)).toEqual([
+      "captureDirectory",
+      "screenshotOpen",
+      "screenshotReveal",
+      "recordingOpen",
     ]);
     expect(() =>
       findSettingsSection("performance" as SettingsSection),
@@ -119,34 +120,21 @@ describe("settings sections", () => {
 
 describe("settings rows", () => {
   const ROW_IDS = SETTINGS_SECTIONS.flatMap((section) =>
-    section.groups.flatMap((group) => group.rows.map((row) => row.id)),
+    section.rows.map((row) => row.id),
   );
 
-  it("keeps every row id unique and resolvable", () => {
+  it("keeps every row id unique, resolvable and owned by one section", () => {
     expect(new Set(ROW_IDS).size).toBe(ROW_IDS.length);
-    for (const id of ROW_IDS) expect(findSettingsRow(id).id).toBe(id);
-    expect(() => findSettingsRow("nope")).toThrow("未知设置项");
-  });
-
-  it("matches labels, descriptions, keywords and group titles case-insensitively", () => {
-    expect(searchSettingsRows("  ")).toEqual([]);
-    expect(searchSettingsRows("没有这个设置")).toEqual([]);
-    expect(searchSettingsRows("耗电").map(({ row }) => row.id)).toEqual([
-      "background",
-    ]);
-    expect(searchSettingsRows("CODE128").map(({ row }) => row.id)).toEqual([
-      "codeType",
-    ]);
-    expect(searchSettingsRows("录屏").map(({ row }) => row.id)).toContain(
-      "recordingOpen",
+    expect(SETTINGS_SECTIONS.flatMap(({ id }) => sectionRowIds(id))).toEqual(
+      ROW_IDS,
     );
-    const directories = searchSettingsRows("目录").map(({ row }) => row.id);
-    expect(directories).toContain("captureDirectory");
-    expect(directories).toContain("startDirectory");
-    expect(searchSettingsRows("生码").map(({ section }) => section.id)).toEqual([
-      "codegen",
-      "codegen",
-    ]);
+    for (const { id, rows } of SETTINGS_SECTIONS) {
+      expect(sectionRowIds(id)).toEqual(rows.map((row) => row.id));
+    }
+    for (const id of ROW_IDS) {
+      expect(findSettingsRow(id).id).toBe(id);
+    }
+    expect(() => findSettingsRow("nope")).toThrow("未知设置项");
   });
 
   it("marks only the rows whose stored value left its default", () => {

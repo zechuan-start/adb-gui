@@ -8,8 +8,8 @@
 
 - `createSettingsStore(storageProvider)`, `useSettingsStore`, `requireSettings()`.
 - `openSettings(section)` / `closeSettings()` in `useUiStore`.
-- `SETTINGS_SECTIONS`, `findSettingsSection(id)`, `findSettingsRow(id)`, `searchSettingsRows(query)`, `modifiedRowIds(snapshot)`, `sectionResetPlan(section)`, `resetSettingsSection(settings, section)` live in `lib/settingsSections.ts` and own `SettingsSection`.
-- `SettingRow` / `SettingToggle` / `SettingsRowGate` / `SettingsGroup` / `SettingRowLabel` render rows; `SettingsView` supplies the panel's row filter and modified marks.
+- `SETTINGS_SECTIONS`, `findSettingsSection(id)`, `findSettingsRow(id)`, `sectionRowIds(section)`, `modifiedRowIds(snapshot)`, `sectionResetPlan(section)`, `resetSettingsSection(settings, section)` live in `lib/settingsSections.ts` and own `SettingsSection`.
+- `SettingRow` / `SettingSwitchRow` / `SettingRowLabel` render rows; `SettingsView` supplies modified marks. `Switch`, `SegmentedControl` and `ChipGroup` are the shared setting controls.
 - `confirmRestoreDefaults()` in `lib/tauri.ts` is the only confirmation entry for the global reset.
 - `migrateSettings(version, settings)` in `lib/settings.ts` runs before field validation.
 - `takeScreenshot(serial, ScreenshotBehavior, CaptureDestination)` requires a click-time snapshot; `startScreenRecord(serial, CaptureDestination)` freezes the directory; `stopScreenRecord(SaveRecordingRequest)` takes `{sessionId,behavior,target}` at each save attempt.
@@ -23,15 +23,19 @@
 - Default to last pane, startup update checks enabled, standard log columns, wrap off, crash folding on, cozy rows off, background metrics off, all three post-save actions on.
 - Derive standard/compact state from columns. Quick controls and dialog controls must write the same settings action.
 - `SETTINGS_SECTIONS` is the only source of section order and labels. Dispatch section content through an exhaustive `switch` over `SettingsSection` closed by `assertNever`; never add a fallback branch that renders one section for unmatched ids. `performance` is a preference key rendered inside the general section, not a section of its own.
+- Render all six sections in one scroll container. The left navigation is an anchor index: clicks and ArrowUp / ArrowDown / Home / End scroll to the section, while a local scrollspy controls `aria-current`. `openSettings(section)` opens the dialog and scrolls to that section without changing its callers.
+- Use one hierarchy of section heading then setting rows. Do not restore section tabs, search, or group subheadings. Keep the global reset at the end of the scroll content and expose a section reset beside a heading only while that section has modified rows.
 - Disabled scope follows storage ownership, not the dialog: each section wraps only the controls stored in `adb-gui-settings` in `disabled={!available}`. Theme (`useThemeStore`) and pane visibility (`adb-gui-ui`) stay editable while the settings file is unreadable, and carry no ownership badge in the UI.
 - `sectionResetPlan(section)` is the single source of reset scope, covering settings keys plus the theme and pane resets. Each store resets independently: an unavailable or failing settings write must not suppress the theme or pane reset of the same section.
 - `migrateSettings` accepts the current version as-is, walks the migration chain for older versions and throws when a step is missing, and refuses newer versions instead of reading their fields. Reading never writes; a migrated value reaches storage through the next user write. Add a migration step in the same change that raises `SETTINGS_VERSION`.
-- Row labels and descriptions come from the registry, never from a literal inside a section component, so a search hit always names a row the panel can render. A row rendered with an unknown id throws.
-- Search filters rows in place through `SettingsView`: matching rows keep their real controls, a group title disappears once all of its rows are filtered out, and section reset is disabled while a query is active.
-- Modified markers compare the live snapshot against `defaultSettingsSnapshot()` across all three stores. A row that only presents a value another row owns (the logcat format preset) declares no `modified` predicate instead of duplicating the columns marker.
+- Row labels and descriptions come from the registry, never from a literal inside a section component. A row rendered with an unknown id throws.
+- Modified markers compare the live snapshot against `defaultSettingsSnapshot()` across all three stores and render the readable `已修改` label. A row that only presents a value another row owns (the logcat format preset) declares no `modified` predicate instead of duplicating the columns marker.
 - The global reset confirms first, then restores settings, theme and pane visibility together. A confirmation that fails reports the failure and changes nothing.
 - Apply the startup pane before React render. Share one update request across StrictMode effects; disabling permanently invalidates the current launch's check. Enabling during runtime does not initiate a check. Preserve user-initiated installation.
 - Keep the dialog state transient, use a modal focus boundary, restore trigger focus on close, and suppress workspace hotkeys while settings are open.
+- On opening, focus the non-tabbable settings heading without an outline or scroll movement. Tab and Shift+Tab from the heading enter the first and last controls; retain visible keyboard focus on controls and do not reset focus when navigating between sections.
+- Keep settings errors and their recovery controls outside the scrolling section list so anchors never hide them. Forward Tab from an index button enters that section's first enabled control, or its focusable section when all controls are disabled.
+- On macOS, expose Settings through the native application menu with `Cmd+,`, emit `open-settings`, and subscribe through `onOpenSettings()` in `lib/tauri.ts`. Preserve an already-open section and dispose late listener registrations. Do not register a Windows shortcut.
 - Send a click-time screenshot preference snapshot and a finalization-time recording snapshot to Rust. Compare requested flags with returned opened/revealed flags; saved files remain available if an opener fails.
 - Persist one `capture.directory: string | null`. Directory-only reset preserves screenshot/recording flags; capture-section reset restores all four preferences. Native dialogs and invokes belong only in lib/tauri.ts; unavailable browser preview must not fabricate a chosen path.
 - `createRecordingController` owns frontend action coordination, automatic-attempt identity and stale-response revision. Keep Rust phase authoritative. Polling must not overwrite an in-flight operation, and settings-read failures must still consume the automatic attempt. Only explicit retry/save-as/discard actions recover failures.
@@ -57,9 +61,9 @@
 
 - Cover schema defaults, persistence restart, malformed values, write failures, group reset and runtime isolation.
 - Cover section order, unknown section rejection, every reset plan, and the migration branches (same / older / newer / non-integer version).
-- Cover ownership by SSR-rendering a section with `available: false` and asserting the theme buttons and pane checkboxes fall outside its disabled fieldset.
-- SSR-render every section so an unknown row id fails in tests rather than at runtime, and cover the filtered and marked states.
-- Browser-check the dialog against `scripts/screenshots/mock-tauri.js` at 1200x800 and 900x600 in both themes: dialog size, no horizontal overflow, vertical navigation keys, Escape focus restoration, the corrupted-settings disabled scope, and the global reset. The mock answers `plugin:dialog|message` with the ok button label because plugin-dialog resolves a confirmation by comparing labels; returning a boolean silently reads as cancel.
+- Cover ownership by SSR-rendering a section with `available: false` and asserting the theme radio group and pane chips fall outside its disabled fieldset.
+- SSR-render every section so an unknown row id fails in tests rather than at runtime, and cover readable modified marks, stacked rows, control roles, selected states, and the absence of native settings checkboxes.
+- Browser-check the dialog against `scripts/screenshots/mock-tauri.js` at 1200x800 and 900x600 in both themes: six-section rendering, no horizontal overflow, anchor clicks, scrollspy, navigation keys, per-section and global reset, Escape focus restoration, the corrupted-settings disabled scope, and quick-control synchronization. The mock answers `plugin:dialog|message` with the ok button label because plugin-dialog resolves a confirmation by comparing labels; returning a boolean silently reads as cancel.
 - Cover startup zero-call and in-flight invalidation behavior.
 - Cover A -> B -> A, disconnect/authorization loss, transport replacement, stale finally and no retry after writes.
 - Check dialog layout at 1200x800 and 900x600 in both themes, focus trapping, Escape and keyboard tab navigation.
@@ -109,7 +113,7 @@ Correct: capture monotonically increasing context revision and operation ID, awa
 
 - Test defaults/migration/write failure/group reset, every sorting dimension and direction, unknown/zero/tie behavior, filtered selection and late previews.
 - Test generation option snapshots, reset/clear/restart semantics and refusal when settings are unavailable.
-- Check seven settings tabs at 900x600 and 1200x800 in both themes, keyboard boundaries and native restart/device reads.
+- Check all six settings sections in the scrolling panel at 900x600 and 1200x800 in both themes, keyboard boundaries and native restart/device reads.
 
 ### 7. Wrong vs Correct
 

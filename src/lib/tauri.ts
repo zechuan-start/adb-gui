@@ -240,6 +240,10 @@ export function isTauriRuntime(): boolean {
   return isTauri();
 }
 
+export async function onOpenSettings(callback: () => void): Promise<UnlistenFn> {
+  return listen("open-settings", callback);
+}
+
 export interface QuickReportResult {
   dir: string;
   revealed: boolean;

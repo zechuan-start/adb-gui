@@ -1,14 +1,13 @@
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useId, type ReactNode } from "react";
+import { Switch } from "@/components/settings/controls/Switch";
 import { findSettingsRow } from "@/lib/settingsSections";
 import { cn } from "@/lib/utils";
 
 interface SettingsViewValue {
-  visible: (rowId: string) => boolean;
   modified: (rowId: string) => boolean;
 }
 
 const SettingsViewContext = createContext<SettingsViewValue>({
-  visible: () => true,
   modified: () => false,
 });
 
@@ -30,112 +29,107 @@ export function useSettingsView(): SettingsViewValue {
   return useContext(SettingsViewContext);
 }
 
-// Search filters rows in place, so every row-shaped block passes through a gate
-// instead of each section re-implementing the query.
-export function SettingsRowGate({
-  id,
-  children,
-}: {
-  id: string;
-  children: ReactNode;
-}) {
-  return useSettingsView().visible(id) ? <>{children}</> : null;
-}
-
-export function SettingsGroup({
-  title,
-  rowIds,
-  children,
-}: {
-  title?: string;
-  rowIds: readonly string[];
-  children: ReactNode;
-}) {
-  const { visible } = useSettingsView();
-  if (!rowIds.some((id) => visible(id))) return null;
-  return (
-    <>
-      {title && (
-        <div className="mt-4 pb-1 text-[11px] font-semibold text-ink2 first:mt-0">
-          {title}
-        </div>
-      )}
-      {children}
-    </>
-  );
-}
-
-// Exported for rows that need their own layout: the label and description still
-// come from the registry, so search and the panel can never disagree.
 export function SettingRowLabel({
   id,
+  labelId,
   className,
 }: {
   id: string;
+  labelId?: string;
   className?: string;
 }) {
   const row = findSettingsRow(id);
   const modified = useSettingsView().modified(id);
   return (
-    <span className={cn("flex min-w-0 flex-col gap-0.5", className)}>
-      <span className="flex items-center gap-1.5 text-xs">
-        {row.label}
+    <div
+      id={labelId}
+      className={cn("flex min-w-0 flex-col gap-0.5", className)}
+    >
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+        <span>{row.label}</span>
         {modified && (
           <span
-            aria-hidden="true"
-            title="已改动"
-            className="h-1.5 w-1.5 shrink-0 bg-note"
-          />
+            title="当前值与默认不同"
+            className="font-data text-[10px] text-note uppercase"
+          >
+            已修改
+          </span>
         )}
-      </span>
+      </div>
       {row.description && (
-        <span className="text-[11px] leading-snug text-ink3">
+        <span className="text-[11px] leading-snug text-ink2">
           {row.description}
         </span>
       )}
-    </span>
+    </div>
   );
 }
 
 export function SettingRow({
   id,
+  layout = "inline",
   children,
 }: {
   id: string;
+  layout?: "inline" | "stacked";
   children: ReactNode;
 }) {
   return (
-    <SettingsRowGate id={id}>
-      <div className="flex min-h-12 items-center justify-between gap-4 border-b border-rule py-2.5 last:border-b-0">
-        <SettingRowLabel id={id} />
-        <span className="shrink-0">{children}</span>
+    <div
+      className={cn(
+        "min-h-12 gap-6 border-b border-rule py-2.5 last:border-b-0",
+        layout === "inline"
+          ? "flex items-center justify-between"
+          : "flex flex-col items-stretch gap-2",
+      )}
+    >
+      <SettingRowLabel id={id} />
+      <div className={cn(layout === "inline" ? "shrink-0" : "w-full")}>
+        {children}
       </div>
-    </SettingsRowGate>
+    </div>
   );
 }
 
-export function SettingToggle({
+export function SettingSwitchRow({
   id,
   checked,
   onChange,
+  disabled = false,
 }: {
   id: string;
   checked: boolean;
   onChange: (value: boolean) => void;
+  disabled?: boolean;
 }) {
+  const controlId = useId();
+  const labelId = `${controlId}-label`;
+
   return (
-    <SettingsRowGate id={id}>
-      <label className="flex min-h-12 cursor-pointer items-center justify-between gap-4 border-b border-rule py-2.5 last:border-b-0">
-        <SettingRowLabel id={id} />
-        <input
-          type="checkbox"
-          role="switch"
-          checked={checked}
-          onChange={(event) => onChange(event.currentTarget.checked)}
-          className="h-4 w-4 shrink-0 accent-ink"
-        />
-      </label>
-    </SettingsRowGate>
+    <div
+      onClick={(event) => {
+        if (disabled) return;
+        if (
+          event.target instanceof Element &&
+          event.target.closest("button") !== null
+        )
+          return;
+        onChange(!checked);
+      }}
+      className={cn(
+        "flex min-h-12 items-center justify-between gap-6 border-b border-rule py-2.5 last:border-b-0",
+        disabled ? "cursor-not-allowed" : "cursor-pointer",
+      )}
+    >
+      <SettingRowLabel id={id} labelId={labelId} />
+      <Switch
+        id={controlId}
+        checked={checked}
+        onCheckedChange={onChange}
+        disabled={disabled}
+        ariaLabelledBy={labelId}
+      />
+    </div>
   );
 }
 

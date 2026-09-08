@@ -99,6 +99,7 @@ A cross-platform desktop workbench for everyday `adb` work: one device context, 
 
 | Shortcut | Action |
 | --- | --- |
+| `Cmd + ,` (macOS only) | Open Settings, also available from the application menu |
 | `Ctrl/Cmd + J` | Show or hide the Logcat panel for the current workspace |
 | `Ctrl/Cmd + F` | Open the Logcat panel and focus the query field |
 | `Ctrl/Cmd + Enter` | Generate codes in the Codegen workspace |

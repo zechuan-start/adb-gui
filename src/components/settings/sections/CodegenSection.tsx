@@ -1,12 +1,27 @@
-import { GeneratorPreferences } from "@/components/settings/GeneratorPreferences";
-import { SettingsGroup } from "@/components/settings/SettingRow";
+import {
+  CodeTypeControl,
+  SeparatorControl,
+} from "@/components/settings/GeneratorPreferences";
+import {
+  SettingRow,
+  SettingsFieldset,
+} from "@/components/settings/SettingRow";
+import { useSettingsStore } from "@/store/settings";
 
-// The generator block is shared with the codegen workspace and already scopes
-// its own fieldset, so the section only adds search filtering around it.
 export function CodegenSection() {
+  const available = useSettingsStore((state) => state.available);
   return (
-    <SettingsGroup rowIds={["codeType", "separator"]}>
-      <GeneratorPreferences id="settings-code-separator" />
-    </SettingsGroup>
+    <SettingsFieldset available={available}>
+      <SettingRow id="codeType">
+        <CodeTypeControl disabled={!available} />
+      </SettingRow>
+      <SettingRow id="separator" layout="stacked">
+        <SeparatorControl
+          id="settings-code-separator"
+          disabled={!available}
+          containerClassName="w-44 max-w-full"
+        />
+      </SettingRow>
+    </SettingsFieldset>
   );
 }
