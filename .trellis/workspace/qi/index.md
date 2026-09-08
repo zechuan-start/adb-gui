@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 21
+- **Total Sessions**: 22
 - **Last Active**: 2026-09-08
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~764 | Active |
+| `journal-1.md` | ~797 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 22 | 2026-09-08 | 中英双语实现与归档 | `4dd1bad` | `claude/bilingual-project-plan-ng1o7s` |
 | 21 | 2026-09-08 | 设置重构与原生交互收口 | `e7380d7` | `main` |
 | 20 | 2026-09-05 | Ship settings and clipboard changes | `495f097` | `codex/settings-and-clipboard` |
 | 19 | 2026-09-04 | Add screenshot clipboard action | `1343ff6` | `main` |
