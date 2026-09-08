@@ -723,3 +723,42 @@ Created the feature branch and committed unified preferences, manual clipboard t
 ### Next Steps
 
 - Push the feature branch and verify remote commit identity. Task archiving remains deferred.
+
+
+## Session 21: 设置重构与原生交互收口
+
+**Date**: 2026-09-08
+**Task**: 设置重构与原生交互收口
+**Branch**: `main`
+
+### Summary
+
+完成设置面板重构, 边界修复, macOS 快捷键, 淡网格与初始焦点调整, 通过浏览器和原生验收并归档任务.
+
+### Main Changes
+
+- 将六分组设置改为单页滚动清单, 统一 switch, 分段控件, chip 和就地重置入口.
+- 修复错误恢复区被滚动隐藏, 底部菜单裁剪, 索引 Tab 焦点衔接及原生 WebKit 菜单绘制问题.
+- 新增 macOS 原生设置菜单与 Cmd + 逗号快捷键, 淡网格背景, 无边框的标题初始焦点; 保留键盘控件的可见焦点提示.
+- 410 项前端测试, TypeScript / Vite 构建, Rust 格式检查, Clippy 和 125 项 Rust 测试通过. 浏览器及 macOS 原生验收已完成.
+- 最终原生 App 已安装, 签名和构建哈希核对通过, 旧 App 已移至垃圾桶.
+- 设置整体重构任务已结项归档, 同时纳入此前已确认的旧设置任务归档. 保留其他任务状态, 本次不发布版本.
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e7380d7` | feat(settings): redesign panel and keyboard navigation |
+
+### Testing
+
+- [OK] 410 项前端测试, 125 项 Rust 测试, TypeScript / Vite / 原生构建, Rust 格式检查与 Clippy, 浏览器及 macOS 原生交互验收通过.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

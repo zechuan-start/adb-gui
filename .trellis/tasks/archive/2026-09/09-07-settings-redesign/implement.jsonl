@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/frontend/settings-clipboard.md", "reason": "设置存储归属, 注册表, 重置计划, 禁用范围与测试要求的现行合同; 本任务改动 UI 形态时必须保持这些不变量"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Blueprint 浮层, BlueprintSelect 用法, 图标尺寸, button type 等组件约定; 新控件套件需遵守"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Zustand store 读写约定; 快捷控件与弹窗控件共用同一 settings action"}
