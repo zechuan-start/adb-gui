@@ -1,4 +1,5 @@
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig } from "vitest/config";
+import type { Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
@@ -25,6 +26,7 @@ function removeZxingCdnFallback(): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
+  test: { setupFiles: ["./src/test/setup.ts"] },
   plugins: [react(), tailwindcss(), removeZxingCdnFallback()],
 
   resolve: {

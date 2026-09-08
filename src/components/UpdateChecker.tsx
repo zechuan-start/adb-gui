@@ -1,3 +1,5 @@
+import { AppError, toAppError } from "@/i18n/errors";
+import { useT } from "@/i18n";
 import { useEffect, useState } from "react";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -18,6 +20,7 @@ const unsubscribeSettings = useSettingsStore.subscribe((state) => {
 if (import.meta.hot) import.meta.hot.dispose(unsubscribeSettings);
 
 export function UpdateChecker() {
+  const t = useT();
   const [update, setUpdate] = useState<Awaited<ReturnType<typeof check>> | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [installing, setInstalling] = useState(false);
@@ -55,7 +58,7 @@ export function UpdateChecker() {
       await currentUpdate.downloadAndInstall();
       await relaunch();
     } catch (error) {
-      showToast("error", `安装更新失败: ${String(error)}`);
+      showToast("error", new AppError("shell.installUpdate", {}, { causes: [toAppError(error)] }).payload);
       setInstalling(false);
     }
   }
@@ -70,7 +73,7 @@ export function UpdateChecker() {
         <div className="flex items-center gap-2">
           <Download className="h-4 w-4 text-note" />
           <div>
-            <div className="text-xs font-semibold">发现新版本</div>
+            <div className="text-xs font-semibold">{t.shell.update.available}</div>
             <div className="font-data text-[10px] text-ink3">v{update.version}</div>
           </div>
         </div>
@@ -78,8 +81,8 @@ export function UpdateChecker() {
           type="button"
           onClick={() => setDismissed(true)}
           className="inline-flex h-7 w-7 items-center justify-center text-ink3 hover:bg-hover hover:text-ink"
-          aria-label="关闭更新提示"
-          title="关闭"
+          aria-label={t.shell.update.close}
+          title={t.common.close}
         >
           <X className="h-4 w-4" />
         </button>
@@ -95,7 +98,7 @@ export function UpdateChecker() {
           className="inline-flex h-8 items-center gap-2 border border-ink bg-ink px-3 font-data text-[11px] font-medium text-onink hover:border-ink2 hover:bg-ink2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {installing && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
-          {installing ? "正在安装" : "安装并重启"}
+          {installing ? t.shell.update.installing : t.shell.update.install}
         </button>
         <button
           type="button"
@@ -103,8 +106,7 @@ export function UpdateChecker() {
           disabled={installing}
           className="h-8 border border-rule bg-surface px-3 font-data text-[11px] text-ink hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50"
         >
-          稍后
-        </button>
+          {t.shell.update.later}</button>
       </div>
     </div>
   );

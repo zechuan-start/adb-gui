@@ -1,3 +1,5 @@
+import { numbers } from "@/i18n/format";
+import { useT, useLocale, errorText, type Messages } from "@/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -24,6 +26,7 @@ import { useUiStore } from "@/store/ui";
 const EMPTY_VALUES: readonly string[] = [];
 
 export function CodeGeneratorPage() {
+  const t = useT();
   const input = useCodeGeneratorStore((state) => state.input);
   const inputRevision = useCodeGeneratorStore((state) => state.inputRevision);
   const options = useSettingsStore((state) => state.preferences.codegen);
@@ -41,7 +44,7 @@ export function CodeGeneratorPage() {
   const isStale = isGeneratedBatchStale(generatedBatch, inputRevision, options);
   const canClear = Boolean(generatedBatch || input || inputError);
   const invalidSeparator = options.separatorMode === "custom" && options.customSeparator.length === 0;
-  const dataError = !invalidSeparator && inputError && (!inputError.options || generatorOptionsMatch(inputError.options, options)) ? inputError.message : "";
+  const dataError = !invalidSeparator && inputError && (!inputError.options || generatorOptionsMatch(inputError.options, options)) ? errorText(inputError.error, t) : "";
 
   function handleGenerate() {
     if (!settingsAvailable || invalidSeparator) return;
@@ -78,19 +81,19 @@ export function CodeGeneratorPage() {
         <section className="border border-rule bg-surface2">
           <header className="flex h-10 items-center gap-2 border-b border-rule px-3">
             <QrCode className="h-4 w-4 text-ink2" />
-            <h2 className="text-sm font-semibold text-ink">批量生码</h2>
+            <h2 className="text-sm font-semibold text-ink">{t.codegen.codeGeneratorPage.batchGenerator}</h2>
             <span className="ml-auto font-data text-[10px] text-note">C-01</span>
-            <button type="button" title="生码设置" aria-label="生码设置" onClick={() => openSettings("codegen")} className="flex h-7 w-7 items-center justify-center hover:bg-hover"><Settings className="h-3.5 w-3.5" /></button>
+            <button type="button" title={t.codegen.codeGeneratorPage.generatorSettings} aria-label={t.codegen.codeGeneratorPage.generatorSettings} onClick={() => openSettings("codegen")} className="flex h-7 w-7 items-center justify-center hover:bg-hover"><Settings className="h-3.5 w-3.5" /></button>
           </header>
           <div className="p-3">
             <GeneratorPreferences />
-            {settingsError && <div role="alert" className="mt-2 break-words text-xs text-err">{settingsError}</div>}
+            {settingsError && <div role="alert" className="mt-2 break-words text-xs text-err">{errorText(settingsError, t)}</div>}
 
             <label
               className="mt-3 block font-data text-[10.5px] text-ink3"
               htmlFor="code-input"
             >
-              数据
+              {t.codegen.codeGeneratorPage.data}
             </label>
             <textarea
               id="code-input"
@@ -113,8 +116,8 @@ export function CodeGeneratorPage() {
                   previewTriggerRef.current = null;
                 }}
                 disabled={!canClear}
-                title="清空"
-                aria-label="清空输入和结果"
+                title={t.codegen.codeGeneratorPage.clear}
+                aria-label={t.codegen.codeGeneratorPage.clearInputAndResults}
                 className="inline-flex h-8 w-8 items-center justify-center border border-rule text-ink2 hover:border-ink3 hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Eraser className="h-4 w-4" />
@@ -123,11 +126,11 @@ export function CodeGeneratorPage() {
                 type="button"
                 onClick={handleGenerate}
                 disabled={!settingsAvailable || invalidSeparator}
-                title="生成 (Ctrl/Command+Enter)"
+                title={t.codegen.codeGeneratorPage.generateCtrlCommandEnter}
                 className="inline-flex h-8 flex-1 items-center justify-center gap-2 border border-ink bg-ink px-4 font-data text-[11px] font-medium text-onink hover:bg-ink2 disabled:opacity-40"
               >
                 <QrCode className="h-4 w-4" />
-                生成
+                {t.codegen.codeGeneratorPage.generate}
               </button>
             </div>
           </div>
@@ -159,6 +162,8 @@ interface CodeResultsPanelProps {
 }
 
 function CodeResultsPanel({ batch, isStale, onPreview }: CodeResultsPanelProps) {
+  const t = useT();
+  const locale = useLocale();
   const scrollRef = useRef<HTMLDivElement>(null);
   const values = batch?.values ?? EMPTY_VALUES;
   const columnCount = batch?.codeType === "qr" ? 2 : 1;
@@ -193,20 +198,20 @@ function CodeResultsPanel({ batch, isStale, onPreview }: CodeResultsPanelProps) 
   return (
     <div className="flex min-h-0 min-w-0 flex-col">
       <div className="flex h-10 shrink-0 items-center gap-3 border-b border-rule bg-surface px-4">
-        <h2 className="text-sm font-semibold text-ink">结果</h2>
+        <h2 className="text-sm font-semibold text-ink">{t.codegen.codeGeneratorPage.results}</h2>
         {batch && (
           <>
             <span className="font-data text-[10.5px] text-ink3">
-              {values.length.toLocaleString("zh-CN")} 项
+              {t.codegen.itemCount({ count: values.length, formatted: numbers(locale).format(values.length) })}
             </span>
             <span className="border border-rule px-2 py-0.5 font-data text-[10px] text-ink2">
-              {batch.codeType === "qr" ? "二维码" : "Code 128"}
+              {batch.codeType === "qr" ? t.codegen.codeGeneratorPage.qrCode : "Code 128"}
             </span>
           </>
         )}
         {isStale && (
           <span className="ml-auto text-xs text-warn">
-            输入或参数已修改
+            {t.codegen.codeGeneratorPage.inputOrOptionsChanged}
           </span>
         )}
       </div>
@@ -215,7 +220,7 @@ function CodeResultsPanel({ batch, isStale, onPreview }: CodeResultsPanelProps) 
         <div
           ref={scrollRef}
           role="region"
-          aria-label="生成结果列表"
+          aria-label={t.codegen.codeGeneratorPage.generatedResults}
           tabIndex={0}
           className="min-h-0 flex-1 overflow-auto p-[18px] outline-none"
         >
@@ -258,8 +263,8 @@ function CodeResultsPanel({ batch, isStale, onPreview }: CodeResultsPanelProps) 
       ) : (
         <div className="m-[18px] flex min-h-36 flex-1 flex-col items-center justify-center gap-2 border border-dashed border-rule bg-surface px-5 text-center text-ink3">
           <QrCode className="h-6 w-6" />
-          <strong className="text-sm font-semibold text-ink">还没有生成任何码</strong>
-          <span className="text-xs">在左侧输入数据并生成.</span>
+          <strong className="text-sm font-semibold text-ink">{t.codegen.codeGeneratorPage.noCodesGeneratedYet}</strong>
+          <span className="text-xs">{t.codegen.codeGeneratorPage.enterDataOnTheLeftAndGenerate}</span>
         </div>
       )}
     </div>
@@ -274,14 +279,15 @@ interface CodeResultCardProps {
 }
 
 function CodeResultCard({ batch, index, value, onPreview }: CodeResultCardProps) {
-  const displayValue = getDisplayValue(value);
+  const t = useT();
+  const displayValue = getDisplayValue(value, t);
 
   return (
     <button
       type="button"
       onClick={(event) => onPreview(index, event.currentTarget)}
       className="flex h-full min-w-0 flex-col overflow-hidden border border-rule bg-surface2 text-left hover:border-note"
-      aria-label={`放大预览第 ${index + 1} 项`}
+      aria-label={t.codegen.codeGeneratorPage.previewItem({ index: index + 1 })}
     >
       <GeneratedCodeCanvas codeType={batch.codeType} value={value} />
       <div className="flex min-w-0 flex-1 items-start gap-2 border-t border-rule px-3 py-2">
@@ -312,6 +318,7 @@ function CodePreviewDialog({
   onIndexChange,
   onClose,
 }: CodePreviewDialogProps) {
+  const t = useT();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const value = batch.values[index];
 
@@ -360,13 +367,13 @@ function CodePreviewDialog({
         closeDialog();
       }}
       onKeyDown={handleKeyDown}
-      aria-label="码图放大预览"
+      aria-label={t.codegen.codeGeneratorPage.codePreview}
       className="m-auto max-h-[90vh] w-[min(760px,92vw)] overflow-hidden border border-rule bg-paper p-0 text-ink shadow-[3px_3px_0_var(--color-hard-shadow)] backdrop:bg-black/60"
     >
       <div className="flex max-h-[90vh] min-h-0 flex-col">
         <div className="flex h-10 shrink-0 items-center gap-3 border-b border-rule bg-surface px-4">
           <span className="text-sm font-semibold">
-            {batch.codeType === "qr" ? "二维码" : "Code 128"}
+            {batch.codeType === "qr" ? t.codegen.codeGeneratorPage.qrCode : "Code 128"}
           </span>
           <span className="font-data text-xs text-ink3">
             {index + 1} / {batch.values.length}
@@ -374,8 +381,8 @@ function CodePreviewDialog({
           <button
             type="button"
             onClick={closeDialog}
-            title="关闭"
-            aria-label="关闭预览"
+            title={t.common.close}
+            aria-label={t.codegen.codeGeneratorPage.closePreview}
             className="ml-auto inline-flex h-8 w-8 items-center justify-center text-ink3 hover:bg-hover hover:text-ink"
           >
             <X className="h-4 w-4" />
@@ -388,7 +395,7 @@ function CodePreviewDialog({
 
         <div className="max-h-28 overflow-auto border-t border-rule bg-surface2 px-4 py-3">
           <div className="whitespace-pre-wrap break-all font-data text-xs leading-5">
-            {getDisplayValue(value)}
+            {getDisplayValue(value, t)}
           </div>
         </div>
 
@@ -397,8 +404,8 @@ function CodePreviewDialog({
             type="button"
             onClick={() => onIndexChange(index - 1)}
             disabled={index === 0}
-            title="上一项"
-            aria-label="上一项"
+            title={t.codegen.codeGeneratorPage.previousItem}
+            aria-label={t.codegen.codeGeneratorPage.previousItem}
             className="inline-flex h-8 w-8 items-center justify-center border border-rule text-ink2 hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -407,8 +414,8 @@ function CodePreviewDialog({
             type="button"
             onClick={() => onIndexChange(index + 1)}
             disabled={index === batch.values.length - 1}
-            title="下一项"
-            aria-label="下一项"
+            title={t.codegen.codeGeneratorPage.nextItem}
+            aria-label={t.codegen.codeGeneratorPage.nextItem}
             className="inline-flex h-8 w-8 items-center justify-center border border-rule text-ink2 hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
           >
             <ChevronRight className="h-4 w-4" />
@@ -419,9 +426,9 @@ function CodePreviewDialog({
   );
 }
 
-function getDisplayValue(value: string): string {
+function getDisplayValue(value: string, t: Messages): string {
   if (value.trim().length === 0) {
-    return `空白字符 (${value.length})`;
+    return t.codegen.codeGeneratorPage.whitespace({ count: value.length });
   }
   return value;
 }

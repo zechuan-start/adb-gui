@@ -1,10 +1,11 @@
+use crate::{error::AppError, error_codes as codes};
 use base64::Engine;
 use tauri::AppHandle;
 
 use crate::adb;
 
 #[tauri::command]
-pub fn get_app_icon(app: AppHandle, serial: String, pkg: String) -> Result<String, String> {
+pub fn get_app_icon(app: AppHandle, serial: String, pkg: String) -> Result<String, AppError> {
     let adb_path = adb::resolve_adb_path(&app)?;
 
     let output = adb::prepare_command(&app, &adb_path)
@@ -17,7 +18,7 @@ pub fn get_app_icon(app: AppHandle, serial: String, pkg: String) -> Result<Strin
         .arg(&pkg)
         .arg("0")
         .output()
-        .map_err(|e| format!("Failed to get icon: {e}"))?;
+        .map_err(|e| AppError::new(codes::APPS_ICON_FAILED).detail(e.to_string()))?;
 
     if !output.status.success() || output.stdout.len() < 8 {
         return Ok(String::new());

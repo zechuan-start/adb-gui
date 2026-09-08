@@ -1,3 +1,4 @@
+import { useT } from "@/i18n";
 import type { ReactNode } from "react";
 import { RotateCcw } from "lucide-react";
 import type { SettingsSectionMeta } from "@/lib/settingsSections";
@@ -19,6 +20,7 @@ export function SettingsSectionBlock({
   sectionRef,
   children,
 }: SettingsSectionBlockProps) {
+  const t = useT();
   const headingId = `settings-heading-${meta.id}`;
   return (
     <section
@@ -33,7 +35,7 @@ export function SettingsSectionBlock({
           id={headingId}
           className="font-data text-[10px] tracking-[0.12em] text-ink2 uppercase"
         >
-          {String(index + 1).padStart(2, "0")} {meta.label}
+          {String(index + 1).padStart(2, "0")} {meta.label(t)}
         </h3>
         {dirty && (
           <button
@@ -42,8 +44,7 @@ export function SettingsSectionBlock({
             className="ml-auto inline-flex h-7 items-center gap-1.5 px-1.5 text-[11px] text-ink2 hover:bg-hover hover:text-ink"
           >
             <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
-            恢复默认
-          </button>
+            {t.settings.dialog.reset}</button>
         )}
       </div>
       {children}

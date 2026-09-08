@@ -1,3 +1,4 @@
+import { useT } from "@/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ListFilter } from "lucide-react";
 import { useLogcatStore } from "@/store/logcat";
@@ -12,6 +13,7 @@ const LEVELS = [
 ] as const;
 
 export function LogcatLevelMenu() {
+  const t = useT();
   const appendToQuery = useLogcatStore((state) => state.appendToQuery);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -55,13 +57,13 @@ export function LogcatLevelMenu() {
       <button
         ref={triggerRef}
         type="button"
-        aria-label="等级查询"
+        aria-label={t.logcat.levelQuery}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls="logcat-level-menu"
         onClick={() => setOpen((current) => !current)}
         className="inline-flex h-7 w-7 items-center justify-center border border-rule text-log-dim hover:bg-hover hover:text-ink"
-        title="追加日志等级查询"
+        title={t.logcat.appendLevel}
       >
         <ListFilter className="h-3.5 w-3.5" />
       </button>
@@ -71,7 +73,7 @@ export function LogcatLevelMenu() {
           role="menu"
           className="absolute left-0 top-full z-30 mt-1 w-40 border border-rule bg-popover p-1 text-popover-foreground shadow-[3px_3px_0_var(--color-hard-shadow)]"
         >
-          <p className="px-2 py-1 font-data text-[10px] text-ink3">等级阈值</p>
+          <p className="px-2 py-1 font-data text-[10px] text-ink3">{t.logcat.levelThreshold}</p>
           {LEVELS.map((level, index) => (
             <button
               ref={index === 0 ? firstItemRef : undefined}

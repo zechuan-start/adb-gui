@@ -1,17 +1,21 @@
+import { type AppErrorPayload } from "@/i18n/errors";
+import { useT, errorText } from "@/i18n";
 import { useEffect, useState } from "react";
 import { BlueprintSelect } from "@/components/BlueprintSelect";
 import { SettingRow } from "@/components/settings/SettingRow";
 import { deviceStartDirectoryError } from "@/lib/settings";
 import { useSettingsStore } from "@/store/settings";
 
-const PRESETS = [
-  { value: "download", label: "下载目录", path: null },
-  { value: "storage", label: "内部存储", path: "/sdcard" },
-  { value: "camera", label: "相机目录", path: "/sdcard/DCIM/Camera" },
-] as const;
-const OPTIONS = [...PRESETS, { value: "custom", label: "自定义" }];
+
 
 export function StartDirectoryPreference() {
+  const t = useT();
+const PRESETS = [
+  { value: "download", label: t.settings.startDirectory.download, path: null },
+  { value: "storage", label: t.settings.startDirectory.storage, path: "/sdcard" },
+  { value: "camera", label: t.settings.startDirectory.camera, path: "/sdcard/DCIM/Camera" },
+] as const;
+const OPTIONS = [...PRESETS, { value: "custom", label: t.settings.startDirectory.custom }];
   const path = useSettingsStore(
     (state) => state.preferences.files.startDirectory,
   );
@@ -19,7 +23,7 @@ export function StartDirectoryPreference() {
     PRESETS.find((option) => option.path === path)?.value ?? "custom";
   const [mode, setMode] = useState<string>(initialMode);
   const [draft, setDraft] = useState(path ?? "");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AppErrorPayload | null>(null);
 
   useEffect(() => {
     setMode(initialMode);
@@ -45,7 +49,7 @@ export function StartDirectoryPreference() {
         <BlueprintSelect
           value={mode}
           options={OPTIONS}
-          ariaLabel="设备起始目录"
+          ariaLabel={t.settings.rows.startDirectory.label}
           containerClassName="w-44 shrink-0"
           onValueChange={(value) => {
             if (value === "custom") {
@@ -64,7 +68,7 @@ export function StartDirectoryPreference() {
           <div className="mt-2">
             <input
               value={draft}
-              aria-label="自定义设备起始目录"
+              aria-label={t.settings.startDirectory.label}
               aria-invalid={Boolean(error)}
               spellCheck={false}
               onChange={(event) => {
@@ -87,7 +91,7 @@ export function StartDirectoryPreference() {
               }}
               className="h-8 w-full border border-rule bg-paper px-2.5 font-data outline-none"
             />
-            {error && <p className="mt-1 text-err">{error}</p>}
+            {error && <p className="mt-1 text-err">{errorText(error, t)}</p>}
           </div>
         )}
       </div>

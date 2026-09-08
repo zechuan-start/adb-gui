@@ -1,3 +1,4 @@
+use crate::{error::AppError, error_codes as codes};
 use std::time::Duration;
 
 use tauri::AppHandle;
@@ -5,22 +6,22 @@ use tauri::AppHandle;
 use super::device::{run_adb, run_adb_with_serial};
 
 #[tauri::command]
-pub fn adb_connect(app: AppHandle, address: String) -> Result<String, String> {
+pub fn adb_connect(app: AppHandle, address: String) -> Result<String, AppError> {
     let addr = normalize_address(&address)?;
     run_adb_connect(&app, &addr)
 }
 
 #[tauri::command]
-pub fn adb_disconnect(app: AppHandle, address: String) -> Result<String, String> {
+pub fn adb_disconnect(app: AppHandle, address: String) -> Result<String, AppError> {
     let addr = normalize_address(&address)?;
     run_adb(&app, &["disconnect", &addr]).map(|output| output.trim().to_string())
 }
 
 #[tauri::command]
-pub fn enable_wifi_debugging(app: AppHandle, serial: String) -> Result<String, String> {
+pub fn enable_wifi_debugging(app: AppHandle, serial: String) -> Result<String, AppError> {
     let ip = get_device_wifi_ip(&app, &serial)?;
     run_adb_with_serial(&app, &serial, &["tcpip", "5555"])
-        .map_err(|e| format!("Failed to enable tcpip mode: {e}"))?;
+        .map_err(|e| AppError::new(codes::WIFI_TCPIP_FAILED).cause(e))?;
     std::thread::sleep(Duration::from_millis(1500));
 
     let addr = format!("{ip}:5555");
@@ -28,13 +29,13 @@ pub fn enable_wifi_debugging(app: AppHandle, serial: String) -> Result<String, S
     Ok(addr)
 }
 
-fn run_adb_connect(app: &AppHandle, addr: &str) -> Result<String, String> {
+fn run_adb_connect(app: &AppHandle, addr: &str) -> Result<String, AppError> {
     run_adb_connect_with(addr, |args| run_adb(app, args))
 }
 
-fn run_adb_connect_with<F>(addr: &str, mut execute: F) -> Result<String, String>
+fn run_adb_connect_with<F>(addr: &str, mut execute: F) -> Result<String, AppError>
 where
-    F: FnMut(&[&str]) -> Result<String, String>,
+    F: FnMut(&[&str]) -> Result<String, AppError>,
 {
     let output = execute(&["connect", addr])?;
     validate_connect_output(&output)?;
@@ -44,53 +45,66 @@ where
     }
 
     // `adb connect` can report an offline cached transport as already connected.
-    execute(&["disconnect", addr])
-        .map_err(|e| format!("设备 {addr} 未进入在线状态, 且清理旧连接失败: {e}"))?;
+    execute(&["disconnect", addr]).map_err(|e| {
+        AppError::new(codes::WIFI_STALE_CLEANUP_FAILED)
+            .param("address", addr)
+            .cause(e)
+    })?;
 
-    let output = execute(&["connect", addr])
-        .map_err(|e| format!("设备 {addr} 未进入在线状态, 重新连接失败: {e}"))?;
-    validate_connect_output(&output)
-        .map_err(|e| format!("设备 {addr} 未进入在线状态, 重新连接失败: {e}"))?;
-    verify_device_online(addr, &mut execute)
-        .map_err(|e| format!("设备 {addr} 重新连接后仍不可用: {e}"))?;
+    let output = execute(&["connect", addr]).map_err(|e| {
+        AppError::new(codes::WIFI_RECONNECT_FAILED)
+            .param("address", addr)
+            .cause(e)
+    })?;
+    validate_connect_output(&output).map_err(|e| {
+        AppError::new(codes::WIFI_RECONNECT_FAILED)
+            .param("address", addr)
+            .cause(e)
+    })?;
+    verify_device_online(addr, &mut execute).map_err(|e| {
+        AppError::new(codes::WIFI_STILL_UNAVAILABLE)
+            .param("address", addr)
+            .cause(e)
+    })?;
 
     Ok(output.trim().to_string())
 }
 
-fn validate_connect_output(output: &str) -> Result<(), String> {
+fn validate_connect_output(output: &str) -> Result<(), AppError> {
     let trimmed = output.trim();
     let lower = trimmed.to_lowercase();
     if lower.contains("failed") || lower.contains("unable") || lower.contains("cannot") {
-        Err(trimmed.to_string())
+        Err(AppError::new(codes::WIFI_CONNECT_FAILED).detail(trimmed))
     } else {
         Ok(())
     }
 }
 
-fn verify_device_online<F>(addr: &str, execute: &mut F) -> Result<(), String>
+fn verify_device_online<F>(addr: &str, execute: &mut F) -> Result<(), AppError>
 where
-    F: FnMut(&[&str]) -> Result<String, String>,
+    F: FnMut(&[&str]) -> Result<String, AppError>,
 {
     let state = execute(&["-s", addr, "get-state"])?;
     let state = state.trim();
     if state == "device" {
         Ok(())
     } else {
-        Err(format!(
-            "ADB 状态为 {}",
-            if state.is_empty() { "未知" } else { state }
-        ))
+        Err(if state.is_empty() {
+            AppError::new(codes::WIFI_UNKNOWN_STATE)
+        } else {
+            AppError::new(codes::WIFI_UNEXPECTED_STATE).param("state", state)
+        })
     }
 }
 
-fn get_device_wifi_ip(app: &AppHandle, serial: &str) -> Result<String, String> {
+fn get_device_wifi_ip(app: &AppHandle, serial: &str) -> Result<String, AppError> {
     let output = run_adb_with_serial(
         app,
         serial,
         &["shell", "ip", "-f", "inet", "addr", "show", "wlan0"],
     )
-    .map_err(|e| format!("Failed to read WiFi IP: {e}"))?;
-    parse_inet_addr(&output).ok_or_else(|| "未检测到 WiFi IP, 请确认设备已连接 WiFi".to_string())
+    .map_err(|e| AppError::new(codes::WIFI_READ_IP_FAILED).cause(e))?;
+    parse_inet_addr(&output).ok_or_else(|| AppError::new(codes::WIFI_NO_IP))
 }
 
 fn parse_inet_addr(output: &str) -> Option<String> {
@@ -99,10 +113,10 @@ fn parse_inet_addr(output: &str) -> Option<String> {
         .and_then(|captures| captures.get(1).map(|m| m.as_str().to_string()))
 }
 
-fn normalize_address(address: &str) -> Result<String, String> {
+fn normalize_address(address: &str) -> Result<String, AppError> {
     let trimmed = address.trim();
     if trimmed.is_empty() {
-        return Err("请输入设备 IP 或 ip:port".to_string());
+        return Err(AppError::new(codes::WIFI_EMPTY_ADDRESS));
     }
     if trimmed.contains(':') {
         Ok(trimmed.to_string())
@@ -113,18 +127,24 @@ fn normalize_address(address: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    use crate::error_codes as codes;
     use std::collections::VecDeque;
 
     use super::run_adb_connect_with;
+    use crate::error::AppError;
 
     type ScriptResult<'a> = Result<&'a str, &'a str>;
 
     fn run_connect_script(
         script: Vec<ScriptResult<'_>>,
-    ) -> (Result<String, String>, Vec<Vec<String>>) {
-        let mut responses: VecDeque<Result<String, String>> = script
+    ) -> (Result<String, AppError>, Vec<Vec<String>>) {
+        let mut responses: VecDeque<Result<String, AppError>> = script
             .into_iter()
-            .map(|result| result.map(str::to_string).map_err(str::to_string))
+            .map(|result| {
+                result
+                    .map(str::to_string)
+                    .map_err(|detail| AppError::new(codes::ADB_EXECUTE_FAILED).detail(detail))
+            })
             .collect();
         let mut calls = Vec::new();
         let result = run_adb_connect_with("192.168.1.10:5555", |args| {
@@ -207,9 +227,12 @@ mod tests {
             Err("failed to connect to 192.168.1.10:5555"),
         ]);
 
+        let error = result.unwrap_err();
+        assert_eq!(error.code, codes::WIFI_RECONNECT_FAILED);
+        assert_eq!(error.params["address"], "192.168.1.10:5555".into());
         assert_eq!(
-            result,
-            Err("设备 192.168.1.10:5555 未进入在线状态, 重新连接失败: failed to connect to 192.168.1.10:5555".to_string())
+            error.causes[0].detail.as_deref(),
+            Some("failed to connect to 192.168.1.10:5555")
         );
         assert_eq!(calls.len(), 4);
     }
@@ -219,9 +242,11 @@ mod tests {
         let (result, calls) =
             run_connect_script(vec![Ok("unable to connect to 192.168.1.10:5555")]);
 
+        let error = result.unwrap_err();
+        assert_eq!(error.code, codes::WIFI_CONNECT_FAILED);
         assert_eq!(
-            result,
-            Err("unable to connect to 192.168.1.10:5555".to_string())
+            error.detail.as_deref(),
+            Some("unable to connect to 192.168.1.10:5555")
         );
         assert_eq!(calls, vec![vec!["connect", "192.168.1.10:5555"]]);
     }

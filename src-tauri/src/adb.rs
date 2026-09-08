@@ -1,3 +1,4 @@
+use crate::{error::AppError, error_codes as codes};
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{
@@ -65,10 +66,10 @@ pub fn is_shutting_down(app: &AppHandle) -> bool {
     app.state::<AppState>().shutting_down.load(Ordering::SeqCst)
 }
 
-pub fn resolve_adb_path(app: &AppHandle) -> Result<String, String> {
+pub fn resolve_adb_path(app: &AppHandle) -> Result<String, AppError> {
     let state = app.state::<AppState>();
     if state.shutting_down.load(Ordering::SeqCst) {
-        return Err("application is shutting down".to_string());
+        return Err(AppError::new(codes::ADB_SHUTTING_DOWN));
     }
     {
         let cached = state.adb_path.lock().unwrap();
@@ -83,7 +84,7 @@ pub fn resolve_adb_path(app: &AppHandle) -> Result<String, String> {
     Ok(path)
 }
 
-fn find_adb(app: &AppHandle) -> Result<String, String> {
+fn find_adb(app: &AppHandle) -> Result<String, AppError> {
     if let Ok(p) = which_adb() {
         return Ok(p);
     }
@@ -110,7 +111,10 @@ fn find_adb(app: &AppHandle) -> Result<String, String> {
         }
     }
 
-    let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|e| AppError::new(codes::ADB_RESOURCES_FAILED).detail(e.to_string()))?;
     let platform_dir = if cfg!(target_os = "macos") {
         "macos"
     } else if cfg!(target_os = "windows") {
@@ -129,16 +133,19 @@ fn find_adb(app: &AppHandle) -> Result<String, String> {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                let perms = std::fs::metadata(&embedded).map_err(|e| e.to_string())?;
+                let perms = std::fs::metadata(&embedded)
+                    .map_err(|e| AppError::new(codes::ADB_METADATA_FAILED).detail(e.to_string()))?;
                 let mut perms = perms.permissions();
                 perms.set_mode(0o755);
-                std::fs::set_permissions(&embedded, perms).map_err(|e| e.to_string())?;
+                std::fs::set_permissions(&embedded, perms).map_err(|e| {
+                    AppError::new(codes::ADB_PERMISSIONS_FAILED).detail(e.to_string())
+                })?;
             }
         }
         return Ok(embedded.to_string_lossy().to_string());
     }
 
-    Err("adb not found. Install Android Platform Tools or set ANDROID_HOME.".into())
+    Err(AppError::new(codes::ADB_NOT_FOUND))
 }
 
 pub fn prepare_command(app: &AppHandle, adb_path: &str) -> Command {
@@ -192,26 +199,26 @@ fn is_path_within(path: &str, root: &PathBuf) -> bool {
 }
 
 #[cfg(unix)]
-fn which_adb() -> Result<String, String> {
+fn which_adb() -> Result<String, AppError> {
     let output = new_command("which")
         .arg("adb")
         .output()
-        .map_err(|e| format!("which failed: {e}"))?;
+        .map_err(|e| AppError::new(codes::ADB_LOCATE_FAILED).detail(e.to_string()))?;
     if output.status.success() {
         let p = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !p.is_empty() {
             return Ok(p);
         }
     }
-    Err("adb not in PATH".into())
+    Err(AppError::new(codes::ADB_NOT_IN_PATH))
 }
 
 #[cfg(windows)]
-fn which_adb() -> Result<String, String> {
+fn which_adb() -> Result<String, AppError> {
     let output = new_command("where")
         .arg("adb")
         .output()
-        .map_err(|e| format!("where failed: {e}"))?;
+        .map_err(|e| AppError::new(codes::ADB_LOCATE_FAILED).detail(e.to_string()))?;
     if output.status.success() {
         let p = String::from_utf8_lossy(&output.stdout)
             .lines()
@@ -223,7 +230,7 @@ fn which_adb() -> Result<String, String> {
             return Ok(p);
         }
     }
-    Err("adb not in PATH".into())
+    Err(AppError::new(codes::ADB_NOT_IN_PATH))
 }
 
 pub fn get_adb_version(app: &AppHandle, adb_path: &str) -> String {
@@ -263,12 +270,12 @@ pub fn adb_source(adb_path: &str, app: &AppHandle) -> String {
 }
 
 #[cfg(not(windows))]
-pub fn shutdown_embedded_adb_server(_app: &AppHandle) -> Result<(), String> {
+pub fn shutdown_embedded_adb_server(_app: &AppHandle) -> Result<(), AppError> {
     Ok(())
 }
 
 #[cfg(windows)]
-pub fn shutdown_embedded_adb_server(app: &AppHandle) -> Result<(), String> {
+pub fn shutdown_embedded_adb_server(app: &AppHandle) -> Result<(), AppError> {
     let adb_path = {
         let state = app.state::<AppState>();
         let cached = state.adb_path.lock().unwrap();
@@ -277,10 +284,9 @@ pub fn shutdown_embedded_adb_server(app: &AppHandle) -> Result<(), String> {
         }
         PathBuf::from(cached.as_str())
     };
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .map_err(|error| error.to_string())?;
+    let resource_dir = app.path().resource_dir().map_err(|error| {
+        AppError::new(codes::ADB_RESOURCE_METADATA_FAILED).detail(error.to_string())
+    })?;
     let expected_path = resource_dir.join("windows").join("adb.exe");
     if !windows_paths_equal(&adb_path, &expected_path) {
         return Ok(());
@@ -290,7 +296,7 @@ pub fn shutdown_embedded_adb_server(app: &AppHandle) -> Result<(), String> {
 }
 
 #[cfg(windows)]
-fn stop_adb_server_at_path(app: &AppHandle, adb_path: &Path) -> Result<(), String> {
+fn stop_adb_server_at_path(app: &AppHandle, adb_path: &Path) -> Result<(), AppError> {
     let started_at = Instant::now();
     let mut empty_since = None;
     let mut next_kill_attempt = started_at;
@@ -313,15 +319,11 @@ fn stop_adb_server_at_path(app: &AppHandle, adb_path: &Path) -> Result<(), Strin
                 {
                     Ok(output) if output.status.success() => last_error = None,
                     Ok(output) => {
-                        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                        last_error = Some(if detail.is_empty() {
-                            format!("adb kill-server exited with {}", output.status)
-                        } else {
-                            detail
-                        });
+                        last_error = Some(crate::commands::device::adb_output_error(&output));
                     }
                     Err(error) => {
-                        last_error = Some(format!("failed to run adb kill-server: {error}"))
+                        last_error =
+                            Some(AppError::new(codes::ADB_EXECUTE_FAILED).detail(error.to_string()))
                     }
                 }
                 next_kill_attempt = now + ADB_KILL_RETRY_INTERVAL;
@@ -333,17 +335,16 @@ fn stop_adb_server_at_path(app: &AppHandle, adb_path: &Path) -> Result<(), Strin
             if process_ids.is_empty() {
                 return Ok(());
             }
-            let detail = last_error
-                .map(|error| format!(" Last error: {error}"))
-                .unwrap_or_default();
-            return Err(format!(
-                "bundled ADB server did not exit within 3 seconds (PIDs: {}).{detail}",
-                process_ids
-                    .iter()
-                    .map(u32::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
+            return Err(AppError::new(codes::ADB_SHUTDOWN_FAILED)
+                .param(
+                    "pids",
+                    process_ids
+                        .iter()
+                        .map(u32::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                )
+                .causes(last_error.into_iter().collect()));
         }
 
         std::thread::sleep(ADB_SHUTDOWN_POLL_INTERVAL);
@@ -351,14 +352,12 @@ fn stop_adb_server_at_path(app: &AppHandle, adb_path: &Path) -> Result<(), Strin
 }
 
 #[cfg(windows)]
-fn windows_process_ids_at_path(expected_path: &Path) -> Result<Vec<u32>, String> {
+fn windows_process_ids_at_path(expected_path: &Path) -> Result<Vec<u32>, AppError> {
     // SAFETY: the returned snapshot handle is validated and owned until this function returns.
     let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
     if snapshot == INVALID_HANDLE_VALUE {
-        return Err(format!(
-            "failed to enumerate Windows processes: {}",
-            std::io::Error::last_os_error()
-        ));
+        return Err(AppError::new(codes::ADB_ENUMERATE_PROCESSES_FAILED)
+            .detail(std::io::Error::last_os_error().to_string()));
     }
     let snapshot = OwnedHandle(snapshot);
     let mut entry = PROCESSENTRY32W {

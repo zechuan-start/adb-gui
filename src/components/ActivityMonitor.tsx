@@ -1,3 +1,4 @@
+import { errorText, useT } from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Copy, Play, ShieldAlert, Square } from "lucide-react";
 import { useDeviceStore } from "@/store/device";
@@ -7,6 +8,7 @@ import { getDeviceBySerial, isOnlineDevice } from "@/lib/device";
 import { cn } from "@/lib/utils";
 
 export function CurrentAppActionsTool() {
+  const t = useT();
   const devices = useDeviceStore((s) => s.devices);
   const selectedDevice = useDeviceStore((s) => s.selectedDevice);
   const currentPackage = useDeviceStore((s) => s.currentPackage);
@@ -16,7 +18,7 @@ export function CurrentAppActionsTool() {
   const [confirmAction, setConfirmAction] = useState<"clear" | "uninstall" | null>(null);
 
   const packageName = useMemo(() => currentPackage || manualPkg.trim(), [currentPackage, manualPkg]);
-  const targetLabel = packageName || "暂无前台应用";
+  const targetLabel = packageName || t.apps.activityMonitor.noForegroundApp;
   const canAct = !!device && isOnlineDevice(device) && !!packageName;
 
   useEffect(() => {
@@ -41,9 +43,9 @@ export function CurrentAppActionsTool() {
       } else {
         result = await uninstallApp(device.serial, packageName);
       }
-      showToast("success", result || `${packageName} 操作成功`);
+      showToast("success", (t) => (result || t.apps.activityMonitor.completedSuccessfully({ packageName: packageName })));
     } catch (error) {
-      showToast("error", `当前应用操作失败: ${error}`);
+      showToast("error", (t) => (t.apps.activityMonitor.currentAppActionFailed({ detail: errorText(error, t) })));
     } finally {
       setConfirmAction(null);
     }
@@ -52,7 +54,7 @@ export function CurrentAppActionsTool() {
   return (
     <div className="flex h-full min-w-0 flex-col">
       <div className="flex items-center gap-2 border-y border-rule px-2.5 py-2">
-        <span className="font-data text-[10.5px] text-ink3">包名</span>
+        <span className="font-data text-[10.5px] text-ink3">{t.apps.activityMonitor.package}</span>
         <span className="min-w-0 flex-1 truncate font-mono text-sm">{targetLabel}</span>
         <button
           type="button"
@@ -61,11 +63,11 @@ export function CurrentAppActionsTool() {
               return;
             }
             await navigator.clipboard.writeText(packageName);
-            showToast("success", "已复制包名");
+            showToast("success", (t) => (t.apps.activityMonitor.packageNameCopied));
           }}
           disabled={!packageName}
           className="inline-flex h-7 w-7 items-center justify-center text-ink2 transition-colors hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
-          title="复制包名"
+          title={t.apps.activityMonitor.copyPackageName}
         >
           <Copy className="h-4 w-4" />
         </button>
@@ -76,7 +78,7 @@ export function CurrentAppActionsTool() {
           <input
             value={manualPkg}
             onChange={(e) => setManualPkg(e.target.value)}
-            placeholder="输入包名..."
+            placeholder={t.apps.activityMonitor.enterAPackageName}
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"
@@ -95,7 +97,7 @@ export function CurrentAppActionsTool() {
             className="inline-flex h-8 items-center gap-2 border border-rule bg-transparent px-2.5 font-data text-[11px] transition-colors hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Square className="h-4 w-4" />
-            强停
+            {t.apps.activityMonitor.forceStop}
           </button>
           <button
             type="button"
@@ -104,7 +106,7 @@ export function CurrentAppActionsTool() {
             className="inline-flex h-8 items-center gap-2 border border-rule bg-transparent px-2.5 font-data text-[11px] transition-colors hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Play className="h-4 w-4" />
-            启动
+            {t.apps.activityMonitor.launch}
           </button>
         </div>
 
@@ -118,7 +120,7 @@ export function CurrentAppActionsTool() {
             )}
           >
             <AlertTriangle className="h-4 w-4" />
-            {confirmAction === "clear" ? `确认清除 ${packageName} 数据?` : "清数据"}
+            {confirmAction === "clear" ? t.apps.activityMonitor.clearDataFor({ packageName: packageName }) : t.apps.activityMonitor.clearData}
           </button>
           <button
             type="button"
@@ -129,7 +131,7 @@ export function CurrentAppActionsTool() {
             )}
           >
             <ShieldAlert className="h-4 w-4" />
-            {confirmAction === "uninstall" ? `确认卸载 ${packageName}?` : "卸载"}
+            {confirmAction === "uninstall" ? t.apps.activityMonitor.uninstall({ packageName: packageName }) : t.apps.activityMonitor.uninstallLabel}
           </button>
         </div>
       </div>
@@ -137,7 +139,7 @@ export function CurrentAppActionsTool() {
       {confirmAction && (
         <div className="mt-3 flex items-center justify-between gap-2 border-l-2 border-err bg-err-band px-3 py-2 text-xs text-err">
           <span>
-            {confirmAction === "clear" ? "再次点击以清除数据。" : "再次点击以卸载应用。"}
+            {confirmAction === "clear" ? t.apps.activityMonitor.clickAgainToClearData : t.apps.activityMonitor.clickAgainToUninstallTheApp}
           </span>
           <button
             type="button"
@@ -145,7 +147,7 @@ export function CurrentAppActionsTool() {
             disabled={!canAct}
             className="h-7 border border-err bg-err px-3 font-data text-[11px] font-medium text-onink transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            确认
+            {t.apps.activityMonitor.confirm}
           </button>
         </div>
       )}

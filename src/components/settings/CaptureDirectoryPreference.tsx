@@ -1,3 +1,5 @@
+import { toAppError, type AppErrorPayload } from "@/i18n/errors";
+import { useT, errorText } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import { FolderOpen, RotateCcw } from "lucide-react";
 import { SettingRow } from "@/components/settings/SettingRow";
@@ -10,12 +12,13 @@ import {
 import { useSettingsStore } from "@/store/settings";
 
 export function CaptureDirectoryPreference() {
+  const t = useT();
   const directory = useSettingsStore(
     (state) => state.preferences.capture.directory,
   );
   const update = useSettingsStore((state) => state.update);
   const [resolved, setResolved] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AppErrorPayload | null>(null);
   const [busy, setBusy] = useState(false);
   const generation = useRef(0);
   const chooseRef = useRef<HTMLButtonElement>(null);
@@ -44,7 +47,7 @@ export function CaptureDirectoryPreference() {
         if (current) setResolved(path);
       })
       .catch((failure) => {
-        if (current) setError(String(failure));
+        if (current) setError(toAppError(failure));
       });
     return () => {
       current = false;
@@ -70,7 +73,7 @@ export function CaptureDirectoryPreference() {
         restoreFocus();
       }
     } catch (failure) {
-      if (operation === generation.current) setError(String(failure));
+      if (operation === generation.current) setError(toAppError(failure));
     } finally {
       if (operation === generation.current) {
         setBusy(false);
@@ -90,17 +93,17 @@ export function CaptureDirectoryPreference() {
               directory ??
               (native
                 ? error
-                  ? "默认目录不可用"
-                  : "读取目录..."
-                : "本机目录不可用")}
+                  ? t.settings.capture.defaultUnavailable
+                  : t.settings.capture.loading
+                : t.settings.capture.unavailable)}
           </div>
           <button
             ref={chooseRef}
             type="button"
             disabled={!native || busy}
             className={buttonClass}
-            title="选择保存目录"
-            aria-label="选择保存目录"
+            title={t.settings.capture.choose}
+            aria-label={t.settings.capture.choose}
             onClick={() => void choose()}
           >
             <FolderOpen className="h-4 w-4" />
@@ -109,8 +112,8 @@ export function CaptureDirectoryPreference() {
             type="button"
             disabled={directory === null}
             className={buttonClass}
-            title="恢复默认保存目录"
-            aria-label="恢复默认保存目录"
+            title={t.settings.capture.reset}
+            aria-label={t.settings.capture.reset}
             onClick={() => update("capture", { directory: null })}
           >
             <RotateCcw className="h-4 w-4" />
@@ -118,7 +121,7 @@ export function CaptureDirectoryPreference() {
         </div>
         {error && (
           <p role="alert" className="mt-2 break-all text-err">
-            {error}
+            {errorText(error, t)}
           </p>
         )}
       </div>

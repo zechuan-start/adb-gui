@@ -11,7 +11,7 @@
 
 [下载最新版本](https://github.com/zechuan-start/adb-gui/releases/latest) · [查看全部版本](https://github.com/zechuan-start/adb-gui/releases) · [macOS 首次运行](#macos-安装与首次运行)
 
-![ADB GUI 工具工作区, 底部为日志面板](docs/images/workspace-tools.png)
+![ADB GUI 工具工作区, 底部为日志面板](docs/images/zh-CN/workspace-tools.png)
 
 > README 中的截图由真实界面加模拟设备数据自动生成, 生成方式见 [本地开发](#本地开发).
 
@@ -45,7 +45,7 @@
 
 ### 日志
 
-![铺满窗口并应用了过滤查询的日志面板](docs/images/logcat.png)
+![铺满窗口并应用了过滤查询的日志面板](docs/images/zh-CN/logcat.png)
 
 - 实时查看 Logcat, 支持暂停与恢复、回到底部跟随、清屏、清空设备日志缓冲区, 以及导出当前过滤结果.
 - 使用查询语法过滤: `tag:`、`message:`、`level:`、`package:`、`process:`、`is:crash` / `is:stacktrace`, 可用 `&`、`|`、`-` 和括号组合, 并支持正则与精确匹配修饰符和输入补全.
@@ -55,7 +55,7 @@
 
 ### 应用
 
-![应用工作区, 已选中一个应用](docs/images/apps.png)
+![应用工作区, 已选中一个应用](docs/images/zh-CN/apps.png)
 
 - 显示第三方应用列表, 含真实图标、应用名、版本名与版本号、首次安装与最后更新时间、APK 大小.
 - 支持按应用名或包名搜索, 并对选中应用执行启动、强制停止、清除数据、卸载.
@@ -63,7 +63,7 @@
 
 ### 文件
 
-![文件浏览器与图片预览](docs/images/files.png)
+![文件浏览器与图片预览](docs/images/zh-CN/files.png)
 
 - 通过面包屑和绝对路径浏览设备目录.
 - 支持新建目录、单文件或多文件上传, 以及下载到自选位置.
@@ -72,7 +72,7 @@
 
 ### 生码与解码
 
-![批量生成二维码](docs/images/codegen.png)
+![批量生成二维码](docs/images/zh-CN/codegen.png)
 
 - 根据单条或批量数据生成二维码和 Code 128 条形码 (Ctrl/Cmd+Enter 生成).
 - 支持换行、逗号、分号、Tab 或自定义分隔符; 大批量结果使用虚拟列表渲染, 并支持全尺寸预览切换.
@@ -80,7 +80,7 @@
 
 ### 性能
 
-![设备性能工作区](docs/images/performance.png)
+![设备性能工作区](docs/images/zh-CN/performance.png)
 
 - 每秒采集整机 CPU、已用与可用内存, 以及电池电量、状态和温度.
 - 用带悬停读数的折线图展示 CPU 与内存历史, 最多保留约 30 分钟样本.
@@ -89,11 +89,13 @@
 
 ### 桌面体验
 
-![暗色主题下的工具工作区](docs/images/dark-theme.png)
+![暗色主题下的工具工作区](docs/images/zh-CN/dark-theme.png)
 
 - 跟随系统、亮色、暗色三种主题.
 - 原生文件对话框, 应用写出的文件都支持"在文件管理器中显示"和"用默认程序打开".
 - 从 GitHub Release 获取应用内更新, 并验证 Tauri 更新产物签名. 此签名与操作系统的应用代码签名不同.
+
+在 设置 → 通用 → 语言 中选择 跟随系统, 简体中文 或 English. 默认按系统首选语言判定: 中文使用简体中文, 其他语言使用英文. 显式选择立即生效并在重启后保留. 恢复其他设置不会重置语言.
 
 ## 快捷键
 
@@ -172,10 +174,17 @@ pnpm tauri dev   # 启动桌面应用
 文档截图由脚本生成, 不需要手动截屏:
 
 ```bash
+pnpm exec playwright install chromium
 pnpm screenshots
+pnpm screenshots --locale en
+pnpm test:browser
 ```
 
-`scripts/screenshots/capture.mjs` 会启动开发服务器, 在 Chromium 中加载真实前端, 并注入 `scripts/screenshots/mock-tauri.js` 提供的模拟 IPC 数据, 然后重新生成 `docs/images/` 下的图片. 模拟数据是确定性的, 所以重跑只会反映界面本身的变化. 该脚本依赖 Playwright 及其 Chromium (未安装时执行 `npm i -g playwright && npx playwright install chromium`).
+`scripts/screenshots/capture.mjs` 会启动开发服务器, 在 Chromium 中加载真实前端并注入 `scripts/screenshots/mock-tauri.js` 的模拟 IPC. 默认向 `docs/images/en/` 和 `docs/images/zh-CN/` 各输出七张图; 使用 `--locale en` 或 `--locale zh-CN` 可单独生成一种语言. Playwright 是项目开发依赖, 首次使用前按上方命令安装 Chromium. 时钟及遥测快照均已固定, 两种语言保留相同的设备应用名, 文件名和日志正文.
+
+`pnpm test:browser` 覆盖两种语言, 两种主题及 900x600 / 1400x880 窗口, 检查全部工作区与设置分组, 语言持久化以及切换时采集不中断. 此命令使用模拟 IPC, 原生菜单和真实设备行为需要单独验收.
+
+`index.html` 保留静态 `lang="en"`, 语言 store 会在 React 渲染前写入生效语言.
 
 推荐使用 [VS Code](https://code.visualstudio.com/), 并安装 [Tauri 扩展](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) 和 [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer).
 

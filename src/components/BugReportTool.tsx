@@ -1,3 +1,4 @@
+import { errorText, useT } from "@/i18n";
 import { useState } from "react";
 import { ClipboardCopy, FileArchive, FolderOpen, RefreshCw } from "lucide-react";
 import { useDeviceStore } from "@/store/device";
@@ -9,6 +10,7 @@ import { cn } from "@/lib/utils";
 type BusyMode = "quick" | "full" | null;
 
 export function BugReportTool() {
+  const t = useT();
   const devices = useDeviceStore((s) => s.devices);
   const selectedDevice = useDeviceStore((s) => s.selectedDevice);
   const showToast = useFeedbackStore((s) => s.showToast);
@@ -29,9 +31,9 @@ export function BugReportTool() {
       const result = await collectQuickBugReport(device.serial);
       setLastPath(result.dir);
       setLastKind("quick");
-      showToast("success", `Bug 资料已收集到 ${result.dir}`);
+      showToast("success", (t) => (t.tools.bugReportTool.bugDataCollectedIn({ path: result.dir })));
     } catch (error) {
-      showToast("error", `快速收集失败: ${error}`);
+      showToast("error", (t) => (t.tools.bugReportTool.quickCollectionFailed({ detail: errorText(error, t) })));
     } finally {
       setBusy(null);
     }
@@ -47,9 +49,9 @@ export function BugReportTool() {
       const result = await collectFullBugreport(device.serial);
       setLastPath(result.path);
       setLastKind("full");
-      showToast("success", `完整 Bugreport 已保存到 ${result.path}`);
+      showToast("success", (t) => (t.tools.bugReportTool.fullBugreportSavedTo({ path: result.path })));
     } catch (error) {
-      showToast("error", `完整 Bugreport 失败: ${error}`);
+      showToast("error", (t) => (t.tools.bugReportTool.fullBugreportFailed({ detail: errorText(error, t) })));
     } finally {
       setBusy(null);
     }
@@ -70,7 +72,7 @@ export function BugReportTool() {
           )}
         >
           {busy === "quick" ? <RefreshCw className="h-4 w-4 animate-spin" /> : <FolderOpen className="h-4 w-4" />}
-          快速收集
+          {t.tools.bugReportTool.quickCollect}
         </button>
         <button
           type="button"
@@ -82,16 +84,16 @@ export function BugReportTool() {
           )}
         >
           {busy === "full" ? <RefreshCw className="h-4 w-4 animate-spin" /> : <FileArchive className="h-4 w-4" />}
-          完整 Bugreport
+          {t.tools.bugReportTool.fullBugreport}
         </button>
       </div>
 
       <div className="mt-3 min-h-5 text-xs text-ink2">
-        {busy === "full" ? "正在生成完整 Bugreport，可能需要数分钟。" : "快速收集包含截图、Activity、设备信息和最近日志。"}
+        {busy === "full" ? t.tools.bugReportTool.generatingAFullBugreportThisMayTakeSeveral : t.tools.bugReportTool.quickCollectIncludesAScreenshotActivityDeviceInfo}
       </div>
 
       <div className="mt-3 min-h-8 break-all border-y border-dashed border-rule2 py-2 font-data text-[11px] text-ink2">
-        {lastPath ? lastPath : online ? "最近报告路径将在这里显示。" : "设备在线后可操作"}
+        {lastPath ? lastPath : online ? t.tools.bugReportTool.theLatestReportPathWillAppearHere : t.tools.bugReportTool.availableWhenTheDeviceIsOnline}
       </div>
 
       <div className="mt-auto flex flex-wrap gap-1.5 pt-3">
@@ -103,12 +105,12 @@ export function BugReportTool() {
               return;
             }
             await navigator.clipboard.writeText(lastPath);
-            showToast("success", "已复制报告路径");
+            showToast("success", (t) => (t.tools.bugReportTool.reportPathCopied));
           }}
           className="inline-flex h-8 items-center gap-2 border border-rule bg-transparent px-2.5 font-data text-[11px] transition-colors hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
         >
           <ClipboardCopy className="h-4 w-4" />
-          复制路径
+          {t.tools.bugReportTool.copyPath}
         </button>
         <button
           type="button"
@@ -121,7 +123,7 @@ export function BugReportTool() {
           className="inline-flex h-8 items-center gap-2 border border-rule bg-transparent px-2.5 font-data text-[11px] transition-colors hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
         >
           <FolderOpen className="h-4 w-4" />
-          {lastKind === "full" ? "显示文件" : "显示目录"}
+          {lastKind === "full" ? t.tools.bugReportTool.showFile : t.tools.bugReportTool.showFolder}
         </button>
       </div>
     </div>

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { zhCN } from "@/i18n/messages/zh-CN";
 import {
   defaultSettings,
   logcatPreset,
@@ -8,6 +9,7 @@ import {
   defaultSettingsSnapshot,
   findSettingsRow,
   findSettingsSection,
+  hasSectionResetChanges,
   modifiedRowIds,
   resetSettingsSection,
   sectionRowIds,
@@ -32,6 +34,12 @@ function customized(): SettingsPreferences {
 }
 
 describe("settings sections", () => {
+  it("does not offer a no-op section reset for an explicit language alone", () => {
+    const state = { ...defaultSettingsSnapshot(), localePreference: "en" as const };
+    expect(modifiedRowIds(state).has("language")).toBe(true);
+    expect(hasSectionResetChanges("general", state)).toBe(false);
+    expect(hasSectionResetChanges("general", { ...state, theme: "dark" })).toBe(true);
+  });
   it("lists six sections in navigation order without a performance group", () => {
     expect(SETTINGS_SECTIONS.map((section) => section.id)).toEqual([
       "general",
@@ -41,7 +49,7 @@ describe("settings sections", () => {
       "apps",
       "codegen",
     ]);
-    expect(SETTINGS_SECTIONS.map((section) => section.label)).toEqual([
+    expect(SETTINGS_SECTIONS.map((section) => section.label(zhCN))).toEqual([
       "通用",
       "日志",
       "截图与录屏",
@@ -57,7 +65,7 @@ describe("settings sections", () => {
   it("resolves a known section and rejects an unknown one", () => {
     const capture = findSettingsSection("capture");
     expect(capture.id).toBe("capture");
-    expect(capture.label).toBe("截图与录屏");
+    expect(capture.label(zhCN)).toBe(zhCN.settings.sections.capture);
     expect(capture.rows.map((row) => row.id)).toEqual([
       "captureDirectory",
       "screenshotOpen",
@@ -66,7 +74,7 @@ describe("settings sections", () => {
     ]);
     expect(() =>
       findSettingsSection("performance" as SettingsSection),
-    ).toThrow("未知设置分组");
+    ).toThrow("Unknown settings section");
   });
 
   it("names every store a section reset touches", () => {
@@ -134,12 +142,15 @@ describe("settings rows", () => {
     for (const id of ROW_IDS) {
       expect(findSettingsRow(id).id).toBe(id);
     }
-    expect(() => findSettingsRow("nope")).toThrow("未知设置项");
+    expect(() => findSettingsRow("nope")).toThrow("Unknown settings row");
   });
 
   it("marks only the rows whose stored value left its default", () => {
     const base = defaultSettingsSnapshot();
     expect(modifiedRowIds(base).size).toBe(0);
+
+    expect(sectionRowIds("general")[0]).toBe("language");
+    expect(modifiedRowIds({ ...base, localePreference: "en" })).toEqual(new Set(["language"]));
 
     expect(modifiedRowIds({ ...base, theme: "dark" })).toEqual(
       new Set(["theme"]),

@@ -1,3 +1,4 @@
+use crate::{error::AppError, error_codes as codes};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -68,16 +69,16 @@ impl HelperMode {
         }
     }
 
-    fn description(self) -> &'static str {
-        match self {
-            Self::Metadata => "app-info metadata helper",
-            Self::Icons => "app-info icon helper",
-        }
+    fn failure(self) -> AppError {
+        AppError::new(match self {
+            Self::Metadata => codes::APPS_METADATA_FAILED,
+            Self::Icons => codes::APPS_ICONS_FAILED,
+        })
     }
 }
 
 #[tauri::command]
-pub async fn get_installed_apps(app: AppHandle, serial: String) -> Result<Vec<AppInfo>, String> {
+pub async fn get_installed_apps(app: AppHandle, serial: String) -> Result<Vec<AppInfo>, AppError> {
     run_app_info_helper(&app, &serial, HelperMode::Metadata, &[]).await
 }
 
@@ -86,7 +87,7 @@ pub async fn get_installed_app_icons(
     app: AppHandle,
     serial: String,
     packages: Option<Vec<String>>,
-) -> Result<Vec<AppIconEntry>, String> {
+) -> Result<Vec<AppIconEntry>, AppError> {
     let batches = prepare_icon_batches(packages)?;
     let mut icons = Vec::new();
 
@@ -106,14 +107,13 @@ async fn run_app_info_helper<T: DeserializeOwned>(
     serial: &str,
     mode: HelperMode,
     packages: &[String],
-) -> Result<Vec<T>, String> {
+) -> Result<Vec<T>, AppError> {
     let _guard = helper_lock().lock().await;
     let dex_path = resolve_app_info_dex_path(app)?;
     let dex = fs::read(&dex_path).map_err(|error| {
-        format!(
-            "Failed to read bundled app-info.dex at {}: {error}",
-            dex_path.display()
-        )
+        AppError::new(codes::APPS_READ_DEX_FAILED)
+            .param("path", dex_path.display().to_string())
+            .detail(error.to_string())
     })?;
     let remote_path = remote_dex_path(fnv1a_64(&dex));
     let expected_size = dex.len() as u64;
@@ -133,7 +133,7 @@ async fn run_app_info_helper<T: DeserializeOwned>(
         Err(first_error) => {
             ensure_dex_pushed(app, serial, &dex_path, &remote_path, expected_size, true)
                 .await
-                .map_err(|retry_error| format_push_retry_error(&first_error, &retry_error))?
+                .map_err(|retry_error| push_retry_error(first_error, retry_error))?
         }
     };
 
@@ -159,11 +159,9 @@ async fn run_app_info_helper<T: DeserializeOwned>(
     ensure_dex_pushed(app, serial, &dex_path, &remote_path, expected_size, true)
         .await
         .map_err(|error| {
-            format!(
-                "{}; refreshing app-info.dex also failed: {}",
-                truncate_detail(&first_failure, MAX_ERROR_DETAIL_BYTES / 2),
-                truncate_detail(&error, MAX_ERROR_DETAIL_BYTES / 2)
-            )
+            AppError::new(codes::APPS_REFRESH_DEX_FAILED)
+                .cause(first_failure.clone())
+                .cause(error)
         })?;
 
     let retry_output = run_helper_once(app, serial, &remote_path, mode, packages).await?;
@@ -179,7 +177,7 @@ async fn run_helper_once(
     remote_path: &str,
     mode: HelperMode,
     packages: &[String],
-) -> Result<Output, String> {
+) -> Result<Output, AppError> {
     let adb_path = adb::resolve_adb_path(app)?;
     let mut command = adb::prepare_async_command(app, &adb_path);
     command
@@ -193,45 +191,42 @@ async fn run_helper_once(
         .stderr(Stdio::piped())
         .kill_on_drop(true);
 
-    let child = command
-        .spawn()
-        .map_err(|error| format!("Failed to start {}: {error}", mode.description()))?;
+    let child = command.spawn().map_err(|error| {
+        mode.failure()
+            .cause(AppError::new(codes::HELPER_START_FAILED).detail(error.to_string()))
+    })?;
     match tokio::time::timeout(mode.timeout(), child.wait_with_output()).await {
         Ok(Ok(output)) => Ok(output),
-        Ok(Err(error)) => Err(format!(
-            "Failed to wait for {}: {error}",
-            mode.description()
-        )),
+        Ok(Err(error)) => Err(mode
+            .failure()
+            .cause(AppError::new(codes::HELPER_WAIT_FAILED).detail(error.to_string()))),
         Err(_) => {
             FORCE_PUSH_NEXT.store(true, Ordering::Release);
-            Err(format!(
-                "{} timed out after {} seconds; retry to refresh the helper dex.",
-                mode.description(),
-                mode.timeout().as_secs()
+            Err(mode.failure().cause(
+                AppError::new(codes::HELPER_TIMEOUT_REFRESH)
+                    .param("seconds", mode.timeout().as_secs()),
             ))
         }
     }
 }
 
-fn helper_exit_error(mode: HelperMode, output: &Output, pushed_fresh: bool) -> String {
+fn helper_exit_error(mode: HelperMode, output: &Output, pushed_fresh: bool) -> AppError {
     let context = if pushed_fresh {
-        "failed even though the dex was freshly pushed; this device ROM may be incompatible"
+        codes::HELPER_FRESH_DEX_FAILED
     } else {
-        "failed while using the cached dex"
+        codes::HELPER_CACHED_DEX_FAILED
     };
-    format!(
-        "{} {context}: {}",
-        mode.description(),
-        truncate_detail(&adb_output_error(output), MAX_ERROR_DETAIL_BYTES)
-    )
+    let mut failure = adb_output_error(output);
+    if let Some(detail) = failure.detail.take() {
+        failure.detail = Some(truncate_detail(&detail, MAX_ERROR_DETAIL_BYTES));
+    }
+    mode.failure().cause(AppError::new(context).cause(failure))
 }
 
-fn format_push_retry_error(first_error: &str, retry_error: &str) -> String {
-    format!(
-        "Failed to push app-info dex; retry also failed. First error: {}; retry error: {}",
-        truncate_detail(first_error, MAX_ERROR_DETAIL_BYTES / 2),
-        truncate_detail(retry_error, MAX_ERROR_DETAIL_BYTES / 2)
-    )
+fn push_retry_error(first_error: AppError, retry_error: AppError) -> AppError {
+    AppError::new(codes::HELPER_PUSH_RETRY_FAILED)
+        .cause(first_error)
+        .cause(retry_error)
 }
 
 fn build_helper_command(remote_path: &str, mode: HelperMode, packages: &[String]) -> String {
@@ -246,29 +241,29 @@ fn build_helper_command(remote_path: &str, mode: HelperMode, packages: &[String]
     command
 }
 
-fn parse_helper_output<T: DeserializeOwned>(stdout: &[u8]) -> Result<Vec<T>, String> {
+fn parse_helper_output<T: DeserializeOwned>(stdout: &[u8]) -> Result<Vec<T>, AppError> {
     let payload = extract_payload(stdout);
     if payload.is_empty() {
-        return Err("App-info helper returned empty stdout.".to_string());
+        return Err(AppError::new(codes::APPS_EMPTY_OUTPUT));
     }
     match serde_json::from_slice(payload) {
         Ok(value) => Ok(value),
         Err(error) if !contains_payload_sentinel(stdout) => parse_legacy_noisy_output(stdout)
             .ok_or_else(|| {
-                format!(
-                    "App-info helper returned invalid JSON: {error}; stdout: {}",
+                AppError::new(codes::APPS_INVALID_JSON).detail(format!(
+                    "{error}; {}",
                     truncate_detail(&String::from_utf8_lossy(payload), MAX_ERROR_DETAIL_BYTES)
-                )
+                ))
             }),
-        Err(error) => Err(format!(
-            "App-info helper returned invalid JSON: {error}; stdout: {}",
+        Err(error) => Err(AppError::new(codes::APPS_INVALID_JSON).detail(format!(
+            "{error}; {}",
             truncate_detail(&String::from_utf8_lossy(payload), MAX_ERROR_DETAIL_BYTES)
-        )),
+        ))),
     }
 }
 
 #[cfg(test)]
-fn parse_app_info(stdout: &[u8]) -> Result<Vec<AppInfo>, String> {
+fn parse_app_info(stdout: &[u8]) -> Result<Vec<AppInfo>, AppError> {
     parse_helper_output(stdout)
 }
 
@@ -361,14 +356,14 @@ fn sanitize_package_filter(packages: &[String]) -> Vec<String> {
     sanitized
 }
 
-fn prepare_icon_batches(packages: Option<Vec<String>>) -> Result<Vec<Vec<String>>, String> {
+fn prepare_icon_batches(packages: Option<Vec<String>>) -> Result<Vec<Vec<String>>, AppError> {
     match packages {
         None => Ok(vec![Vec::new()]),
         Some(packages) if packages.is_empty() => Ok(vec![Vec::new()]),
         Some(packages) => {
             let sanitized = sanitize_package_filter(&packages);
             if sanitized.is_empty() {
-                return Err("No valid package names were supplied for icon lookup.".to_string());
+                return Err(AppError::new(codes::APPS_INVALID_ICON_PACKAGES));
             }
             Ok(sanitized
                 .chunks(ICON_FILTER_BATCH)

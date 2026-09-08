@@ -1,3 +1,5 @@
+import { useT } from "@/i18n";
+import { errorText, toAppError } from "@/i18n/errors";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listPackages } from "@/lib/tauri";
 import { useDeviceStore } from "@/store/device";
@@ -14,6 +16,7 @@ export interface LogcatPackageResolutionState {
 }
 
 export function useLogcatPackageResolution(): LogcatPackageResolutionState {
+  const t = useT();
   const selectedDevice = useDeviceStore((state) => state.selectedDevice);
   const currentPackage = useDeviceStore((state) => state.currentPackage);
   const showToast = useFeedbackStore((state) => state.showToast);
@@ -68,7 +71,7 @@ export function useLogcatPackageResolution(): LogcatPackageResolutionState {
         packageListRequestRef.current === request &&
         useDeviceStore.getState().selectedDevice === selectedDevice
       ) {
-        showToast("error", `加载应用列表失败: ${String(error)}`);
+        showToast("error", { code: "logcat_packages", causes: [toAppError(error)] });
       }
     } finally {
       if (packageListRequestRef.current === request) {
@@ -88,19 +91,19 @@ export function useLogcatPackageResolution(): LogcatPackageResolutionState {
       return "";
     }
     if (!selectedDevice) {
-      return "设备不可用";
+      return t.logcat.unavailable;
     }
     if (packageRefs.includes("mine") && !currentPackage) {
-      return "暂无前台应用";
+      return t.logcat.noForeground;
     }
     if (processMapUpdatedAt === 0 && processMapLoading) {
-      return "读取进程表...";
+      return t.logcat.loadingProcesses;
     }
     if (processMapUpdatedAt === 0 && processMapError) {
-      return processMapError;
+      return errorText(processMapError, t);
     }
     return "";
-  }, [currentPackage, packageRefs, processMapError, processMapLoading, processMapUpdatedAt, processRefs, selectedDevice]);
+  }, [t, currentPackage, packageRefs, processMapError, processMapLoading, processMapUpdatedAt, processRefs, selectedDevice]);
 
   return {
     packageOptions,

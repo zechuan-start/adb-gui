@@ -1,3 +1,4 @@
+import { messages, type Messages } from "@/i18n";
 import type { DeviceInfo } from "@/lib/tauri";
 
 export type TransportKind = "usb" | "network";
@@ -107,21 +108,21 @@ export function activeTransports(merged: MergedDevice): DeviceInfo[] {
   });
 }
 
-export function transportSummary(merged: MergedDevice): string {
+export function transportSummary(merged: MergedDevice, t: Messages = messages()): string {
   const labels = activeTransports(merged).map((device) =>
     transportLabel(transportKind(device)),
   );
   if (labels.length === 1) {
-    return `${labels[0]} 连接`;
+    return t.shell.device.connection({ label: labels[0] });
   }
 
   const primary = transportLabel(transportKind(merged.primary));
-  return `${labels.join(" 和 ")} 连接, 当前使用 ${primary}`;
+  return t.shell.device.connections({ labels, primary });
 }
 
-export function getDeviceLabel(device: DeviceInfo | null): string {
+export function getDeviceLabel(device: DeviceInfo | null, t: Messages = messages()): string {
   if (!device) {
-    return "未连接设备";
+    return t.shell.device.notConnected;
   }
 
   return device.model?.trim() || device.serial;
@@ -189,15 +190,23 @@ export function getPreferredSelectedDeviceSerial(
   return mergedDevices[0]?.serial ?? null;
 }
 
-export function getDeviceStateLabel(state: string): string {
+export function getDeviceStateLabel(state: string, t: Messages = messages()): string {
   switch (state) {
     case "device":
-      return "在线";
+      return t.shell.device.online;
     case "unauthorized":
-      return "未授权";
+      return t.shell.device.unauthorized;
     case "offline":
-      return "离线";
+      return t.shell.device.offline;
     default:
-      return state || "未知";
+      return state || t.shell.device.unknown;
+  }
+}
+
+export function batteryStatusLabel(status: string, t: Messages = messages()): string {
+  switch (status) {
+    case "charging": case "discharging": case "not_charging": case "full": case "unknown":
+      return t.shell.spec.batteryStatus[status];
+    default: return status;
   }
 }

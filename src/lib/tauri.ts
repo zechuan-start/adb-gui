@@ -1,6 +1,9 @@
 
-import { invoke, isTauri } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { invoke as nativeInvoke, isTauri } from "@tauri-apps/api/core";
+import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { Locale } from "@/i18n/locale";
+import { messages } from "@/i18n";
+import { AppError, toAppError, type AppErrorPayload } from "@/i18n/errors";
 import { downloadDir, join, sep } from "@tauri-apps/api/path";
 import { readImage, readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { confirm, open, save } from "@tauri-apps/plugin-dialog";
@@ -11,16 +14,25 @@ import { deviceDownloadDefaultName } from "@/lib/deviceFiles";
 import type { LogLevel } from "@/lib/logcat";
 import type { SaveBehavior, ScreenshotBehavior } from "@/lib/settings";
 
+async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  try { return await nativeInvoke<T>(command, args); }
+  catch (error) { throw toAppError(error); }
+}
+
 export type DeviceClipboard = { kind: "text"; text: string } | { kind: "no_text" };
+
+export async function emitLocaleChanged(locale: Locale): Promise<void> {
+  if (isTauri()) await emit("locale-changed", locale);
+}
 
 export async function readHostClipboardText(): Promise<string> {
   try { return await readText(); }
-  catch { throw new Error("无法读取电脑剪贴板中的文本"); }
+  catch (error) { throw new AppError("clipboard.hostReadFailed", {}, { causes: [toAppError(error)] }); }
 }
 
 export async function writeHostClipboardText(text: string): Promise<void> {
   try { await writeText(text); }
-  catch { throw new Error("无法写入电脑剪贴板"); }
+  catch (error) { throw new AppError("clipboard.hostWriteFailed", {}, { causes: [toAppError(error)] }); }
 }
 
 export async function getDeviceClipboard(serial: string): Promise<DeviceClipboard> {
@@ -98,7 +110,7 @@ export interface LogcatExit {
   serial: string;
   session_id: number;
   reason: "eof" | "error";
-  detail: string;
+  detail: AppErrorPayload | null;
 }
 
 export interface DeviceMetricsSessionInfo {
@@ -145,7 +157,7 @@ export interface DeviceMetricsExit {
   serial: string;
   session_id: number;
   reason: "eof" | "error";
-  detail: string;
+  detail: AppErrorPayload | null;
 }
 
 export interface ScreenshotResult {
@@ -185,21 +197,21 @@ export interface ScreenRecordStatus {
   elapsed_secs: number;
   local_path: string | null;
   remote_path: string | null;
-  error: string | null;
+  error: AppErrorPayload | null;
   attempted_path: string | null;
 }
 
 export interface ScreenRecordResult {
   path: string;
   opened: boolean;
-  source_cleanup_error: string | null;
+  source_cleanup_error: AppErrorPayload | null;
   serial: string;
   remote_path: string;
 }
 
 export type CaptureDestination = { kind: "default" } | { kind: "directory"; path: string };
 export type RecordingSaveTarget = { kind: "session" } | { kind: "file"; path: string };
-export interface DiscardRecordingResult { serial: string; remote_path: string; source_cleanup_error: string | null }
+export interface DiscardRecordingResult { serial: string; remote_path: string; source_cleanup_error: AppErrorPayload | null }
 export interface SaveRecordingRequest { sessionId: string; behavior: SaveBehavior; target: RecordingSaveTarget }
 
 export function captureDestination(directory: string | null): CaptureDestination {
@@ -211,28 +223,28 @@ export async function resolveCaptureDirectory(destination: CaptureDestination): 
 }
 
 export async function pickCaptureDirectory(): Promise<string | null> {
-  const selected = await open({ title: "选择截图与录屏保存目录", directory: true, multiple: false });
-  if (Array.isArray(selected)) throw new Error("目录选择结果无效");
+  const selected = await open({ title: messages().backendDialogs.captureDirectory, directory: true, multiple: false });
+  if (Array.isArray(selected)) throw new AppError("capture.invalidDirectorySelection", {});
   return selected;
 }
 
 export async function pickRecordingSavePath(defaultPath: string): Promise<string | null> {
-  return save({ title: "录屏另存为", defaultPath, filters: [{ name: "MP4", extensions: ["mp4"] }] });
+  return save({ title: messages().backendDialogs.recordingSaveAs, defaultPath, filters: [{ name: "MP4", extensions: ["mp4"] }] });
 }
 
 export async function confirmDiscardRecording(serial: string, remotePath: string): Promise<boolean> {
-  return confirm(`放弃当前未保存录屏并删除设备源文件?\n${serial}\n${remotePath}\n删除后无法恢复.`, { title: "放弃保存", kind: "warning", okLabel: "放弃保存", cancelLabel: "取消" });
+  return confirm(messages().backendDialogs.discardBody({ serial, remotePath }), { title: messages().backendDialogs.discard, kind: "warning", okLabel: messages().backendDialogs.discard, cancelLabel: messages().backendDialogs.cancel });
 }
 
 export async function confirmRestoreDefaults(): Promise<boolean> {
-  const message = "恢复全部设置为默认值? 已保存的截图、录屏和文件不受影响.";
+  const message = messages().backendDialogs.restoreBody;
   // The browser preview has no native dialog plugin but still owns a real confirm.
   if (!isTauri()) return globalThis.confirm?.(message) ?? false;
   return confirm(message, {
-    title: "恢复默认设置",
+    title: messages().backendDialogs.restoreTitle,
     kind: "warning",
-    okLabel: "全部恢复",
-    cancelLabel: "取消",
+    okLabel: messages().backendDialogs.restoreAll,
+    cancelLabel: messages().backendDialogs.cancel,
   });
 }
 
@@ -377,7 +389,7 @@ export async function copyScreenshot(serial: string): Promise<void> {
 
 export async function pickApkFile(): Promise<string | null> {
   const selected = await open({
-    title: "Select APK",
+    title: messages().backendDialogs.selectApk,
     multiple: false,
     filters: [{ name: "APK", extensions: ["apk"] }],
   });
@@ -386,7 +398,7 @@ export async function pickApkFile(): Promise<string | null> {
 
 export async function pickDeviceUploadFiles(): Promise<string[]> {
   const selected = await open({
-    title: "选择要上传到设备的文件",
+    title: messages().backendDialogs.uploadFiles,
     multiple: true,
     directory: false,
   });
@@ -402,12 +414,12 @@ export async function readImageFile(path: string): Promise<Uint8Array> {
 
 export async function pickImageFiles(): Promise<string[]> {
   const selected = await open({
-    title: "选择要解码的图片",
+    title: messages().backendDialogs.decodeImages,
     multiple: true,
     directory: false,
     filters: [
       {
-        name: "图片",
+        name: messages().backendDialogs.images,
         extensions: [...SUPPORTED_IMAGE_EXTENSIONS],
       },
     ],
@@ -437,10 +449,11 @@ export async function readClipboardImage(): Promise<ImageData | null> {
   try {
     const [rgba, { width, height }] = await Promise.all([image.rgba(), image.size()]);
     const expectedLength = width * height * 4;
-    if (!Number.isSafeInteger(expectedLength) || rgba.length !== expectedLength) {
-      throw new Error(
-        `剪贴板图片像素数据长度不匹配: 期望 ${expectedLength}, 实际 ${rgba.length}`,
-      );
+    if (!Number.isSafeInteger(expectedLength)) {
+      throw new AppError("clipboard.invalidImageDimensions", {});
+    }
+    if (rgba.length !== expectedLength) {
+      throw new AppError("clipboard.imageLengthMismatch", { expected: expectedLength, actual: rgba.length });
     }
     return new ImageData(new Uint8ClampedArray(rgba), width, height);
   } finally {
@@ -456,7 +469,7 @@ export async function pickDeviceDownloadPath(fileName: string): Promise<string |
   const defaultName = deviceDownloadDefaultName(fileName, sep());
   const defaultPath = await join(await downloadDir(), defaultName);
   return save({
-    title: "保存设备文件",
+    title: messages().backendDialogs.saveDeviceFile,
     defaultPath,
   });
 }

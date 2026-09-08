@@ -1,3 +1,4 @@
+import { useT } from "@/i18n";
 import {
   useCallback,
   useEffect,
@@ -40,7 +41,7 @@ export function BlueprintSelect({
   onValueChange,
   ariaLabel,
   id,
-  emptyLabel = "没有可选项",
+  emptyLabel: providedEmptyLabel,
   disabled = false,
   containerClassName,
   className,
@@ -50,6 +51,8 @@ export function BlueprintSelect({
   renderValue,
   renderOption,
 }: BlueprintSelectProps) {
+  const t = useT();
+  const emptyLabel = providedEmptyLabel ?? t.common.emptyOptions;
   const generatedId = useId();
   const menuId = `${id ?? generatedId}-menu`;
   const [open, setOpen] = useState(false);

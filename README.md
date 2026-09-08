@@ -11,7 +11,7 @@ A cross-platform desktop workbench for everyday `adb` work: one device context, 
 
 [Download the latest release](https://github.com/zechuan-start/adb-gui/releases/latest) · [All releases](https://github.com/zechuan-start/adb-gui/releases) · [macOS first launch](#macos-installation-and-first-launch)
 
-![ADB GUI tools workspace with the Logcat panel open](docs/images/workspace-tools.png)
+![ADB GUI tools workspace with the Logcat panel open](docs/images/en/workspace-tools.png)
 
 > The application interface ships in Simplified Chinese. Screenshots in this README are captured from the real UI with mock device data (see [Development](#development)).
 
@@ -45,7 +45,7 @@ A cross-platform desktop workbench for everyday `adb` work: one device context, 
 
 ### Logcat
 
-![Logcat panel expanded with a filter query applied](docs/images/logcat.png)
+![Logcat panel expanded with a filter query applied](docs/images/en/logcat.png)
 
 - Streams Logcat live, with pause/resume, follow-to-bottom, clear screen, clear the device buffer, and export of the current filtered result.
 - Filters through a small query language: `tag:`, `message:`, `level:`, `package:`, `process:`, and `is:crash` / `is:stacktrace`, combined with `&`, `|`, `-`, and parentheses, with regex or exact-match modifiers and inline completions.
@@ -55,7 +55,7 @@ A cross-platform desktop workbench for everyday `adb` work: one device context, 
 
 ### Apps
 
-![Apps workspace with a package selected](docs/images/apps.png)
+![Apps workspace with a package selected](docs/images/en/apps.png)
 
 - Lists third-party packages with real launcher icons, display names, version name and code, first install and last update time, and APK size.
 - Search by app name or package name, then launch, force-stop, clear data, or uninstall the selected package.
@@ -63,7 +63,7 @@ A cross-platform desktop workbench for everyday `adb` work: one device context, 
 
 ### Files
 
-![File browser with an image preview](docs/images/files.png)
+![File browser with an image preview](docs/images/en/files.png)
 
 - Browses device directories with breadcrumbs and absolute-path navigation.
 - Creates folders, uploads one or many files, and downloads to a location you choose.
@@ -72,7 +72,7 @@ A cross-platform desktop workbench for everyday `adb` work: one device context, 
 
 ### Codegen and decoder
 
-![Batch QR code generation](docs/images/codegen.png)
+![Batch QR code generation](docs/images/en/codegen.png)
 
 - Generates QR codes or Code 128 barcodes from one value or a whole batch (Ctrl/Cmd+Enter to generate).
 - Splits input by newline, comma, semicolon, tab, or a custom separator, renders large batches through a virtualized list, and offers full-size preview navigation.
@@ -80,7 +80,7 @@ A cross-platform desktop workbench for everyday `adb` work: one device context, 
 
 ### Performance
 
-![Device performance workspace](docs/images/performance.png)
+![Device performance workspace](docs/images/en/performance.png)
 
 - Samples whole-device CPU, used and available memory, and battery level, status, and temperature once per second.
 - Draws CPU and memory history as charts with a hover readout, and keeps up to 30 minutes of samples.
@@ -89,9 +89,10 @@ A cross-platform desktop workbench for everyday `adb` work: one device context, 
 
 ### Desktop experience
 
-![Tools workspace in dark theme](docs/images/dark-theme.png)
+![Tools workspace in dark theme](docs/images/en/dark-theme.png)
 
 - System, light, and dark themes.
+- Open Settings → General → Language to choose Follow system, 简体中文, or English. The default follows the system’s first preferred language: Chinese uses Simplified Chinese, all other languages use English. An explicit choice applies immediately and stays selected after restarting. Restoring other settings does not reset language.
 - Native file dialogs, plus reveal-in-file-manager and open-with-default-app actions for everything the app writes.
 - In-app updates from GitHub releases with Tauri update artifact signature verification. This is separate from operating-system code signing.
 
@@ -172,10 +173,17 @@ Main stack:
 Documentation screenshots are generated, not taken by hand:
 
 ```bash
+pnpm exec playwright install chromium
 pnpm screenshots
+pnpm screenshots --locale en
+pnpm test:browser
 ```
 
-`scripts/screenshots/capture.mjs` starts the dev server, loads the real frontend in Chromium with the fake IPC layer in `scripts/screenshots/mock-tauri.js`, and rewrites the images in `docs/images/`. The mock data is deterministic, so re-running it only changes what actually changed in the UI. It needs Playwright and its Chromium build (`npm i -g playwright && npx playwright install chromium` if you do not already have them).
+`scripts/screenshots/capture.mjs` starts the dev server, loads the real frontend in Chromium with the fake IPC layer in `scripts/screenshots/mock-tauri.js`, and writes seven images per language to `docs/images/en/` and `docs/images/zh-CN/`. Use `--locale en` or `--locale zh-CN` for one language. Playwright is a development dependency; install Chromium once using the command above. The clock and telemetry snapshots are fixed so repeated captures use the same data. Device app names, file names, and log messages are intentionally identical in both languages.
+
+`pnpm test:browser` checks both languages and themes at 900x600 and 1400x880, including every workspace and settings section, language persistence, and uninterrupted streams. It uses mock IPC; native menus and real-device behavior require separate validation.
+
+`index.html` keeps a static `lang="en"`; the locale store applies the effective language before React renders.
 
 Recommended editor setup: [VS Code](https://code.visualstudio.com/) with the [Tauri extension](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) and [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer).
 

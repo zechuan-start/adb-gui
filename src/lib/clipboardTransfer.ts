@@ -1,3 +1,4 @@
+import { AppError, toAppError, type AppErrorPayload } from "@/i18n/errors";
 import type { DeviceClipboard, DeviceInfo } from "@/lib/tauri";
 
 export type ClipboardDirection = "to-device" | "to-host";
@@ -10,7 +11,7 @@ interface TransferDependencies {
   setDevice: (serial: string, text: string) => Promise<void>;
   onBusy: (direction: ClipboardDirection | null) => void;
   onSuccess: (direction: ClipboardDirection) => void;
-  onError: (message: string) => void;
+  onError: (message: AppErrorPayload) => void;
 }
 
 export function clipboardContextKey(device: DeviceInfo | null): string {
@@ -23,9 +24,9 @@ export function clipboardContextKey(device: DeviceInfo | null): string {
 
 function validateText(text: string) {
   if (text.length === 0)
-    throw new Error("剪贴板没有可用文本, 目标内容保持不变");
+    throw new AppError("clipboard_empty", {});
   if (new TextEncoder().encode(text).length > MAX_CLIPBOARD_TEXT_BYTES) {
-    throw new Error("剪贴板文本超过 256 KiB 限制");
+    throw new AppError("clipboard_too_large", {});
   }
 }
 
@@ -71,14 +72,14 @@ export function createClipboardTransfer(deps: TransferDependencies) {
           const result = await deps.getDevice(target);
           if (!current()) return;
           if (result.kind === "no_text")
-            throw new Error("手机剪贴板没有可用文本, 电脑内容保持不变");
+            throw new AppError("clipboard_device_empty", {});
           validateText(result.text);
           await deps.writeHost(result.text);
         }
         if (current()) deps.onSuccess(direction);
       } catch (error) {
         if (current())
-          deps.onError(error instanceof Error ? error.message : String(error));
+          deps.onError(toAppError(error));
       } finally {
         if (current()) {
           busy = false;

@@ -1,3 +1,4 @@
+import { useT } from "@/i18n";
 import { memo } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,7 @@ function LogcatRowView({
   onTagClick,
   onToggleTrace,
 }: LogcatRowProps) {
+  const t = useT();
   const timestamp = splitTimestamp(entry.time);
   const packageName = entry.packageName ?? "";
   const pidTid = columns.pid && columns.tid
@@ -148,14 +150,14 @@ function LogcatRowView({
           onClick={() => onToggleTrace(entry.seq)}
           className="flex h-5 shrink-0 select-none items-center gap-1 border border-err/35 px-1.5 text-[10px] text-err hover:bg-err-band"
           aria-expanded={traceExpanded}
-          title={traceExpanded ? "折叠堆栈" : "展开堆栈"}
+          title={traceExpanded ? t.logcat.collapseTrace : t.logcat.expandTrace}
         >
           {traceExpanded ? (
             <ChevronDown className="h-3 w-3" aria-hidden="true" />
           ) : (
             <ChevronRight className="h-3 w-3" aria-hidden="true" />
           )}
-          <span>+{traceCount} 行堆栈</span>
+          <span>{t.logcat.traceLines({ count: traceCount })}</span>
         </button>
       )}
     </div>

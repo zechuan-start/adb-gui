@@ -1,3 +1,4 @@
+import { toAppError } from "@/i18n/errors";
 import { create } from "zustand";
 import {
   MAX_IMAGE_BATCH_SIZE,
@@ -104,9 +105,10 @@ async function decodeSource(
       id,
       name: source.name,
       path: source.path,
+      sourceKind: source.sourceKind,
       thumbnail,
       codes: normalizeReadResults(results),
-      error: "",
+      error: null,
     };
   } catch (error) {
     if (!isCurrentRun()) {
@@ -116,9 +118,10 @@ async function decodeSource(
       id,
       name: source.name,
       path: source.path,
+      sourceKind: source.sourceKind,
       thumbnail: "",
       codes: [],
-      error: error instanceof Error ? error.message : String(error),
+      error: toAppError(error),
     };
   }
 }

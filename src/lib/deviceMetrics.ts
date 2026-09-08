@@ -1,3 +1,4 @@
+import { messages, type Messages } from "@/i18n";
 import type { DeviceInfo } from "@/lib/tauri";
 
 export const METRICS_HISTORY_CAPACITY = 1_800;
@@ -188,12 +189,12 @@ export function formatTemperature(value: number | null): string {
 }
 
 /** Human label for how much wall time the chart window currently covers. */
-export function formatSpanLabel(durationMs: number): string {
+export function formatSpanLabel(durationMs: number, t: Messages = messages()): string {
   const seconds = Math.max(0, Math.round(durationMs / 1000));
   if (seconds < 60) {
-    return `最近 ${seconds} 秒`;
+    return t.performance.seconds({ seconds });
   }
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
-  return rest === 0 ? `最近 ${minutes} 分` : `最近 ${minutes} 分 ${rest} 秒`;
+  return rest === 0 ? t.performance.minutes({ minutes }) : t.performance.minutesSeconds({ minutes, seconds: rest });
 }

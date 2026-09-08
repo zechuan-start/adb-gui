@@ -1,7 +1,9 @@
+import { useT, messages, errorText, type Messages } from "@/i18n";
 import { useEffect, useMemo } from "react";
 import { RefreshCw } from "lucide-react";
 import type { DeviceInfo } from "@/lib/tauri";
 import {
+  batteryStatusLabel,
   getDeviceBySerial,
   getDeviceStateLabel,
   getSelectableDevices,
@@ -32,6 +34,7 @@ export function getDeviceSpecStripModel(
   device: DeviceInfo | null,
   deviceDetail: DeviceDetailState,
   transports?: DeviceInfo[],
+  t: Messages = messages(),
 ): DeviceSpecStripModel | null {
   if (!device) {
     return null;
@@ -41,16 +44,16 @@ export function getDeviceSpecStripModel(
   const model = device.model.trim();
   const serialItem: DeviceSpecItem = {
     key: "serial",
-    label: "序列号",
+    label: t.shell.spec.serial,
     value: device.device_id ?? device.serial,
   };
   const transportItem: DeviceSpecItem = {
     key: "transport",
-    label: "连接方式",
-    value: getTransportDescription(device, resolvedTransports),
+    label: t.shell.spec.transport,
+    value: getTransportDescription(device, resolvedTransports, t),
   };
   const baseItems: DeviceSpecItem[] = [
-    ...(model ? [{ key: "model", label: "型号", value: model }] : []),
+    ...(model ? [{ key: "model", label: t.shell.spec.model, value: model }] : []),
     serialItem,
     transportItem,
   ];
@@ -61,7 +64,7 @@ export function getDeviceSpecStripModel(
         ...baseItems,
         {
           key: "state",
-          label: "状态",
+          label: t.shell.spec.state,
           value: getDeviceStateLabel(device.state),
         },
       ],
@@ -78,9 +81,9 @@ export function getDeviceSpecStripModel(
         ...baseItems,
         {
           key: "detail-status",
-          label: "设备详情",
-          value: loading ? "读取中..." : "读取失败",
-          title: detailStateMatches ? deviceDetail.error ?? undefined : undefined,
+          label: t.shell.spec.details,
+          value: loading ? t.shell.spec.loading : t.shell.spec.failed,
+          title: detailStateMatches ? deviceDetail.error ? errorText(deviceDetail.error, t) : undefined : undefined,
         },
       ],
       loading,
@@ -94,21 +97,21 @@ export function getDeviceSpecStripModel(
   const display = joinValues(detail.resolution, detail.density);
   const battery = joinValues(
     detail.battery_level ? `${detail.battery_level}%` : "",
-    detail.battery_status,
+    batteryStatusLabel(detail.battery_status, t),
   );
   const vendorModel = joinValues(detail.manufacturer, detail.model);
 
   return {
     items: [
       ...(vendorModel
-        ? [{ key: "model", label: "厂商 / 型号", value: vendorModel }]
+        ? [{ key: "model", label: t.shell.spec.vendorModel, value: vendorModel }]
         : baseItems.filter((item) => item.key === "model")),
       serialItem,
       transportItem,
       ...optionalItem("android", "Android / SDK", android),
       ...optionalItem("abi", "ABI", detail.abi),
-      ...optionalItem("display", "分辨率 / 密度", display),
-      ...optionalItem("battery", "电量", battery),
+      ...optionalItem("display", t.shell.spec.display, display),
+      ...optionalItem("battery", t.shell.spec.battery, battery),
     ],
     loading: false,
   };
@@ -117,11 +120,12 @@ export function getDeviceSpecStripModel(
 export function getForegroundActivityLabel(
   device: DeviceInfo | null,
   currentActivity: string,
+  t: Messages = messages(),
 ): string {
   if (!device || !isOnlineDevice(device)) {
-    return "设备不可用";
+    return t.shell.spec.unavailable;
   }
-  return currentActivity || "暂无前台 Activity";
+  return currentActivity || t.shell.spec.noActivity;
 }
 
 interface DeviceSpecStripProps {
@@ -133,6 +137,7 @@ export function DeviceSpecStrip({
   activityRefreshing,
   onRefreshActivity,
 }: DeviceSpecStripProps) {
+  const t = useT();
   const devices = useDeviceStore((state) => state.devices);
   const selectedDevice = useDeviceStore((state) => state.selectedDevice);
   const deviceDetail = useDeviceStore((state) => state.deviceDetail);
@@ -168,7 +173,7 @@ export function DeviceSpecStrip({
 
   return (
     <section
-      aria-label="设备规格"
+      aria-label={t.shell.spec.label}
       aria-busy={model.loading}
       className="shrink-0 border border-rule bg-surface2"
     >
@@ -199,8 +204,8 @@ export function DeviceSpecStrip({
           onClick={onRefreshActivity}
           disabled={!onlineSerial || activityRefreshing}
           className="flex h-7 w-7 shrink-0 items-center justify-center border border-rule text-ink2 hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
-          title={activityRefreshing ? "正在刷新前台 Activity" : "刷新前台 Activity"}
-          aria-label={activityRefreshing ? "正在刷新前台 Activity" : "刷新前台 Activity"}
+          title={activityRefreshing ? t.shell.spec.refreshingActivity : t.shell.spec.refreshActivity}
+          aria-label={activityRefreshing ? t.shell.spec.refreshingActivity : t.shell.spec.refreshActivity}
           aria-busy={activityRefreshing}
         >
           <RefreshCw
@@ -217,7 +222,7 @@ function optionalItem(key: string, label: string, value: string): DeviceSpecItem
   return normalized ? [{ key, label, value: normalized }] : [];
 }
 
-function getTransportDescription(device: DeviceInfo, transports: DeviceInfo[]): string {
+function getTransportDescription(device: DeviceInfo, transports: DeviceInfo[], t: Messages): string {
   const labels: string[] = [];
   if (transports.some((transport) => transportKind(transport) === "usb")) {
     labels.push(transportLabel("usb"));
@@ -228,7 +233,7 @@ function getTransportDescription(device: DeviceInfo, transports: DeviceInfo[]): 
   if (labels.length === 1) {
     return labels[0];
   }
-  return `${labels.join(" 和 ")} (当前 ${transportLabel(transportKind(device))})`;
+  return t.shell.spec.connections({ labels, primary: transportLabel(transportKind(device)) });
 }
 
 function joinValues(...values: string[]): string {

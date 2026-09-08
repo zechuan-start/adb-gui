@@ -1,3 +1,4 @@
+import { errorIdentity } from "@/i18n/errors";
 import { useEffect, useRef } from "react";
 import { createDeviceMetricsSessionController } from "@/hooks/deviceMetricsSessionController";
 import { getDeviceBySerial } from "@/lib/device";
@@ -54,13 +55,14 @@ export function useDeviceMetricsSession(active: boolean): void {
         useDeviceMetricsStore.getState().acceptFrame(frame);
       },
       onExit: (exit) => {
-        const message = exit.detail || exit.reason;
+        const message = exit.detail ?? { code: "metrics_stopped", detail: exit.reason };
+        const key = errorIdentity(message);
         useDeviceMetricsStore
           .getState()
           .acceptExit(exit.serial, exit.session_id, message);
-        if (lastErrorRef.current !== message) {
-          lastErrorRef.current = message;
-          showToast("error", `设备性能采集已停止: ${message}`);
+        if (lastErrorRef.current !== key) {
+          lastErrorRef.current = key;
+          showToast("error", { code: "metrics_stopped", causes: [message] });
         }
       },
       onStopped: (session) => {
@@ -69,10 +71,11 @@ export function useDeviceMetricsSession(active: boolean): void {
           .markStopped(session.serial, session.session_id);
       },
       onStartFailure: (detail) => {
+        const key = errorIdentity(detail);
         useDeviceMetricsStore.getState().failStart(deviceKey, onlineSerial, detail);
-        if (lastErrorRef.current !== detail) {
-          lastErrorRef.current = detail;
-          showToast("error", `启动设备性能采集失败: ${detail}`);
+        if (lastErrorRef.current !== key) {
+          lastErrorRef.current = key;
+          showToast("error", { code: "metrics_start", causes: [detail] });
         }
       },
       onAsyncError: (error) => {

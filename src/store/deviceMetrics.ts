@@ -1,3 +1,4 @@
+import type { AppErrorPayload } from "@/i18n/errors";
 import { create } from "zustand";
 import {
   DeviceMetricsRingBuffer,
@@ -29,7 +30,7 @@ interface DeviceMetricsStore {
   serial: string | null;
   sessionId: number | null;
   streamState: DeviceMetricsStreamState;
-  error: string;
+  error: AppErrorPayload | null;
   history: DeviceMetricsRingBuffer<DeviceMetricsHistoryPoint>;
   revision: number;
   latestFrame: DeviceMetricsFrame | null;
@@ -42,8 +43,8 @@ interface DeviceMetricsStore {
   markStarting: (deviceKey: string, serial: string) => void;
   beginSession: (deviceKey: string, serial: string, sessionId: number) => void;
   acceptFrame: (frame: DeviceMetricsFrame) => void;
-  acceptExit: (serial: string, sessionId: number, detail: string) => void;
-  failStart: (deviceKey: string, serial: string, detail: string) => void;
+  acceptExit: (serial: string, sessionId: number, detail: AppErrorPayload) => void;
+  failStart: (deviceKey: string, serial: string, detail: AppErrorPayload) => void;
   markStopped: (serial: string, sessionId: number) => void;
   setPaused: (paused: boolean) => void;
   restart: () => void;
@@ -72,7 +73,7 @@ function clearDeviceState(
     serial,
     sessionId: null,
     streamState: deviceKey === null ? "idle" : "stopped",
-    error: "",
+    error: null,
     history: new DeviceMetricsRingBuffer(METRICS_HISTORY_CAPACITY),
     revision: 0,
     latestFrame: null,
@@ -101,21 +102,21 @@ export const useDeviceMetricsStore = create<DeviceMetricsStore>((set) => ({
         serial,
         sessionId: null,
         streamState: deviceKey === null ? "idle" : "stopped",
-        error: "",
+        error: null,
       };
     });
   },
   markStarting: (deviceKey, serial) => {
     set((state) =>
       state.deviceKey === deviceKey && state.serial === serial
-        ? { sessionId: null, streamState: "starting", error: "" }
+        ? { sessionId: null, streamState: "starting", error: null }
         : state,
     );
   },
   beginSession: (deviceKey, serial, sessionId) => {
     set((state) =>
       state.deviceKey === deviceKey && state.serial === serial
-        ? { sessionId, streamState: "streaming", error: "" }
+        ? { sessionId, streamState: "streaming", error: null }
         : state,
     );
   },
@@ -133,7 +134,7 @@ export const useDeviceMetricsStore = create<DeviceMetricsStore>((set) => ({
       });
       return {
         streamState: "streaming",
-        error: "",
+        error: null,
         latestFrame: frame,
         battery: frame.battery ?? state.battery,
         processes: frame.processes ?? state.processes,
@@ -158,12 +159,12 @@ export const useDeviceMetricsStore = create<DeviceMetricsStore>((set) => ({
   markStopped: (serial, sessionId) => {
     set((state) =>
       state.serial === serial && state.sessionId === sessionId
-        ? { sessionId: null, streamState: "stopped", error: "" }
+        ? { sessionId: null, streamState: "stopped", error: null }
         : state,
     );
   },
   setPaused: (paused) => set({ paused }),
   restart: () => {
-    set((state) => ({ restartNonce: state.restartNonce + 1, paused: false, error: "" }));
+    set((state) => ({ restartNonce: state.restartNonce + 1, paused: false, error: null }));
   },
 }));

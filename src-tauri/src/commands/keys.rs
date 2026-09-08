@@ -1,3 +1,4 @@
+use crate::{error::AppError, error_codes as codes};
 use tauri::AppHandle;
 
 use super::device::run_adb_with_serial;
@@ -30,7 +31,7 @@ impl KeyAction {
 }
 
 #[tauri::command]
-pub fn send_key_event(app: AppHandle, serial: String, action: String) -> Result<String, String> {
+pub fn send_key_event(app: AppHandle, serial: String, action: String) -> Result<String, AppError> {
     let keycode = match action.as_str() {
         "back" => KeyAction::Back.keycode(),
         "home" => KeyAction::Home.keycode(),
@@ -40,7 +41,7 @@ pub fn send_key_event(app: AppHandle, serial: String, action: String) -> Result<
         "power" => KeyAction::Power.keycode(),
         "volume-up" => KeyAction::VolumeUp.keycode(),
         "volume-down" => KeyAction::VolumeDown.keycode(),
-        _ => return Err(format!("Unsupported key action: {action}")),
+        _ => return Err(AppError::new(codes::KEYS_UNSUPPORTED).param("action", action)),
     };
 
     run_adb_with_serial(&app, &serial, &["shell", "input", "keyevent", keycode])

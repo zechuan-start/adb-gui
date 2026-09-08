@@ -1,3 +1,4 @@
+import { toAppError, type AppErrorPayload } from "@/i18n/errors";
 import type {
   LogcatBatch,
   LogcatExit,
@@ -16,7 +17,7 @@ interface QueuedBatch {
 export interface LogcatStreamFrame {
   sessionId: number;
   lines: LogcatLine[];
-  disconnectDetail: string | null;
+  disconnectDetail: AppErrorPayload | null;
 }
 
 export interface LogcatStreamControllerDependencies {
@@ -29,7 +30,7 @@ export interface LogcatStreamControllerDependencies {
   cancelFrame: (frame: number) => void;
   onStarted: (session: LogcatSessionInfo) => void;
   onFrame: (frame: LogcatStreamFrame) => void;
-  onStartFailure: (detail: string) => void;
+  onStartFailure: (detail: AppErrorPayload) => void;
   onAsyncError: (error: unknown) => void;
 }
 
@@ -123,7 +124,7 @@ export function createLogcatStreamController(
         sessionId: activeSession.session_id,
         lines,
         disconnectDetail: matchingExit
-          ? matchingExit.detail || matchingExit.reason
+          ? matchingExit.detail ?? { code: "logcat_disconnected", detail: matchingExit.reason }
           : null,
       });
     }
@@ -213,7 +214,7 @@ export function createLogcatStreamController(
       }
       disposeListeners();
       clearQueue();
-      dependencies.onStartFailure(String(error));
+      dependencies.onStartFailure(toAppError(error));
     }
   }
 

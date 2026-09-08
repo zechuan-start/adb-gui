@@ -1,3 +1,4 @@
+use crate::{error::AppError, error_codes as codes};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{
@@ -93,10 +94,10 @@ fn drain_session_values<T>(sessions: &mut HashMap<String, T>) -> Vec<T> {
 async fn stop_all_sessions<T, Stop, StopFuture>(
     sessions: Vec<T>,
     mut stop: Stop,
-) -> Result<(), String>
+) -> Result<(), AppError>
 where
     Stop: FnMut(T) -> StopFuture,
-    StopFuture: std::future::Future<Output = Result<(), String>>,
+    StopFuture: std::future::Future<Output = Result<(), AppError>>,
 {
     let session_count = sessions.len();
     let mut failures = Vec::new();
@@ -111,23 +112,21 @@ where
         return Ok(());
     }
 
-    failures.sort();
-    Err(format!(
-        "Failed to stop {} of {session_count} Logcat sessions: {}",
-        failures.len(),
-        failures.join("; ")
-    ))
+    Err(AppError::new(codes::LOGCAT_STOP_ALL_FAILED)
+        .param("failed", failures.len())
+        .param("total", session_count)
+        .causes(failures))
 }
 
 async fn start_after_stopping<T, U, Stop, StopFuture, Start>(
     previous: Option<T>,
     stop: Stop,
     start: Start,
-) -> Result<U, String>
+) -> Result<U, AppError>
 where
     Stop: FnOnce(T) -> StopFuture,
-    StopFuture: std::future::Future<Output = Result<(), String>>,
-    Start: FnOnce() -> Result<U, String>,
+    StopFuture: std::future::Future<Output = Result<(), AppError>>,
+    Start: FnOnce() -> Result<U, AppError>,
 {
     if let Some(previous) = previous {
         stop(previous).await?;
@@ -135,26 +134,29 @@ where
     start()
 }
 
-async fn stop_logcat_session(mut session: LogcatSession) -> Result<(), String> {
+async fn stop_logcat_session(mut session: LogcatSession) -> Result<(), AppError> {
     let session_id = session.session_id;
     let kill_error = session.child.start_kill().err();
     let wait_error = match tokio::time::timeout(CHILD_SHUTDOWN_TIMEOUT, session.child.wait()).await
     {
         Ok(Ok(_)) => None,
-        Ok(Err(error)) => Some(format!("wait failed: {error}")),
-        Err(_) => Some("wait timed out".to_string()),
+        Ok(Err(error)) => Some(AppError::new(codes::LOGCAT_WAIT_FAILED).detail(error.to_string())),
+        Err(_) => Some(AppError::new(codes::LOGCAT_WAIT_TIMEOUT)),
     };
-
-    match (kill_error, wait_error) {
-        (_, None) => Ok(()),
-        (None, Some(wait_error)) => Err(format!("Logcat session {session_id} {wait_error}")),
-        (Some(kill_error), Some(wait_error)) => Err(format!(
-            "Logcat session {session_id} kill failed: {kill_error}; {wait_error}"
-        )),
+    let Some(wait_error) = wait_error else {
+        return Ok(());
+    };
+    let mut error = AppError::new(codes::LOGCAT_STOP_FAILED)
+        .param("session", session_id)
+        .cause(wait_error);
+    if let Some(kill_error) = kill_error {
+        error =
+            error.cause(AppError::new(codes::LOGCAT_KILL_FAILED).detail(kill_error.to_string()));
     }
+    Err(error)
 }
 
-pub async fn shutdown_logcat_sessions() -> Result<(), String> {
+pub async fn shutdown_logcat_sessions() -> Result<(), AppError> {
     LOGCAT_SHUTTING_DOWN.store(true, Ordering::SeqCst);
     let sessions = {
         let mut sessions = LOGCAT_SESSIONS.lock().await;
@@ -164,12 +166,10 @@ pub async fn shutdown_logcat_sessions() -> Result<(), String> {
     stop_all_sessions(sessions, stop_logcat_session).await
 }
 
-fn build_exit_detail(read_error: Option<&str>, stderr_detail: &str) -> String {
-    match (read_error, stderr_detail.is_empty()) {
-        (Some(error), true) => error.to_string(),
-        (Some(error), false) => format!("{error}\n{stderr_detail}"),
-        (None, true) => "Logcat process exited (stdout EOF)".to_string(),
-        (None, false) => stderr_detail.to_string(),
+fn build_exit_detail(read_error: Option<AppError>, stderr_detail: &str) -> AppError {
+    match read_error {
+        Some(error) => error.detail(stderr_detail),
+        None => AppError::new(codes::LOGCAT_EOF).detail(stderr_detail),
     }
 }
 
@@ -246,7 +246,7 @@ pub struct LogcatExit {
     pub serial: String,
     pub session_id: u64,
     pub reason: String,
-    pub detail: String,
+    pub detail: Option<AppError>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -256,7 +256,7 @@ pub struct ExportResult {
 }
 
 #[tauri::command]
-pub fn clear_logcat(app: AppHandle, serial: String) -> Result<(), String> {
+pub fn clear_logcat(app: AppHandle, serial: String) -> Result<(), AppError> {
     run_adb_with_serial(&app, &serial, &["logcat", "-c"]).map(|_| ())
 }
 
@@ -265,7 +265,7 @@ pub fn get_package_pids(
     app: AppHandle,
     serial: String,
     pkg: String,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, AppError> {
     let output = run_adb_output_with_serial(&app, &serial, &["shell", "pidof", &pkg])?;
     if output.status.success() {
         return Ok(String::from_utf8_lossy(&output.stdout)
@@ -379,7 +379,7 @@ fn process_table_columns(fields: &[&str]) -> Option<(usize, usize)> {
     Some((pid_index, name_index))
 }
 
-fn parse_process_table(output: &str) -> Result<Vec<ProcessEntry>, String> {
+fn parse_process_table(output: &str) -> Result<Vec<ProcessEntry>, AppError> {
     let mut columns = None;
     let mut entries = Vec::new();
 
@@ -409,20 +409,23 @@ fn parse_process_table(output: &str) -> Result<Vec<ProcessEntry>, String> {
     }
 
     if columns.is_none() {
-        return Err("Process table is missing PID and NAME/CMD/COMMAND headers".to_string());
+        return Err(AppError::new(codes::LOGCAT_MISSING_PROCESS_HEADERS));
     }
     Ok(entries)
 }
 
 #[tauri::command]
-pub fn list_device_processes(app: AppHandle, serial: String) -> Result<Vec<ProcessEntry>, String> {
+pub fn list_device_processes(
+    app: AppHandle,
+    serial: String,
+) -> Result<Vec<ProcessEntry>, AppError> {
     let mut attempt = ProcessPsAttempt::Formatted;
     loop {
         let output = run_adb_output_with_serial(&app, &serial, attempt.args())?;
         if output.status.success() {
             let decoded = String::from_utf8_lossy(&output.stdout);
             return parse_process_table(&decoded)
-                .map_err(|error| format!("Failed to parse device process table: {error}"));
+                .map_err(|error| AppError::new(codes::LOGCAT_PARSE_PROCESS_FAILED).cause(error));
         }
         if let Some(next_attempt) = next_process_ps_attempt(
             attempt,
@@ -442,15 +445,17 @@ pub fn export_logcat(
     app: AppHandle,
     serial: String,
     content: String,
-) -> Result<ExportResult, String> {
+) -> Result<ExportResult, AppError> {
     let save_dir = logcat_dir();
-    std::fs::create_dir_all(&save_dir).map_err(|e| format!("Failed to create dir: {e}"))?;
+    std::fs::create_dir_all(&save_dir)
+        .map_err(|e| AppError::new(codes::LOGCAT_CREATE_DIRECTORY_FAILED).detail(e.to_string()))?;
 
     let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
     let safe_serial = serial.replace(['/', ':', ' '], "_");
     let file_path = save_dir.join(format!("{}-{}.log", safe_serial, timestamp));
 
-    std::fs::write(&file_path, content).map_err(|e| format!("Failed to write file: {e}"))?;
+    std::fs::write(&file_path, content)
+        .map_err(|e| AppError::new(codes::LOGCAT_WRITE_FAILED).detail(e.to_string()))?;
 
     let path_str = file_path.to_string_lossy().to_string();
     let mut revealed = false;
@@ -467,18 +472,18 @@ pub fn export_logcat(
 }
 
 #[tauri::command]
-pub async fn start_logcat(app: AppHandle, serial: String) -> Result<LogcatSessionInfo, String> {
+pub async fn start_logcat(app: AppHandle, serial: String) -> Result<LogcatSessionInfo, AppError> {
     let start_lock = logcat_start_lock(&serial).await;
     let _start_guard = start_lock.lock().await;
     if LOGCAT_SHUTTING_DOWN.load(Ordering::SeqCst) {
-        return Err("Logcat session rejected: application is shutting down".to_string());
+        return Err(AppError::new(codes::LOGCAT_SHUTTING_DOWN));
     }
 
     let session_id = NEXT_SESSION_ID
         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
             current.checked_add(1)
         })
-        .map_err(|_| "Logcat session ID exhausted".to_string())?;
+        .map_err(|_| AppError::new(codes::LOGCAT_SESSION_ID_EXHAUSTED))?;
     let adb_path = adb::resolve_adb_path(&app)?;
     let previous = {
         let mut sessions = LOGCAT_SESSIONS.lock().await;
@@ -489,7 +494,7 @@ pub async fn start_logcat(app: AppHandle, serial: String) -> Result<LogcatSessio
     // same-serial client exits. Confirm the old child is gone before spawning.
     let mut child = start_after_stopping(previous, stop_logcat_session, || {
         if LOGCAT_SHUTTING_DOWN.load(Ordering::SeqCst) {
-            return Err("Logcat session rejected: application is shutting down".to_string());
+            return Err(AppError::new(codes::LOGCAT_SHUTTING_DOWN));
         }
         adb::prepare_async_command(&app, &adb_path)
             .arg("-s")
@@ -503,7 +508,7 @@ pub async fn start_logcat(app: AppHandle, serial: String) -> Result<LogcatSessio
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true)
             .spawn()
-            .map_err(|e| format!("Failed to start logcat: {e}"))
+            .map_err(|e| AppError::new(codes::LOGCAT_START_FAILED).detail(e.to_string()))
     })
     .await?;
 
@@ -511,23 +516,23 @@ pub async fn start_logcat(app: AppHandle, serial: String) -> Result<LogcatSessio
         Some(stdout) => stdout,
         None => {
             let _ = child.kill().await;
-            return Err("Failed to capture logcat stdout".to_string());
+            return Err(AppError::new(codes::LOGCAT_MISSING_STDOUT));
         }
     };
     let stderr = match child.stderr.take() {
         Some(stderr) => stderr,
         None => {
             let _ = child.kill().await;
-            return Err("Failed to capture logcat stderr".to_string());
+            return Err(AppError::new(codes::LOGCAT_MISSING_STDERR));
         }
     };
 
     let registration = {
         let mut sessions = LOGCAT_SESSIONS.lock().await;
         if LOGCAT_SHUTTING_DOWN.load(Ordering::SeqCst) {
-            Err((child, "application is shutting down"))
+            Err((child, AppError::new(codes::LOGCAT_SHUTTING_DOWN)))
         } else if sessions.contains_key(&serial) {
-            Err((child, "another session became active while restarting"))
+            Err((child, AppError::new(codes::LOGCAT_SUPERSEDED)))
         } else {
             sessions.insert(serial.clone(), LogcatSession { child, session_id });
             Ok(())
@@ -538,10 +543,13 @@ pub async fn start_logcat(app: AppHandle, serial: String) -> Result<LogcatSessio
         Err((child, reason)) => {
             let cleanup_result = stop_logcat_session(LogcatSession { child, session_id }).await;
             return match cleanup_result {
-                Ok(()) => Err(format!("Logcat session {session_id} rejected: {reason}")),
-                Err(cleanup_error) => Err(format!(
-                    "Logcat session {session_id} rejected because {reason}; {cleanup_error}"
-                )),
+                Ok(()) => Err(AppError::new(codes::LOGCAT_REJECTED)
+                    .param("session", session_id)
+                    .cause(reason)),
+                Err(cleanup_error) => Err(AppError::new(codes::LOGCAT_REJECTED)
+                    .param("session", session_id)
+                    .cause(reason)
+                    .cause(cleanup_error)),
             };
         }
     }
@@ -609,7 +617,10 @@ pub async fn start_logcat(app: AppHandle, serial: String) -> Result<LogcatSessio
                 }
                 Some(Err(err)) => {
                     emit_logcat_batch(&app_clone, &reader_serial, session_id, &mut batch);
-                    break ("error", Some(err.to_string()));
+                    break (
+                        "error",
+                        Some(AppError::new(codes::LOGCAT_READ_FAILED).detail(err.to_string())),
+                    );
                 }
                 None => {
                     if should_flush_batch(batch.len(), Some(BATCH_FLUSH_INTERVAL)) {
@@ -644,7 +655,7 @@ pub async fn start_logcat(app: AppHandle, serial: String) -> Result<LogcatSessio
             let tail = stderr_tail.lock().await;
             String::from_utf8_lossy(&tail).trim().to_string()
         };
-        let detail = build_exit_detail(read_error.as_deref(), &stderr_detail);
+        let detail = build_exit_detail(read_error, &stderr_detail);
 
         if let Err(err) = app_clone.emit(
             "logcat-exit",
@@ -652,7 +663,7 @@ pub async fn start_logcat(app: AppHandle, serial: String) -> Result<LogcatSessio
                 serial: reader_serial,
                 session_id,
                 reason: reason.to_string(),
-                detail,
+                detail: Some(detail),
             },
         ) {
             eprintln!("failed to emit logcat exit: {err}");
@@ -744,6 +755,8 @@ mod tests {
         start_after_stopping, stop_all_sessions, ProcessEntry, ProcessPsAttempt,
         BATCH_FLUSH_INTERVAL, BATCH_MAX_LINES, STDERR_TAIL_MAX_BYTES,
     };
+    use crate::error::AppError;
+    use crate::error_codes as codes;
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
@@ -974,7 +987,9 @@ mod tests {
         let start_attempted_by_closure = Arc::clone(&start_attempted);
         let failed = start_after_stopping(
             Some(()),
-            |_| async { Err("old child is still running".to_string()) },
+            |_| async {
+                Err(AppError::new(codes::LOGCAT_WAIT_FAILED).detail("old child is still running"))
+            },
             move || {
                 *start_attempted_by_closure.lock().unwrap() = true;
                 Ok(())
@@ -982,7 +997,10 @@ mod tests {
         )
         .await;
 
-        assert_eq!(failed, Err("old child is still running".to_string()));
+        assert_eq!(
+            failed,
+            Err(AppError::new(codes::LOGCAT_WAIT_FAILED).detail("old child is still running"))
+        );
         assert!(!*start_attempted.lock().unwrap());
     }
 
@@ -1018,7 +1036,7 @@ mod tests {
             async move {
                 recorded_attempts.lock().unwrap().push(session_id);
                 if session_id == 20 {
-                    Err("session 20 failed".to_string())
+                    Err(AppError::new(codes::LOGCAT_WAIT_FAILED).detail("session 20 failed"))
                 } else {
                     Ok(())
                 }
@@ -1027,23 +1045,28 @@ mod tests {
         .await;
 
         assert_eq!(*attempts.lock().unwrap(), vec![10, 20, 30]);
-        assert_eq!(
-            result,
-            Err("Failed to stop 1 of 3 Logcat sessions: session 20 failed".to_string())
-        );
+        let error = result.unwrap_err();
+        assert_eq!(error.code, codes::LOGCAT_STOP_ALL_FAILED);
+        assert_eq!(error.params["failed"], 1_u64.into());
+        assert_eq!(error.params["total"], 3_u64.into());
+        assert_eq!(error.causes[0].detail.as_deref(), Some("session 20 failed"));
     }
 
     #[test]
     fn exit_detail_is_always_non_empty_and_preserves_diagnostics() {
+        let eof = build_exit_detail(None, "");
+        assert_eq!(eof.code, codes::LOGCAT_EOF);
+        assert!(eof.detail.is_none());
+        let offline = build_exit_detail(None, "device offline");
+        assert_eq!(offline.code, codes::LOGCAT_EOF);
+        assert_eq!(offline.detail.as_deref(), Some("device offline"));
+        let read = AppError::new(codes::LOGCAT_READ_FAILED).detail("read failed");
+        assert_eq!(build_exit_detail(Some(read.clone()), ""), read);
+        let combined = build_exit_detail(Some(read), "device offline");
+        assert_eq!(combined.code, codes::LOGCAT_READ_FAILED);
         assert_eq!(
-            build_exit_detail(None, ""),
-            "Logcat process exited (stdout EOF)"
-        );
-        assert_eq!(build_exit_detail(None, "device offline"), "device offline");
-        assert_eq!(build_exit_detail(Some("read failed"), ""), "read failed");
-        assert_eq!(
-            build_exit_detail(Some("read failed"), "device offline"),
-            "read failed\ndevice offline"
+            combined.detail.as_deref(),
+            Some("read failed\ndevice offline")
         );
     }
 
@@ -1191,7 +1214,7 @@ mod tests {
 }
 
 #[tauri::command]
-pub async fn stop_logcat(serial: String, session_id: u64) -> Result<(), String> {
+pub async fn stop_logcat(serial: String, session_id: u64) -> Result<(), AppError> {
     let session = {
         let mut sessions = LOGCAT_SESSIONS.lock().await;
         if session_matches(

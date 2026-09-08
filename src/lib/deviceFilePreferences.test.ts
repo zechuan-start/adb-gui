@@ -168,7 +168,7 @@ describe("file preferences projection", () => {
       type: "list-error",
       serial: "a",
       requestId: 1,
-      error: "not found",
+      error: { code: "unknown", detail: "not found" },
     });
     expect(state.pathDraft).toBe("/missing 中文");
     expect(state.path).toBe("");

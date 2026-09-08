@@ -1,3 +1,4 @@
+import { errorText, useT } from "@/i18n";
 import { ArrowLeft, Delete, Home, Layers3, Power, Minus, Plus, CornerDownLeft } from "lucide-react";
 import { useDeviceStore } from "@/store/device";
 import { useFeedbackStore } from "@/store/feedback";
@@ -5,33 +6,35 @@ import { getDeviceBySerial, isOnlineDevice } from "@/lib/device";
 import { sendKey } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
-const KEY_GROUPS = [
-  {
-    label: "导航",
-    items: [
-      { action: "back", title: "返回", icon: ArrowLeft },
-      { action: "home", title: "主页", icon: Home },
-      { action: "recents", title: "最近任务", icon: Layers3 },
-    ],
-  },
-  {
-    label: "输入",
-    items: [
-      { action: "enter", title: "回车", icon: CornerDownLeft },
-      { action: "delete", title: "删除", icon: Delete },
-    ],
-  },
-  {
-    label: "硬件",
-    items: [
-      { action: "power", title: "电源", icon: Power },
-      { action: "volume-up", title: "音量+", icon: Plus },
-      { action: "volume-down", title: "音量-", icon: Minus },
-    ],
-  },
-] as const;
 
 export function QuickKeysTool() {
+  const t = useT();
+  const KEY_GROUPS = [
+    {
+      label: t.tools.quickKeys.navigation,
+      items: [
+        { action: "back", title: t.tools.quickKeys.back, icon: ArrowLeft },
+        { action: "home", title: t.tools.quickKeys.home, icon: Home },
+        { action: "recents", title: t.tools.quickKeys.recentApps, icon: Layers3 },
+      ],
+    },
+    {
+      label: t.tools.quickKeys.input,
+      items: [
+        { action: "enter", title: t.tools.quickKeys.enter, icon: CornerDownLeft },
+        { action: "delete", title: t.tools.quickKeys.delete, icon: Delete },
+      ],
+    },
+    {
+      label: t.tools.quickKeys.hardware,
+      items: [
+        { action: "power", title: t.tools.quickKeys.power, icon: Power },
+        { action: "volume-up", title: t.tools.quickKeys.volumeUp, icon: Plus },
+        { action: "volume-down", title: t.tools.quickKeys.volumeDown, icon: Minus },
+      ],
+    },
+  ] as const;
+
   const devices = useDeviceStore((s) => s.devices);
   const selectedDevice = useDeviceStore((s) => s.selectedDevice);
   const device = getDeviceBySerial(devices, selectedDevice);
@@ -44,9 +47,9 @@ export function QuickKeysTool() {
 
     try {
       const result = await sendKey(device.serial, action);
-      showToast("success", result || `${action} 已发送`);
+      showToast("success", (t) => (result || t.tools.quickKeys.sent({ action: action })));
     } catch (error) {
-      showToast("error", `按键发送失败: ${error}`);
+      showToast("error", (t) => (t.tools.quickKeys.couldNotSendKey({ detail: errorText(error, t) })));
     }
   }
 

@@ -62,24 +62,21 @@ describe("parseBatchInput", () => {
   it("rejects an empty input", () => {
     expect(parseBatchInput(createDraft(""))).toEqual({
       ok: false,
-      code: "empty-input",
-      message: "请输入要生成的数据",
+      code: "generator_empty_input",
     });
   });
 
   it("rejects an empty custom separator", () => {
     expect(parseBatchInput(createDraft("alpha", "custom"))).toEqual({
       ok: false,
-      code: "empty-separator",
-      message: "请输入自定义分隔符",
+      code: "generator_empty_separator",
     });
   });
 
   it("rejects input that contains only separators", () => {
     expect(parseBatchInput(createDraft("\n\r\n\r"))).toEqual({
       ok: false,
-      code: "no-values",
-      message: "没有可生成的数据",
+      code: "generator_no_values",
     });
   });
 });

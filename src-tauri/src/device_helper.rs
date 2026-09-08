@@ -1,3 +1,4 @@
+use crate::{error::AppError, error_codes as codes};
 use std::path::{Path, PathBuf};
 use std::process::{Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -10,14 +11,16 @@ const PUSH_TIMEOUT: Duration = Duration::from_secs(30);
 static DEPLOY_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static NEXT_DEPLOY: AtomicU64 = AtomicU64::new(1);
 
-pub fn resolve_app_info_dex_path(app: &AppHandle) -> Result<PathBuf, String> {
+pub fn resolve_app_info_dex_path(app: &AppHandle) -> Result<PathBuf, AppError> {
     let path = app
         .path()
         .resource_dir()
-        .map_err(|error| format!("Failed to locate application resources: {error}"))?
+        .map_err(|error| AppError::new(codes::HELPER_RESOURCES_FAILED).detail(error.to_string()))?
         .join("app-info.dex");
     if !path.is_file() {
-        return Err(format!("Bundled app-info.dex was not found at {}. Run scripts/build-app-info-dex/build.sh before packaging.", path.display()));
+        return Err(
+            AppError::new(codes::HELPER_DEX_MISSING).param("path", path.display().to_string())
+        );
     }
     Ok(path)
 }
@@ -47,15 +50,19 @@ pub async fn ensure_dex_pushed(
     remote_path: &str,
     expected_size: u64,
     force: bool,
-) -> Result<bool, String> {
+) -> Result<bool, AppError> {
     // Serialize publication across USB/WiFi aliases, but release before either helper runs.
     let _guard = deployment_lock(PUSH_TIMEOUT).await?;
     if !force {
         let probe =
             format!("if [ -f {remote_path} ]; then ls -l {remote_path}; else echo MISSING; fi");
-        let output =
-            run_adb_output(app, &["-s", serial, "shell", &probe], "inspect remote dex").await?;
-        check_output(&output, "inspect remote dex")?;
+        let output = run_adb_output(
+            app,
+            &["-s", serial, "shell", &probe],
+            codes::HELPER_INSPECT_DEX,
+        )
+        .await?;
+        check_output(&output, codes::HELPER_INSPECT_DEX)?;
         if parse_ls_size_matches(&String::from_utf8_lossy(&output.stdout), expected_size) {
             return Ok(false);
         }
@@ -73,8 +80,8 @@ pub async fn ensure_dex_pushed(
         |args| async move {
             let mut scoped = vec!["-s", serial];
             scoped.extend(args.iter().map(String::as_str));
-            let output = run_adb_output(app, &scoped, "publish helper dex").await?;
-            check_output(&output, "publish helper dex")
+            let output = run_adb_output(app, &scoped, codes::HELPER_PUBLISH_DEX).await?;
+            check_output(&output, codes::HELPER_PUBLISH_DEX)
         },
     )
     .await?;
@@ -83,10 +90,10 @@ pub async fn ensure_dex_pushed(
 
 async fn deployment_lock(
     timeout: Duration,
-) -> Result<tokio::sync::MutexGuard<'static, ()>, String> {
+) -> Result<tokio::sync::MutexGuard<'static, ()>, AppError> {
     tokio::time::timeout(timeout, DEPLOY_LOCK.lock())
         .await
-        .map_err(|_| "Timed out waiting for another DEX deployment.".to_string())
+        .map_err(|_| AppError::new(codes::HELPER_DEPLOYMENT_TIMEOUT))
 }
 
 async fn publish_dex<F, Fut>(
@@ -94,10 +101,10 @@ async fn publish_dex<F, Fut>(
     temporary: &str,
     remote: &str,
     mut execute: F,
-) -> Result<(), String>
+) -> Result<(), AppError>
 where
     F: FnMut(Vec<String>) -> Fut,
-    Fut: std::future::Future<Output = Result<(), String>>,
+    Fut: std::future::Future<Output = Result<(), AppError>>,
 {
     let steps = [
         vec!["push", local, temporary],
@@ -115,24 +122,27 @@ where
             .await;
             return Err(match cleanup {
                 Ok(()) => error,
-                Err(cleanup) => format!("{error}; temporary DEX cleanup failed: {cleanup}"),
+                Err(cleanup) => AppError::new(codes::HELPER_CLEANUP_FAILED)
+                    .cause(error)
+                    .cause(cleanup),
             });
         }
     }
     Ok(())
 }
 
-fn check_output(output: &Output, operation: &str) -> Result<(), String> {
+fn check_output(output: &Output, operation: &'static str) -> Result<(), AppError> {
     if output.status.success() {
         return Ok(());
     }
-    Err(format!(
-        "Failed to {operation}: {}",
-        adb_output_error(output)
-    ))
+    Err(AppError::new(operation).cause(adb_output_error(output)))
 }
 
-async fn run_adb_output(app: &AppHandle, args: &[&str], operation: &str) -> Result<Output, String> {
+async fn run_adb_output(
+    app: &AppHandle,
+    args: &[&str],
+    operation: &'static str,
+) -> Result<Output, AppError> {
     let adb_path = adb::resolve_adb_path(app)?;
     let child = adb::prepare_async_command(app, &adb_path)
         .args(args)
@@ -140,11 +150,13 @@ async fn run_adb_output(app: &AppHandle, args: &[&str], operation: &str) -> Resu
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|error| format!("Failed to {operation}: {error}"))?;
+        .map_err(|error| AppError::new(operation).detail(error.to_string()))?;
     tokio::time::timeout(PUSH_TIMEOUT, child.wait_with_output())
         .await
-        .map_err(|_| format!("Timed out while trying to {operation}."))?
-        .map_err(|error| format!("Failed to {operation}: {error}"))
+        .map_err(|_| {
+            AppError::new(codes::HELPER_OPERATION_TIMEOUT).cause(AppError::new(operation))
+        })?
+        .map_err(|error| AppError::new(operation).detail(error.to_string()))
 }
 
 #[cfg(test)]
@@ -172,7 +184,7 @@ mod tests {
                 let index = calls.borrow().len();
                 calls.borrow_mut().push(args);
                 std::future::ready(if failure == Some(index) {
-                    Err("failed".to_string())
+                    Err(AppError::new(codes::HELPER_PUBLISH_DEX).detail("failed"))
                 } else {
                     Ok(())
                 })

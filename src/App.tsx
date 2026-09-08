@@ -1,3 +1,5 @@
+import { AppError, toAppError, errorIdentity } from "@/i18n/errors";
+import { useT } from "@/i18n";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   AppWindow,
@@ -74,6 +76,7 @@ function WorkspacePane({ id, activePane, children }: WorkspacePaneProps) {
 }
 
 function App() {
+  const t = useT();
   const activityControllerRef = useRef<ActivityPollingController | null>(null);
   const processGenerationRef = useRef(0);
   const [activityRefreshing, setActivityRefreshing] = useState(false);
@@ -95,10 +98,10 @@ function App() {
     }
 
     void getAdbInfo().then(setAdbInfo).catch((error) => {
-      showToast("error", `读取 ADB 信息失败: ${String(error)}`);
+      showToast("error", new AppError("shell.adbInfo", {}, { causes: [toAppError(error)] }).payload);
     });
     void listDevices().then(setDevices).catch((error) => {
-      showToast("error", `读取设备列表失败: ${String(error)}`);
+      showToast("error", new AppError("shell.devices", {}, { causes: [toAppError(error)] }).payload);
     });
 
     let disposed = false;
@@ -113,7 +116,7 @@ function App() {
       })
       .catch((error) => {
         if (!disposed) {
-          showToast("error", `监听设备更新失败: ${String(error)}`);
+          showToast("error", new AppError("shell.listenDevices", {}, { causes: [toAppError(error)] }).payload);
         }
       });
 
@@ -157,9 +160,9 @@ function App() {
         setCurrentActivity(activity);
       },
       onError: (error) => {
-        const message = `刷新前台 Activity 失败: ${String(error)}`;
-        if (lastError !== message) {
-          lastError = message;
+        const message = new AppError("shell.activity", {}, { causes: [toAppError(error)] }).payload;
+        if (lastError !== errorIdentity(message)) {
+          lastError = errorIdentity(message);
           showToast("error", message);
         }
       },
@@ -175,10 +178,10 @@ function App() {
         );
       },
       onProcessError: (error) => {
-        const message = `读取设备进程表失败: ${String(error)}`;
+        const message = new AppError("shell.processes", {}, { causes: [toAppError(error)] }).payload;
         useLogcatStore.getState().failProcessMapRefresh(processMapKey, message);
-        if (lastProcessError !== message) {
-          lastProcessError = message;
+        if (lastProcessError !== errorIdentity(message)) {
+          lastProcessError = errorIdentity(message);
           showToast("error", message);
         }
       },
@@ -209,31 +212,31 @@ function App() {
                 onRefreshActivity={refreshCurrentActivity}
               />
               <div className="grid grid-cols-[repeat(auto-fill,minmax(min(240px,100%),1fr))] gap-3.5">
-                <ToolModule icon={<Camera />} title="截图" reference="A-01">
+                <ToolModule icon={<Camera />} title={t.shell.modules.screenshot} reference="A-01">
                   <ScreenshotTool />
                 </ToolModule>
-                <ToolModule icon={<Video />} title="录屏" reference="A-02">
+                <ToolModule icon={<Video />} title={t.shell.modules.recording} reference="A-02">
                   <ScreenRecordTool active={activePane === "tools"} />
                 </ToolModule>
-                <ToolModule icon={<PackageOpen />} title="安装 APK" reference="A-03">
+                <ToolModule icon={<PackageOpen />} title={t.shell.modules.install} reference="A-03">
                   <ApkTool active={activePane === "tools"} />
                 </ToolModule>
                 <ToolModule icon={<Link2 />} title="Deep Link" reference="A-04">
                   <DeepLinkTool />
                 </ToolModule>
-                <ToolModule icon={<ArrowLeftRight />} title="端口转发" reference="A-05" wide>
+                <ToolModule icon={<ArrowLeftRight />} title={t.shell.modules.ports} reference="A-05" wide>
                   <PortForwardTool active={activePane === "tools"} />
                 </ToolModule>
-                <ToolModule icon={<Keyboard />} title="快捷按键" reference="A-06">
+                <ToolModule icon={<Keyboard />} title={t.shell.modules.keys} reference="A-06">
                   <QuickKeysTool />
                 </ToolModule>
-                <ToolModule icon={<Clipboard />} title="剪贴板" reference="A-09">
+                <ToolModule icon={<Clipboard />} title={t.shell.modules.clipboard} reference="A-09">
                   <ClipboardTool />
                 </ToolModule>
-                <ToolModule icon={<AppWindow />} title="当前应用" reference="A-07">
+                <ToolModule icon={<AppWindow />} title={t.shell.modules.currentApp} reference="A-07">
                   <CurrentAppActionsTool />
                 </ToolModule>
-                <ToolModule icon={<Bug />} title="Bug 报告" reference="A-08">
+                <ToolModule icon={<Bug />} title={t.shell.modules.bugReport} reference="A-08">
                   <BugReportTool />
                 </ToolModule>
               </div>

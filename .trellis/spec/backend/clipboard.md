@@ -3,12 +3,13 @@
 ## 1. Scope / Trigger
 
 - Apply when changing clipboard Java, DEX, Rust commands, framing or helper deployment.
+- Use [Error Handling](./error-handling.md) for native `AppError` payloads; preserve this protocol's stricter diagnostic privacy rules.
 - Keep Java sources and the checked-in DEX synchronized. Read the shared DEX section in `quality-guidelines.md`.
 
 ## 2. Signatures
 
-- `get_device_clipboard(app, serial) -> Result<ClipboardResult, String>`.
-- `set_device_clipboard(app, serial, text) -> Result<(), String>`.
+- `get_device_clipboard(app, serial) -> Result<ClipboardResult, AppError>`.
+- `set_device_clipboard(app, serial, text) -> Result<(), AppError>`.
 - Java entry: `com.adbgui.clipboard.Main`; preserve `com.adbgui.appinfo.Main`.
 
 ## 3. Contracts

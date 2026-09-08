@@ -1,3 +1,4 @@
+use crate::{error::AppError, error_codes as codes};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -34,7 +35,7 @@ struct RecordingSession {
     started_at: Instant,
     stopped_at: Option<Instant>,
     phase: RecordPhase,
-    error: Option<String>,
+    error: Option<AppError>,
     attempted_path: Option<String>,
 }
 
@@ -56,7 +57,7 @@ pub struct ScreenRecordStatus {
     pub elapsed_secs: u64,
     pub local_path: Option<String>,
     pub remote_path: Option<String>,
-    pub error: Option<String>,
+    pub error: Option<AppError>,
     pub attempted_path: Option<String>,
 }
 
@@ -64,7 +65,7 @@ pub struct ScreenRecordStatus {
 pub struct ScreenRecordResult {
     pub path: String,
     pub opened: bool,
-    pub source_cleanup_error: Option<String>,
+    pub source_cleanup_error: Option<AppError>,
     pub remote_path: String,
     pub serial: String,
 }
@@ -88,7 +89,7 @@ pub struct SaveRecordingRequest {
 pub struct DiscardRecordingResult {
     pub serial: String,
     pub remote_path: String,
-    pub source_cleanup_error: Option<String>,
+    pub source_cleanup_error: Option<AppError>,
 }
 
 impl RecordingSession {
@@ -124,19 +125,19 @@ fn idle_status() -> ScreenRecordStatus {
     }
 }
 
-fn require_idle(state: &RecorderState) -> Result<(), String> {
+fn require_idle(state: &RecorderState) -> Result<(), AppError> {
     if matches!(state, RecorderState::Idle) {
         Ok(())
     } else {
-        Err("已有录屏或待恢复文件, 请先保存或放弃当前录屏".to_string())
+        Err(AppError::new(codes::RECORDING_EXISTING_SESSION))
     }
 }
 
-fn take_session(state: &mut RecorderState, id: &str) -> Result<RecordingSession, String> {
+fn take_session(state: &mut RecorderState, id: &str) -> Result<RecordingSession, AppError> {
     let status = match state {
         RecorderState::Session(session) if session.id == id => session.status(),
-        RecorderState::Busy(_) => return Err("当前录屏操作尚未完成".to_string()),
-        _ => return Err("录屏会话已变化, 操作已取消".to_string()),
+        RecorderState::Busy(_) => return Err(AppError::new(codes::RECORDING_BUSY)),
+        _ => return Err(AppError::new(codes::RECORDING_SESSION_CHANGED)),
     };
     let busy = ScreenRecordStatus {
         phase: RecordPhase::Saving,
@@ -153,11 +154,11 @@ pub async fn start_screen_record(
     app: AppHandle,
     serial: String,
     destination: CaptureDestination,
-) -> Result<ScreenRecordStatus, String> {
+) -> Result<ScreenRecordStatus, AppError> {
     tauri::async_runtime::spawn_blocking(move || {
-        let mut state = RECORDING
-            .lock()
-            .map_err(|error| format!("读取录屏会话失败: {error}"))?;
+        let mut state = RECORDING.lock().map_err(|error| {
+            AppError::new(codes::RECORDING_READ_SESSION_FAILED).detail(error.to_string())
+        })?;
         require_idle(&state)?;
         let adb_path = adb::resolve_adb_path(&app)?;
         let id = capture_id()?;
@@ -178,7 +179,9 @@ pub async fn start_screen_record(
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|error| format!("启动设备录屏失败: {error}"))?;
+            .map_err(|error| {
+                AppError::new(codes::RECORDING_START_FAILED).detail(error.to_string())
+            })?;
         let session = RecordingSession {
             id,
             serial,
@@ -196,19 +199,21 @@ pub async fn start_screen_record(
         Ok(status)
     })
     .await
-    .map_err(|error| format!("启动录屏任务失败: {error}"))?
+    .map_err(|error| {
+        AppError::new(codes::RECORDING_START_WORKER_FAILED).detail(error.to_string())
+    })?
 }
 
 #[tauri::command]
 pub async fn stop_screen_record(
     app: AppHandle,
     request: SaveRecordingRequest,
-) -> Result<ScreenRecordResult, String> {
+) -> Result<ScreenRecordResult, AppError> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut session = take_session(
-            &mut *RECORDING
-                .lock()
-                .map_err(|error| format!("读取录屏会话失败: {error}"))?,
+            &mut *RECORDING.lock().map_err(|error| {
+                AppError::new(codes::RECORDING_READ_SESSION_FAILED).detail(error.to_string())
+            })?,
             &request.session_id,
         )?;
         let (target, overwrite) = match request.target {
@@ -216,7 +221,7 @@ pub async fn stop_screen_record(
             RecordingSaveTarget::File { path } => (PathBuf::from(path), true),
         };
         session.attempted_path = Some(target.to_string_lossy().into_owned());
-        let result: Result<ScreenRecordResult, String> = (|| {
+        let result: Result<ScreenRecordResult, AppError> = (|| {
             stop_child(&app, &mut session)?;
             let source_cleanup_error = save_video_with(
                 &target,
@@ -230,11 +235,10 @@ pub async fn stop_screen_record(
                     )
                     .map(|_| ())
                     .map_err(|error| {
-                        format!(
-                            "拉取设备录屏失败 ({} -> {}): {error}",
-                            session.remote_path,
-                            target.display()
-                        )
+                        AppError::new(codes::RECORDING_PULL_FAILED)
+                            .param("remote", session.remote_path.clone())
+                            .param("local", target.display().to_string())
+                            .cause(error)
                     })
                 },
                 || remove_source(&app, &session),
@@ -251,34 +255,37 @@ pub async fn stop_screen_record(
                 serial: session.serial.clone(),
             })
         })();
-        let mut state = RECORDING
-            .lock()
-            .map_err(|error| format!("更新录屏会话失败: {error}"))?;
+        let mut state = RECORDING.lock().map_err(|error| {
+            AppError::new(codes::RECORDING_UPDATE_SESSION_FAILED).detail(error.to_string())
+        })?;
         *state = match &result {
             Ok(_) => RecorderState::Idle,
             Err(error) => {
                 session.phase = RecordPhase::SaveFailed;
-                session.error = Some(error.to_string());
+                session.error = Some(error.clone());
                 RecorderState::Session(session)
             }
         };
         result
     })
     .await
-    .map_err(|error| format!("保存录屏任务失败: {error}"))?
+    .map_err(|error| AppError::new(codes::RECORDING_SAVE_WORKER_FAILED).detail(error.to_string()))?
 }
 
 fn save_video_with(
     target: &Path,
     overwrite: bool,
-    source_size: impl FnOnce() -> Result<u64, String>,
-    pull: impl FnOnce(&Path) -> Result<(), String>,
-    cleanup: impl FnOnce() -> Result<(), String>,
-) -> Result<Option<String>, String> {
-    let expected = source_size()
-        .map_err(|error| format!("检查设备源文件失败 ({}): {error}", target.display()))?;
+    source_size: impl FnOnce() -> Result<u64, AppError>,
+    pull: impl FnOnce(&Path) -> Result<(), AppError>,
+    cleanup: impl FnOnce() -> Result<(), AppError>,
+) -> Result<Option<AppError>, AppError> {
+    let expected = source_size().map_err(|error| {
+        AppError::new(codes::RECORDING_INSPECT_SOURCE_FAILED)
+            .param("path", target.display().to_string())
+            .cause(error)
+    })?;
     if expected == 0 {
-        return Err("设备录屏文件为空, 保留源文件以便检查".to_string());
+        return Err(AppError::new(codes::RECORDING_EMPTY_SOURCE));
     }
     let output = CaptureOutput::new(target)?;
     pull(output.path())?;
@@ -291,22 +298,26 @@ fn save_video_with(
 pub async fn discard_screen_record(
     app: AppHandle,
     session_id: String,
-) -> Result<DiscardRecordingResult, String> {
+) -> Result<DiscardRecordingResult, AppError> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut session = take_session(
-            &mut *RECORDING
-                .lock()
-                .map_err(|error| format!("读取录屏会话失败: {error}"))?,
+            &mut *RECORDING.lock().map_err(|error| {
+                AppError::new(codes::RECORDING_READ_SESSION_FAILED).detail(error.to_string())
+            })?,
             &session_id,
         )?;
         let mut errors = Vec::new();
         if let Err(error) = stop_child(&app, &mut session) {
             errors.push(error);
             if let Err(error) = session.child.kill() {
-                errors.push(format!("结束本机录屏连接失败: {error}"));
+                errors.push(
+                    AppError::new(codes::RECORDING_KILL_HOST_FAILED).detail(error.to_string()),
+                );
             }
             if let Err(error) = session.child.wait() {
-                errors.push(format!("回收本机录屏连接失败: {error}"));
+                errors.push(
+                    AppError::new(codes::RECORDING_WAIT_HOST_FAILED).detail(error.to_string()),
+                );
             }
         }
         if let Err(error) = remove_source(&app, &session) {
@@ -315,53 +326,54 @@ pub async fn discard_screen_record(
         let source_cleanup_error = if errors.is_empty() {
             None
         } else {
-            Some(errors.join("; "))
+            Some(AppError::new(codes::RECORDING_CLEANUP_FAILED).causes(errors))
         };
         let result = DiscardRecordingResult {
             serial: session.serial,
             remote_path: session.remote_path,
             source_cleanup_error,
         };
-        *RECORDING
-            .lock()
-            .map_err(|error| format!("释放录屏会话失败: {error}"))? = RecorderState::Idle;
+        *RECORDING.lock().map_err(|error| {
+            AppError::new(codes::RECORDING_RELEASE_SESSION_FAILED).detail(error.to_string())
+        })? = RecorderState::Idle;
         Ok(result)
     })
     .await
-    .map_err(|error| format!("放弃录屏任务失败: {error}"))?
+    .map_err(|error| {
+        AppError::new(codes::RECORDING_DISCARD_WORKER_FAILED).detail(error.to_string())
+    })?
 }
 
 #[tauri::command]
-pub fn get_screen_record_status() -> Result<ScreenRecordStatus, String> {
-    let mut state = RECORDING
-        .lock()
-        .map_err(|error| format!("读取录屏会话失败: {error}"))?;
+pub fn get_screen_record_status() -> Result<ScreenRecordStatus, AppError> {
+    let mut state = RECORDING.lock().map_err(|error| {
+        AppError::new(codes::RECORDING_READ_SESSION_FAILED).detail(error.to_string())
+    })?;
     match &mut *state {
         RecorderState::Idle => Ok(idle_status()),
         RecorderState::Busy(status) => Ok(status.clone()),
         RecorderState::Session(session) => {
             if session.phase == RecordPhase::Recording {
-                if let Some(exit) = session
-                    .child
-                    .try_wait()
-                    .map_err(|error| format!("检查录屏进程失败: {error}"))?
-                {
+                if let Some(exit) = session.child.try_wait().map_err(|error| {
+                    AppError::new(codes::RECORDING_INSPECT_PROCESS_FAILED).detail(error.to_string())
+                })? {
                     session.stopped_at.get_or_insert_with(Instant::now);
                     if exit.success() {
                         session.phase = RecordPhase::PendingSave;
                     } else {
                         let mut bytes = Vec::new();
                         if let Some(stderr) = session.child.stderr.take() {
-                            stderr
-                                .take(8192)
-                                .read_to_end(&mut bytes)
-                                .map_err(|error| format!("读取录屏错误失败: {error}"))?;
+                            stderr.take(8192).read_to_end(&mut bytes).map_err(|error| {
+                                AppError::new(codes::RECORDING_READ_ERROR_FAILED)
+                                    .detail(error.to_string())
+                            })?;
                         }
                         session.phase = RecordPhase::SaveFailed;
-                        session.error = Some(format!(
-                            "设备录屏进程失败 ({exit}): {}",
-                            String::from_utf8_lossy(&bytes).trim()
-                        ));
+                        session.error = Some(
+                            AppError::new(codes::RECORDING_PROCESS_FAILED)
+                                .param("status", exit.to_string())
+                                .detail(String::from_utf8_lossy(&bytes).trim().to_string()),
+                        );
                     }
                 }
             }
@@ -370,7 +382,7 @@ pub fn get_screen_record_status() -> Result<ScreenRecordStatus, String> {
     }
 }
 
-fn stop_child(app: &AppHandle, session: &mut RecordingSession) -> Result<(), String> {
+fn stop_child(app: &AppHandle, session: &mut RecordingSession) -> Result<(), AppError> {
     // A disconnected local adb child can exit while Android is still writing the file.
     let pids = signal_screenrecord(app, session)?;
     let started = Instant::now();
@@ -378,7 +390,9 @@ fn stop_child(app: &AppHandle, session: &mut RecordingSession) -> Result<(), Str
         let local_stopped = session
             .child
             .try_wait()
-            .map_err(|error| format!("等待录屏停止失败: {error}"))?
+            .map_err(|error| {
+                AppError::new(codes::RECORDING_WAIT_STOP_FAILED).detail(error.to_string())
+            })?
             .is_some();
         let mut remote_stopped = true;
         for pid in &pids {
@@ -392,41 +406,40 @@ fn stop_child(app: &AppHandle, session: &mut RecordingSession) -> Result<(), Str
         }
         std::thread::sleep(Duration::from_millis(100));
     }
-    Err(format!(
-        "停止设备录屏超时, 源文件仍保留: {}",
-        session.remote_path
-    ))
+    Err(AppError::new(codes::RECORDING_STOP_TIMEOUT).param("path", session.remote_path.clone()))
 }
 
-fn signal_screenrecord(app: &AppHandle, session: &RecordingSession) -> Result<Vec<String>, String> {
+fn signal_screenrecord(
+    app: &AppHandle,
+    session: &RecordingSession,
+) -> Result<Vec<String>, AppError> {
     let output = run_adb_output_with_serial(
         app,
         &session.serial,
         &["shell", "-T", "pidof", "screenrecord"],
     )?;
     if !(output.status.success() || output.status.code() == Some(1) && output.stderr.is_empty()) {
-        return Err(format!(
-            "查询设备录屏进程失败: {}",
-            adb_output_error(&output)
-        ));
+        return Err(
+            AppError::new(codes::RECORDING_QUERY_PROCESS_FAILED).cause(adb_output_error(&output))
+        );
     }
     let mut matched = Vec::new();
     for pid in String::from_utf8_lossy(&output.stdout).split_whitespace() {
         if !pid.bytes().all(|byte| byte.is_ascii_digit()) {
-            return Err("设备录屏 PID 无效".to_string());
+            return Err(AppError::new(codes::RECORDING_INVALID_PID));
         }
         let path = format!("/proc/{pid}/cmdline");
         let args = run_adb_bytes_with_serial(app, &session.serial, &["shell", "-T", "cat", &path])?;
         if command_belongs_to_session(&args, &session.remote_path) {
             run_adb_with_serial(app, &session.serial, &["shell", "-T", "kill", "-2", pid])
-                .map_err(|error| format!("停止设备录屏失败: {error}"))?;
+                .map_err(|error| AppError::new(codes::RECORDING_STOP_FAILED).cause(error))?;
             matched.push(pid.to_string());
         }
     }
     Ok(matched)
 }
 
-fn remote_process_exists(app: &AppHandle, serial: &str, pid: &str) -> Result<bool, String> {
+fn remote_process_exists(app: &AppHandle, serial: &str, pid: &str) -> Result<bool, AppError> {
     let output = run_adb_output_with_serial(
         app,
         serial,
@@ -438,10 +451,7 @@ fn remote_process_exists(app: &AppHandle, serial: &str, pid: &str) -> Result<boo
     if output.status.code() == Some(1) && output.stderr.is_empty() {
         return Ok(false);
     }
-    Err(format!(
-        "确认设备录屏停止失败: {}",
-        adb_output_error(&output)
-    ))
+    Err(AppError::new(codes::RECORDING_CONFIRM_STOP_FAILED).cause(adb_output_error(&output)))
 }
 
 fn command_belongs_to_session(args: &[u8], remote_path: &str) -> bool {
@@ -449,7 +459,7 @@ fn command_belongs_to_session(args: &[u8], remote_path: &str) -> bool {
         .any(|arg| arg == remote_path.as_bytes())
 }
 
-fn remove_source(app: &AppHandle, session: &RecordingSession) -> Result<(), String> {
+fn remove_source(app: &AppHandle, session: &RecordingSession) -> Result<(), AppError> {
     run_adb_with_serial(
         app,
         &session.serial,
@@ -461,10 +471,10 @@ fn remove_source(app: &AppHandle, session: &RecordingSession) -> Result<(), Stri
     )
     .map(|_| ())
     .map_err(|error| {
-        format!(
-            "设备源文件未清理 ({} / {}): {error}",
-            session.serial, session.remote_path
-        )
+        AppError::new(codes::RECORDING_SOURCE_CLEANUP_FAILED)
+            .param("serial", session.serial.clone())
+            .param("path", session.remote_path.clone())
+            .cause(error)
     })
 }
 
@@ -488,7 +498,7 @@ mod tests {
                 false,
                 || {
                     if stage == "source" {
-                        Err("offline".into())
+                        Err(AppError::new(codes::ADB_EXECUTE_FAILED).detail("offline"))
                     } else {
                         Ok(if stage == "empty" { 0 } else { 8 })
                     }
@@ -504,7 +514,7 @@ mod tests {
                     )
                     .unwrap();
                     if stage == "pull" {
-                        Err("pull failed".into())
+                        Err(AppError::new(codes::ADB_EXECUTE_FAILED).detail("pull failed"))
                     } else {
                         Ok(())
                     }
@@ -526,14 +536,24 @@ mod tests {
             &target,
             false,
             || Ok(8),
-            |path| fs::write(path, b"complete").map_err(|error| error.to_string()),
+            |path| {
+                fs::write(path, b"complete").map_err(|error| {
+                    AppError::new(codes::CAPTURE_WRITE_FAILED)
+                        .param("path", path.display().to_string())
+                        .detail(error.to_string())
+                })
+            },
             || {
                 assert_eq!(fs::read(&target).unwrap(), b"complete");
-                Err("device disconnected after save".into())
+                Err(AppError::new(codes::ADB_EXECUTE_FAILED)
+                    .detail("device disconnected after save"))
             },
         )
         .unwrap();
-        assert_eq!(warning.as_deref(), Some("device disconnected after save"));
+        assert_eq!(
+            warning.as_ref().and_then(|error| error.detail.as_deref()),
+            Some("device disconnected after save")
+        );
         assert_eq!(fs::read(&target).unwrap(), b"complete");
     }
 
@@ -554,7 +574,7 @@ mod tests {
             started_at: Instant::now(),
             stopped_at: None,
             phase: RecordPhase::SaveFailed,
-            error: Some("pull failed".into()),
+            error: Some(AppError::new(codes::ADB_EXECUTE_FAILED).detail("pull failed")),
             attempted_path: None,
         };
         let mut state = RecorderState::Session(session);
@@ -565,7 +585,7 @@ mod tests {
         assert_eq!(session.status().elapsed_secs, 3);
         assert!(take_session(&mut state, "one").is_err());
         assert!(require_idle(&state).is_err());
-        session.error = Some("retry failed".into());
+        session.error = Some(AppError::new(codes::ADB_EXECUTE_FAILED).detail("retry failed"));
         state = RecorderState::Session(session);
         assert_eq!(take_session(&mut state, "one").unwrap().serial, "device-a");
     }

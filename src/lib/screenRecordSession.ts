@@ -1,3 +1,4 @@
+import { AppError, toAppError, type AppErrorPayload } from "@/i18n/errors";
 import type { SaveBehavior } from "@/lib/settings";
 import type {
   DiscardRecordingResult,
@@ -20,7 +21,7 @@ export const IDLE_RECORDING: ScreenRecordStatus = {
 export interface RecordingView {
   status: ScreenRecordStatus;
   busy: "start" | "save" | "save_as" | "discard" | null;
-  error: string | null;
+  error: AppErrorPayload | null;
   saved: ScreenRecordResult | null;
 }
 
@@ -35,7 +36,7 @@ interface RecordingDependencies {
   onChange: (view: RecordingView) => void;
   onSaved: (result: ScreenRecordResult, behavior: SaveBehavior) => void;
   onDiscarded: (result: DiscardRecordingResult) => void;
-  onError: (message: string) => void;
+  onError: (message: AppErrorPayload) => void;
 }
 
 export function createRecordingController(deps: RecordingDependencies) {
@@ -82,7 +83,7 @@ export function createRecordingController(deps: RecordingDependencies) {
       await action(current);
     } catch (error) {
       if (!current()) return;
-      const message = String(error);
+      const message = toAppError(error);
       publish({ error: message });
       deps.onError(message);
       try {
@@ -91,7 +92,7 @@ export function createRecordingController(deps: RecordingDependencies) {
       } catch (refreshError) {
         if (current())
           publish({
-            error: `${message}; 无法刷新会话: ${String(refreshError)}`,
+            error: { code: "recording_refresh_failed", causes: [message, toAppError(refreshError)] },
           });
       }
     } finally {
@@ -126,7 +127,7 @@ export function createRecordingController(deps: RecordingDependencies) {
     const status = await deps.getStatus();
     if (!current()) return false;
     publish({ status });
-    if (status.session_id !== id) throw new Error("录屏会话已变化, 操作已取消");
+    if (status.session_id !== id) throw new AppError("recording_session_changed", {});
     return true;
   }
 
@@ -138,7 +139,7 @@ export function createRecordingController(deps: RecordingDependencies) {
     await run(saveAs ? "save_as" : "save", async (current) => {
       let target: SaveRecordingRequest["target"] = { kind: "session" };
       if (saveAs) {
-        if (!snapshot.local_path) throw new Error("录屏会话缺少原保存路径");
+        if (!snapshot.local_path) throw new AppError("recording_path_missing", {});
         const path = await deps.choosePath(snapshot.local_path);
         if (!current() || path === null) return;
         if (!(await validateSession(id, current))) return;

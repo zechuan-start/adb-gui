@@ -1,3 +1,6 @@
+import { AppError, toAppError } from "@/i18n/errors";
+import { useLocaleStore } from "@/store/locale";
+import { useT, errorText } from "@/i18n";
 import {
   useCallback,
   useEffect,
@@ -27,11 +30,15 @@ import { LogcatSection } from "@/components/settings/sections/LogcatSection";
 import {
   modifiedRowIds,
   sectionResetPlan,
-  sectionRowIds,
+  hasSectionResetChanges,
   SETTINGS_SECTIONS,
   type SettingsSection,
 } from "@/lib/settingsSections";
-import { confirmRestoreDefaults, isTauriRuntime, onOpenSettings } from "@/lib/tauri";
+import {
+  confirmRestoreDefaults,
+  isTauriRuntime,
+  onOpenSettings,
+} from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { useFeedbackStore } from "@/store/feedback";
 import { useSettingsStore } from "@/store/settings";
@@ -67,7 +74,7 @@ function SectionContent({ section }: { section: SettingsSection }) {
 }
 
 function assertNeverSection(section: never): never {
-  throw new Error(`未知设置分组: ${String(section)}`);
+  throw new Error(`Unknown settings section: ${String(section)}`);
 }
 
 function resetPanes(): void {
@@ -78,20 +85,27 @@ function resetPanes(): void {
 
 function focusableControls(container: HTMLElement): HTMLElement[] {
   return Array.from(
-    container.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex]"),
-  ).filter((element) =>
-    element.tabIndex >= 0 &&
-    !element.matches(":disabled") &&
-    element.getClientRects().length > 0,
+    container.querySelectorAll<HTMLElement>(
+      "button, input, select, textarea, a[href], [tabindex]",
+    ),
+  ).filter(
+    (element) =>
+      element.tabIndex >= 0 &&
+      !element.matches(":disabled") &&
+      element.getClientRects().length > 0,
   );
 }
 
 export function SettingsDialog() {
+  const t = useT();
+  const localePreference = useLocaleStore((s) => s.preference);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const sectionElements = useRef(new Map<SettingsSection, HTMLElement>());
-  const navigationButtons = useRef(new Map<SettingsSection, HTMLButtonElement>());
+  const navigationButtons = useRef(
+    new Map<SettingsSection, HTMLButtonElement>(),
+  );
   const scrollFrame = useRef<number | null>(null);
   const programmaticSection = useRef<SettingsSection | null>(null);
   const programmaticClearFrame = useRef<number | null>(null);
@@ -103,7 +117,9 @@ export function SettingsDialog() {
   const preferences = useSettingsStore((state) => state.preferences);
   const error = useSettingsStore((state) => state.error);
   const available = useSettingsStore((state) => state.available);
-  const resetPreferenceSection = useSettingsStore((state) => state.resetSection);
+  const resetPreferenceSection = useSettingsStore(
+    (state) => state.resetSection,
+  );
   const restoreDefaults = useSettingsStore((state) => state.restoreDefaults);
   const reload = useSettingsStore((state) => state.reload);
   const showToast = useFeedbackStore((state) => state.showToast);
@@ -111,8 +127,9 @@ export function SettingsDialog() {
     useState<SettingsSection>("general");
 
   const modified = useMemo(
-    () => modifiedRowIds({ preferences, theme, logOpenByPane }),
-    [preferences, theme, logOpenByPane],
+    () =>
+      modifiedRowIds({ preferences, theme, logOpenByPane, localePreference }),
+    [preferences, theme, logOpenByPane, localePreference],
   );
   const view = useMemo(
     () => ({ modified: (rowId: string) => modified.has(rowId) }),
@@ -133,7 +150,15 @@ export function SettingsDialog() {
         else unlisten = cleanup;
       })
       .catch((failure) => {
-        if (!disposed) showToast("error", `监听设置菜单失败: ${String(failure)}`);
+        if (!disposed)
+          showToast(
+            "error",
+            new AppError(
+              "shell.listenSettings",
+              {},
+              { causes: [toAppError(failure)] },
+            ).payload,
+          );
       });
     return () => {
       disposed = true;
@@ -243,9 +268,7 @@ export function SettingsDialog() {
       scrollToSection(section);
       return;
     }
-    const index = SETTINGS_SECTIONS.findIndex(
-      ({ id }) => id === section,
-    );
+    const index = SETTINGS_SECTIONS.findIndex(({ id }) => id === section);
     const count = SETTINGS_SECTIONS.length;
     const next =
       event.key === "ArrowDown"
@@ -275,7 +298,14 @@ export function SettingsDialog() {
     try {
       if (!(await confirmRestoreDefaults())) return;
     } catch (failure) {
-      showToast("error", `无法确认恢复默认: ${String(failure)}`);
+      showToast(
+        "error",
+        new AppError(
+          "shell.confirmReset",
+          {},
+          { causes: [toAppError(failure)] },
+        ).payload,
+      );
       return;
     }
     restoreDefaults();
@@ -296,7 +326,11 @@ export function SettingsDialog() {
         const first = controls[0];
         const last = controls[controls.length - 1];
         const boundary = event.shiftKey ? first : last;
-        if (document.activeElement !== titleRef.current && document.activeElement !== boundary) return;
+        if (
+          document.activeElement !== titleRef.current &&
+          document.activeElement !== boundary
+        )
+          return;
         event.preventDefault();
         (event.shiftKey ? last : first)?.focus();
       }}
@@ -310,31 +344,44 @@ export function SettingsDialog() {
             tabIndex={-1}
             className="text-sm font-semibold outline-none"
           >
-            设置
+            {t.settings.dialog.title}
           </h2>
           <button
             type="button"
             onClick={closeSettings}
-            title="关闭设置"
-            aria-label="关闭设置"
+            title={t.settings.dialog.close}
+            aria-label={t.settings.dialog.close}
             className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center hover:bg-hover"
           >
             <X className="h-4 w-4" />
           </button>
         </header>
         {error && (
-          <div role="alert" className="mx-5 my-3 shrink-0 border border-err bg-err-band p-3 text-xs">
-            <p className="break-words">{error}</p>
+          <div
+            role="alert"
+            className="mx-5 my-3 shrink-0 border border-err bg-err-band p-3 text-xs"
+          >
+            <p className="break-words">{errorText(error, t)}</p>
             {!available && (
-              <p className="mt-1 break-words text-ink2">主题与日志面板可见性仍可修改.</p>
+              <p className="mt-1 break-words text-ink2">
+                {t.settings.dialog.independent}
+              </p>
             )}
             <div className="mt-2 flex flex-wrap gap-2">
-              <button type="button" onClick={reload} className="border border-rule px-2 py-1">
-                重新读取
+              <button
+                type="button"
+                onClick={reload}
+                className="border border-rule px-2 py-1"
+              >
+                {t.settings.dialog.reload}
               </button>
               {!available && (
-                <button type="button" onClick={restoreDefaults} className="border border-rule px-2 py-1">
-                  恢复新设置默认值
+                <button
+                  type="button"
+                  onClick={restoreDefaults}
+                  className="border border-rule px-2 py-1"
+                >
+                  {t.settings.dialog.resetStored}
                 </button>
               )}
             </div>
@@ -342,7 +389,7 @@ export function SettingsDialog() {
         )}
         <div className="flex min-h-0 flex-1">
           <nav
-            aria-label="设置分组"
+            aria-label={t.settings.dialog.sections}
             className="flex w-[140px] shrink-0 flex-col border-r border-rule bg-surface2 pt-1.5"
           >
             {SETTINGS_SECTIONS.map(({ id, label }) => {
@@ -368,7 +415,7 @@ export function SettingsDialog() {
                   )}
                 >
                   <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  <span className="min-w-0">{label}</span>
+                  <span className="min-w-0">{label(t)}</span>
                 </button>
               );
             })}
@@ -386,10 +433,16 @@ export function SettingsDialog() {
                     key={meta.id}
                     meta={meta}
                     index={index}
-                    dirty={sectionRowIds(meta.id).some((id) => modified.has(id))}
+                    dirty={hasSectionResetChanges(meta.id, {
+                      preferences,
+                      theme,
+                      logOpenByPane,
+                      localePreference,
+                    })}
                     onReset={() => resetSection(meta.id)}
                     sectionRef={(element) => {
-                      if (element) sectionElements.current.set(meta.id, element);
+                      if (element)
+                        sectionElements.current.set(meta.id, element);
                       else sectionElements.current.delete(meta.id);
                     }}
                   >
@@ -403,7 +456,7 @@ export function SettingsDialog() {
                     className="inline-flex h-8 items-center gap-1.5 px-1.5 text-xs text-ink2 hover:bg-hover hover:text-ink"
                   >
                     <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
-                    全部恢复默认
+                    {t.settings.dialog.resetAll}
                   </button>
                 </div>
               </SettingsView>

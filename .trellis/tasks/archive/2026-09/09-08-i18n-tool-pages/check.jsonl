@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/i18n.md", "reason": "Locale, catalog and retained error contracts"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Structured native errors and frontend mapping"}

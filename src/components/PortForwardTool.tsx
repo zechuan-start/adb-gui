@@ -1,3 +1,5 @@
+import type { AppErrorPayload } from "@/i18n/errors";
+import { useT, errorText } from "@/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import { BlueprintSelect } from "@/components/BlueprintSelect";
@@ -38,6 +40,7 @@ function normalizePort(value: string): string | null {
 }
 
 export function PortForwardTool({ active = true }: PortForwardToolProps) {
+  const t = useT();
   const devices = useDeviceStore((s) => s.devices);
   const selectedDevice = useDeviceStore((s) => s.selectedDevice);
   const showToast = useFeedbackStore((s) => s.showToast);
@@ -51,7 +54,7 @@ export function PortForwardTool({ active = true }: PortForwardToolProps) {
   const [remotePort, setRemotePort] = useState("");
   const [loading, setLoading] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<AppErrorPayload | null>(null);
   const refreshSeqRef = useRef(0);
   const currentSerialRef = useRef(serial);
   const currentOnlineRef = useRef(online);
@@ -97,7 +100,7 @@ export function PortForwardTool({ active = true }: PortForwardToolProps) {
         return;
       }
       setRules([]);
-      showToast("error", `刷新端口转发失败: ${refreshError}`);
+      showToast("error", (t) => (t.tools.portForwardTool.couldNotRefreshPortForwarding({ detail: errorText(refreshError, t) })));
     } finally {
       if (
         refreshSeqRef.current === requestSeq &&
@@ -111,7 +114,7 @@ export function PortForwardTool({ active = true }: PortForwardToolProps) {
   }, [online, serial, showToast]);
 
   useEffect(() => {
-    setError("");
+    setError(null);
     if (!active) {
       refreshSeqRef.current += 1;
       setLoading(false);
@@ -128,20 +131,20 @@ export function PortForwardTool({ active = true }: PortForwardToolProps) {
     const normalizedLocal = normalizePort(localPort);
     const normalizedRemote = normalizePort(remotePort);
     if (!normalizedLocal || !normalizedRemote) {
-      setError("端口必须是 1-65535 的整数");
+      setError({ code: "port_invalid" });
       return;
     }
 
-    setError("");
+    setError(null);
     setBusyKey("add");
     try {
       const result = await addPortForward(device.serial, direction, normalizedLocal, normalizedRemote);
-      showToast("success", result || "端口转发规则已添加");
+      showToast("success", (t) => (result || t.tools.portForwardTool.portForwardingRuleAdded));
       setLocalPort("");
       setRemotePort("");
       await refreshRules();
     } catch (addError) {
-      showToast("error", `添加端口转发失败: ${addError}`);
+      showToast("error", (t) => (t.tools.portForwardTool.couldNotAddPortForwarding({ detail: errorText(addError, t) })));
     } finally {
       setBusyKey(null);
     }
@@ -157,10 +160,10 @@ export function PortForwardTool({ active = true }: PortForwardToolProps) {
     setBusyKey(key);
     try {
       const result = await removePortForward(device.serial, rule.direction, removePort);
-      showToast("success", result || "端口转发规则已删除");
+      showToast("success", (t) => (result || t.tools.portForwardTool.portForwardingRuleDeleted));
       await refreshRules();
     } catch (removeError) {
-      showToast("error", `删除端口转发失败: ${removeError}`);
+      showToast("error", (t) => (t.tools.portForwardTool.couldNotDeletePortForwarding({ detail: errorText(removeError, t) })));
     } finally {
       setBusyKey(null);
     }
@@ -176,8 +179,8 @@ export function PortForwardTool({ active = true }: PortForwardToolProps) {
           onClick={() => void refreshRules()}
           disabled={!online || loading}
           className="inline-flex h-7 w-7 items-center justify-center text-ink2 transition-colors hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
-          title="刷新端口转发"
-          aria-label="刷新端口转发"
+          title={t.tools.portForwardTool.refreshPortForwarding}
+          aria-label={t.tools.portForwardTool.refreshPortForwarding}
         >
           <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
         </button>
@@ -192,7 +195,7 @@ export function PortForwardTool({ active = true }: PortForwardToolProps) {
               setDirection(nextDirection);
             }
           }}
-          ariaLabel="转发方向"
+          ariaLabel={t.tools.portForwardTool.forwardingDirection}
           disabled={controlsDisabled}
           className="h-8 px-2.5 disabled:opacity-40"
         />
@@ -203,7 +206,7 @@ export function PortForwardTool({ active = true }: PortForwardToolProps) {
           value={localPort}
           onChange={(event) => {
             setLocalPort(event.target.value);
-            setError("");
+            setError(null);
           }}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
@@ -211,7 +214,7 @@ export function PortForwardTool({ active = true }: PortForwardToolProps) {
             }
           }}
           disabled={controlsDisabled}
-          placeholder="本机端口"
+          placeholder={t.tools.portForwardTool.localPort}
           className="h-8 min-w-0 border border-rule bg-surface px-2.5 font-data text-xs outline-none focus:border-note disabled:cursor-not-allowed disabled:opacity-40"
         />
         <input
@@ -221,7 +224,7 @@ export function PortForwardTool({ active = true }: PortForwardToolProps) {
           value={remotePort}
           onChange={(event) => {
             setRemotePort(event.target.value);
-            setError("");
+            setError(null);
           }}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
@@ -229,7 +232,7 @@ export function PortForwardTool({ active = true }: PortForwardToolProps) {
             }
           }}
           disabled={controlsDisabled}
-          placeholder="设备端口"
+          placeholder={t.tools.portForwardTool.devicePort}
           className="h-8 min-w-0 border border-rule bg-surface px-2.5 font-data text-xs outline-none focus:border-note disabled:cursor-not-allowed disabled:opacity-40"
         />
         <button
@@ -242,33 +245,33 @@ export function PortForwardTool({ active = true }: PortForwardToolProps) {
           )}
         >
           {busyKey === "add" ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-          添加
+          {t.tools.portForwardTool.add}
         </button>
       </div>
 
       <div className="mt-2 min-h-5 text-xs text-destructive">
-        {error}
+        {error ? errorText(error, t) : ""}
       </div>
 
       <div className="mt-2 overflow-hidden border-t border-rule">
         {loading ? (
           <div className="flex h-24 items-center justify-center gap-2 text-xs text-muted-foreground">
             <RefreshCw className="h-4 w-4 animate-spin" />
-            正在刷新
+            {t.tools.portForwardTool.refreshing}
           </div>
         ) : rules.length === 0 ? (
           <div className="flex h-24 items-center justify-center text-xs text-muted-foreground">
-            {online ? "暂无端口转发规则" : "设备在线后可操作"}
+            {online ? t.tools.portForwardTool.noPortForwardingRules : t.tools.portForwardTool.availableWhenTheDeviceIsOnline}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[520px] border-collapse text-left font-data text-[11px]">
               <thead className="border-b border-rule text-ink3">
                 <tr>
-                  <th className="px-3 py-2 font-medium">方向</th>
-                  <th className="px-3 py-2 font-medium">本机端口</th>
-                  <th className="px-3 py-2 font-medium">设备端口</th>
-                  <th className="px-3 py-2 text-right font-medium">操作</th>
+                  <th className="px-3 py-2 font-medium">{t.tools.portForwardTool.direction}</th>
+                  <th className="px-3 py-2 font-medium">{t.tools.portForwardTool.localPort}</th>
+                  <th className="px-3 py-2 font-medium">{t.tools.portForwardTool.devicePort}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t.tools.portForwardTool.actions}</th>
                 </tr>
               </thead>
               <tbody>
@@ -298,7 +301,7 @@ export function PortForwardTool({ active = true }: PortForwardToolProps) {
                           onClick={() => void handleRemove(rule)}
                           disabled={controlsDisabled}
                           className="inline-flex h-7 w-7 items-center justify-center text-ink3 transition-colors hover:bg-err-band hover:text-err disabled:cursor-not-allowed disabled:opacity-40"
-                          title="删除规则"
+                          title={t.tools.portForwardTool.deleteRule}
                         >
                           {rowBusy ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                         </button>

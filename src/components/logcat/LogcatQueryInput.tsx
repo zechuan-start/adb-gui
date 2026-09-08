@@ -1,3 +1,5 @@
+import { errorText } from "@/i18n/errors";
+import { useT } from "@/i18n";
 import {
   useEffect,
   useRef,
@@ -23,6 +25,7 @@ interface LogcatQueryInputProps {
 }
 
 export function LogcatQueryInput({ visible, packageResolution }: LogcatQueryInputProps) {
+  const t = useT();
   const queryInput = useLogcatStore((state) => state.queryInput);
   const queryError = useLogcatStore((state) => state.queryError);
   const setQueryInput = useLogcatStore((state) => state.setQueryInput);
@@ -100,7 +103,7 @@ export function LogcatQueryInput({ visible, packageResolution }: LogcatQueryInpu
         <input
           ref={completion.inputRef}
           role="combobox"
-          aria-label="Logcat 查询"
+          aria-label={t.logcat.query}
           aria-autocomplete="list"
           aria-expanded={completion.open && completion.completions.length > 0}
           aria-controls={completion.open && completion.completions.length > 0
@@ -118,7 +121,7 @@ export function LogcatQueryInput({ visible, packageResolution }: LogcatQueryInpu
           onClick={(event) => completion.openMenu(queryInput, event.currentTarget.selectionStart ?? queryInput.length, false)}
           onSelect={(event) => completion.setCursor(event.currentTarget.selectionStart ?? queryInput.length)}
           onKeyDown={handleKeyDown}
-          placeholder="查询日志..."
+          placeholder={t.logcat.queryPlaceholder}
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
@@ -138,7 +141,7 @@ export function LogcatQueryInput({ visible, packageResolution }: LogcatQueryInpu
               completion.focusAt(0);
             }}
             className="absolute right-1 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center text-log-dim hover:bg-hover hover:text-ink"
-            title="清空查询"
+            title={t.logcat.clearQuery}
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -152,7 +155,7 @@ export function LogcatQueryInput({ visible, packageResolution }: LogcatQueryInpu
             aria-hidden="true"
           />
           <span id={QUERY_ERROR_ID} role="alert" className="sr-only">
-            位置 {queryError.start + 1}: {queryError.message}
+            {t.logcat.queryError({ position: queryError.start + 1, message: errorText(queryError.error, t) })}
           </span>
         </>
       )}
@@ -160,7 +163,7 @@ export function LogcatQueryInput({ visible, packageResolution }: LogcatQueryInpu
         <span id={QUERY_STATUS_ID} role="status" aria-live="polite" className="sr-only">
           {packageResolution.packageStatus}
           {packageResolution.packageStatus && packageResolution.loadingPackages ? " / " : ""}
-          {packageResolution.loadingPackages ? "加载应用列表..." : ""}
+          {packageResolution.loadingPackages ? t.logcat.loadingPackages : ""}
         </span>
       )}
 

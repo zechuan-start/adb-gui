@@ -1,3 +1,4 @@
+import { AppError } from "@/i18n/errors";
 import wasmUrl from "zxing-wasm/reader/zxing_reader.wasm?url";
 import {
   prepareZXingModule,
@@ -20,7 +21,7 @@ export async function blobToImageData(blob: Blob): Promise<ImageData> {
     const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
     const context = canvas.getContext("2d");
     if (!context) {
-      throw new Error("无法创建图片解码画布");
+      throw new AppError("decoder_canvas_unavailable", {});
     }
     context.drawImage(bitmap, 0, 0);
     return context.getImageData(0, 0, bitmap.width, bitmap.height);

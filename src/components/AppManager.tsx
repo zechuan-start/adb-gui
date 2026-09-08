@@ -1,3 +1,5 @@
+import { errorText, useT, type Message } from "@/i18n";
+import { toAppError, type AppErrorPayload } from "@/i18n/errors";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileUp } from "lucide-react";
 import { useDeviceStore } from "@/store/device";
@@ -12,8 +14,8 @@ function isApkPath(path: string) {
   return path.toLowerCase().endsWith(".apk");
 }
 
-function installMessage(result: string) {
-  return result.trim() === "Success" ? "APK 安装成功" : result.trim();
+function installMessage(result: string): Message {
+  return (t) => result.trim() === "Success" || !result.trim() ? t.apps.appManager.apkInstalledSuccessfully : result.trim();
 }
 
 interface ApkToolProps {
@@ -21,6 +23,7 @@ interface ApkToolProps {
 }
 
 export function ApkTool({ active = true }: ApkToolProps) {
+  const t = useT();
   const devices = useDeviceStore((state) => state.devices);
   const selectedDevice = useDeviceStore((state) => state.selectedDevice);
   const device = getDeviceBySerial(devices, selectedDevice);
@@ -31,34 +34,34 @@ export function ApkTool({ active = true }: ApkToolProps) {
   const listenerEnabledRef = useRef(active && online);
   const [dragState, setDragState] = useState<DragState>("idle");
   const [currentFile, setCurrentFile] = useState("");
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState<Message | AppErrorPayload | null>(null);
 
   listenerEnabledRef.current = active && online;
 
   const fileName = useMemo(() => currentFile.split(/[\\/]/).pop() ?? "", [currentFile]);
   const dropHint = useMemo(() => {
-    if (busy) return "正在安装, 请稍候";
-    if (!online) return "先选择在线设备";
-    if (dragState === "valid") return "释放以安装 APK";
-    if (dragState === "invalid") return "仅支持 APK 文件";
-    return "拖拽 APK 到此窗口";
-  }, [busy, dragState, online]);
+    if (busy) return t.apps.appManager.installingPleaseWait;
+    if (!online) return t.apps.appManager.selectAnOnlineDeviceFirst;
+    if (dragState === "valid") return t.apps.appManager.dropToInstallAPK;
+    if (dragState === "invalid") return t.apps.appManager.onlyAPKFilesAreSupported;
+    return t.apps.appManager.dropAnAPKIntoThisWindow;
+  }, [busy, dragState, online, t]);
 
   const handleInstall = useCallback(
     async (path: string) => {
       if (busyRef.current) {
-        showToast("error", "正在安装 APK, 请稍候");
+        showToast("error", (t) => (t.apps.appManager.installingAPKPleaseWait));
         return;
       }
       if (!isApkPath(path)) {
-        const message = "仅支持 APK 文件";
-        setStatus(message);
+        const message: Message = (t) => t.apps.appManager.onlyAPKFilesAreSupported;
+        setStatus(() => message);
         showToast("error", message);
         return;
       }
       if (!device || !isOnlineDevice(device)) {
-        const message = "请先选择一台在线设备";
-        setStatus(message);
+        const message: Message = (t) => t.apps.appManager.selectAnOnlineDeviceFirstLabel;
+        setStatus(() => message);
         showToast("error", message);
         return;
       }
@@ -66,14 +69,14 @@ export function ApkTool({ active = true }: ApkToolProps) {
       busyRef.current = true;
       setBusy(true);
       setCurrentFile(path);
-      setStatus("安装中...");
+      setStatus(() => (t: Parameters<Message>[0]) => t.apps.appManager.installing);
       try {
-        const message = installMessage(await installApk(device.serial, path)) || "APK 安装成功";
-        setStatus(message);
+        const message = installMessage(await installApk(device.serial, path));
+        setStatus(() => message);
         showToast("success", message);
       } catch (error) {
-        const message = `安装失败: ${error}`;
-        setStatus(message);
+        const message = toAppError(error);
+        setStatus(() => message);
         showToast("error", message);
       } finally {
         busyRef.current = false;
@@ -87,14 +90,14 @@ export function ApkTool({ active = true }: ApkToolProps) {
     (paths: string[]) => {
       const apkPaths = paths.filter(isApkPath);
       if (apkPaths.length === 0) {
-        const message = "仅支持 APK 文件";
-        setStatus(message);
+        const message: Message = (t) => t.apps.appManager.onlyAPKFilesAreSupported;
+        setStatus(() => message);
         showToast("error", message);
         return;
       }
       if (apkPaths.length > 1) {
-        const message = "一次只能安装一个 APK";
-        setStatus(message);
+        const message: Message = (t) => t.apps.appManager.installOneAPKAtATime;
+        setStatus(() => message);
         showToast("error", message);
         return;
       }
@@ -110,8 +113,8 @@ export function ApkTool({ active = true }: ApkToolProps) {
         await handleInstall(selected);
       }
     } catch (error) {
-      const message = `选择 APK 失败: ${error}`;
-      setStatus(message);
+      const message = toAppError(error);
+      setStatus(() => message);
       showToast("error", message);
     }
   }, [handleInstall, showToast]);
@@ -146,7 +149,7 @@ export function ApkTool({ active = true }: ApkToolProps) {
       })
       .catch((error) => {
         if (!disposed && listenerEnabledRef.current) {
-          showToast("error", `拖拽监听启动失败: ${error}`);
+          showToast("error", (t) => (t.apps.appManager.couldNotStartDropListener({ detail: errorText(error, t) })));
         }
       });
 
@@ -174,14 +177,14 @@ export function ApkTool({ active = true }: ApkToolProps) {
             className="inline-flex h-8 items-center gap-2 border border-ink bg-ink px-3 font-data text-[11px] font-medium text-onink transition-colors hover:border-ink2 hover:bg-ink2 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <FileUp className="h-4 w-4" />
-            选择并安装
+            {t.apps.appManager.chooseAndInstall}
           </button>
         </div>
       </div>
 
       <div className="mt-3 min-h-8 border-t border-dashed border-rule2 pt-2 text-[11px] text-ink2">
-        <div className="break-all" title={status || undefined}>
-          {status || "安装到当前设备"}
+        <div className="break-all" title={status ? typeof status === "function" ? status(t) : errorText(status, t) : undefined}>
+          {status ? typeof status === "function" ? status(t) : errorText(status, t) : t.apps.appManager.installOnTheCurrentDevice}
         </div>
         {fileName && (
           <div className="mt-1 truncate font-mono" title={fileName}>

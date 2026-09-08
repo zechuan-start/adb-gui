@@ -1,3 +1,5 @@
+import { errorText } from "@/i18n/errors";
+import { messages } from "@/i18n";
 import { describe, expect, it } from "vitest";
 import type { LogcatEntry } from "@/lib/logcat";
 import {
@@ -38,7 +40,7 @@ function entry(overrides: Partial<LogcatEntry> = {}): LogcatEntry {
 function ast(input: string): QueryNode {
   const result = compileQuery(input);
   if (!result.ok) {
-    throw new Error(`Expected valid query, got: ${result.message}`);
+    throw new Error(`Expected valid query, got: ${errorText(result.error, messages())}`);
   }
   return result.ast;
 }
@@ -270,7 +272,7 @@ describe("compileQuery and evaluate", () => {
 describe("compileQuery errors", () => {
   it("reports an unclosed parenthesis with its opening position", () => {
     expect(compileFailure("(tag:foo")).toMatchObject({
-      message: "缺少右括号",
+      error: { code: "query_missing_closing" },
       start: 0,
       end: 1,
     });
@@ -289,33 +291,33 @@ describe("compileQuery errors", () => {
 
   it("reports invalid regexes without throwing", () => {
     expect(compileFailure("tag~:[unterminated")).toMatchObject({
-      message: "无效的正则表达式",
+      error: { code: "query_invalid_regex" },
       start: 5,
       end: 18,
     });
     expect(compileFailure("process~:[unterminated")).toMatchObject({
-      message: "无效的正则表达式",
+      error: { code: "query_invalid_regex" },
       start: 9,
       end: 22,
     });
   });
 
   it("rejects modifiers on level, package, and is", () => {
-    expect(compileFailure("level~:WARN").message).toContain("不支持正则修饰符");
-    expect(compileFailure("package=:mine").message).toContain("不支持精确修饰符");
-    expect(compileFailure("is~:crash").message).toContain("不支持正则修饰符");
+    expect(compileFailure("level~:WARN").error.code).toBe("query_regex_modifier");
+    expect(compileFailure("package=:mine").error.code).toBe("query_exact_modifier");
+    expect(compileFailure("is~:crash").error.code).toBe("query_regex_modifier");
   });
 
   it("reports invalid enum values and quote errors", () => {
-    expect(compileFailure("level:FATAL").message).toContain("未知日志等级");
-    expect(compileFailure("is:firebase").message).toContain("未知 is: 值");
-    expect(compileFailure('message:"unfinished').message).toContain("引号未闭合");
-    expect(compileFailure('message:""').message).toContain("缺少值");
+    expect(compileFailure("level:FATAL").error.code).toBe("query_unknown_level");
+    expect(compileFailure("is:firebase").error.code).toBe("query_unknown_is");
+    expect(compileFailure('message:"unfinished').error.code).toBe("query_unclosed_quote");
+    expect(compileFailure('message:""').error.code).toBe("query_missing_value");
   });
 
   it("reports empty and unmatched groups", () => {
-    expect(compileFailure("()").message).toContain("括号内缺少表达式");
-    expect(compileFailure("tag:foo)").message).toContain("多余的右括号");
+    expect(compileFailure("()").error.code).toBe("query_empty_group");
+    expect(compileFailure("tag:foo)").error.code).toBe("query_extra_closing");
   });
 
   it("accepts the exact query length and nesting limits", () => {
@@ -332,15 +334,15 @@ describe("compileQuery errors", () => {
 
   it("reports queries beyond length and nesting limits instead of overflowing the stack", () => {
     const tooLong = compileFailure("a".repeat(MAX_QUERY_LENGTH + 1));
-    expect(tooLong.message).toContain(`${MAX_QUERY_LENGTH}`);
+    expect(tooLong.error).toEqual({ code: "query_length", params: { max: MAX_QUERY_LENGTH } });
     expect(tooLong.start).toBe(MAX_QUERY_LENGTH);
 
     const tooManyNots = compileFailure(`${"-".repeat(MAX_QUERY_NESTING + 1)}tag:foo`);
-    expect(tooManyNots.message).toContain(`${MAX_QUERY_NESTING}`);
+    expect(tooManyNots.error).toEqual({ code: "query_nesting", params: { max: MAX_QUERY_NESTING } });
 
     const tooManyGroups = compileFailure(
       `${"(".repeat(MAX_QUERY_NESTING + 1)}tag:foo${")".repeat(MAX_QUERY_NESTING + 1)}`,
     );
-    expect(tooManyGroups.message).toContain(`${MAX_QUERY_NESTING}`);
+    expect(tooManyGroups.error).toEqual({ code: "query_nesting", params: { max: MAX_QUERY_NESTING } });
   });
 });

@@ -1,3 +1,4 @@
+import type { AppErrorPayload } from "@/i18n/errors";
 import { RE2JS } from "re2js";
 import { LEVELS, type LogcatEntry, type LogLevel } from "@/lib/logcat";
 
@@ -77,7 +78,7 @@ export interface CompileSuccess {
 
 export interface CompileFailure {
   ok: false;
-  message: string;
+  error: AppErrorPayload;
   start: number;
   end: number;
 }
@@ -126,16 +127,16 @@ type TokenizeResult = TokenizeSuccess | CompileFailure;
 
 class QuerySyntaxError extends Error {
   constructor(
-    message: string,
+    readonly payload: AppErrorPayload,
     readonly start: number,
     readonly end: number,
   ) {
-    super(message);
+    super(payload.code);
   }
 }
 
-function failure(message: string, start: number, end: number): CompileFailure {
-  return { ok: false, message, start, end };
+function failure(error: AppErrorPayload, start: number, end: number): CompileFailure {
+  return { ok: false, error, start, end };
 }
 
 function isWhitespace(char: string): boolean {
@@ -174,12 +175,12 @@ function tokenizeKey(input: string, start: number, nameEnd: number): TokenizeRes
   const keyName = input.slice(start, nameEnd);
   const key = findQueryKey(keyName);
   if (key === null) {
-    return failure(`未知查询键: ${keyName}`, start, nameEnd);
+    return failure({ code: "query_unknown_key", params: { key: keyName } }, start, nameEnd);
   }
 
   cursor += 1;
   if (cursor >= input.length || isTermBoundary(input[cursor])) {
-    return failure(`查询键 ${keyName}: 缺少值`, cursor, cursor);
+    return failure({ code: "query_missing_value", params: { key: keyName } }, cursor, cursor);
   }
 
   let value = "";
@@ -214,19 +215,19 @@ function tokenizeKey(input: string, start: number, nameEnd: number): TokenizeRes
       cursor += 1;
     }
     if (!closed) {
-      return failure("引号未闭合", quoteStart, input.length);
+      return failure({ code: "query_unclosed_quote" }, quoteStart, input.length);
     }
     if (value.length === 0) {
-      return failure(`查询键 ${keyName}: 缺少值`, valueStart, valueEnd);
+      return failure({ code: "query_missing_value", params: { key: keyName } }, valueStart, valueEnd);
     }
     if (cursor < input.length && !isTermBoundary(input[cursor])) {
-      return failure("引号值后存在意外字符", cursor, cursor + 1);
+      return failure({ code: "query_after_quote" }, cursor, cursor + 1);
     }
   } else {
     while (cursor < input.length && !isTermBoundary(input[cursor])) {
       const char = input[cursor];
       if (char === '"') {
-        return failure("引号必须包裹完整的查询值", cursor, cursor + 1);
+        return failure({ code: "query_partial_quote" }, cursor, cursor + 1);
       }
       value += char === "\\" ? " " : char;
       cursor += 1;
@@ -291,13 +292,13 @@ function tokenize(input: string): TokenizeResult {
     while (cursor < input.length && !isTermBoundary(input[cursor])) {
       const textChar = input[cursor];
       if (textChar === '"') {
-        return failure("裸文本不支持引号, 请使用 message:\"...\"", cursor, cursor + 1);
+        return failure({ code: "query_bare_quote" }, cursor, cursor + 1);
       }
       text += textChar === "\\" ? " " : textChar;
       cursor += 1;
     }
     if (text.length === 0) {
-      return failure("无法识别查询内容", start, Math.min(start + 1, input.length));
+      return failure({ code: "query_unrecognized" }, start, Math.min(start + 1, input.length));
     }
     tokens.push({ kind: "text", start, end: cursor, text });
   }
@@ -318,7 +319,7 @@ function createMatcher(token: KeyToken | TextToken): Matcher {
     } catch {
       const start = token.kind === "key" ? token.valueStart : token.start;
       const end = token.kind === "key" ? token.valueEnd : token.end;
-      throw new QuerySyntaxError("无效的正则表达式", start, end);
+      throw new QuerySyntaxError({ code: "query_invalid_regex" }, start, end);
     }
   }
   return { kind: "contains", lowered: value.toLowerCase() };
@@ -328,9 +329,9 @@ function assertNoModifier(token: KeyToken): void {
   if (token.modifier === null) {
     return;
   }
-  const name = token.modifier === "regex" ? "正则" : "精确";
+  const code = token.modifier === "regex" ? "query_regex_modifier" : "query_exact_modifier";
   const start = token.modifierStart ?? token.start;
-  throw new QuerySyntaxError(`${token.key}: 不支持${name}修饰符`, start, start + 1);
+  throw new QuerySyntaxError({ code, params: { key: token.key } }, start, start + 1);
 }
 
 class Parser {
@@ -356,8 +357,8 @@ class Parser {
     const ast = this.parseOr();
     const trailing = this.current();
     if (trailing.kind !== "eof") {
-      const message = trailing.kind === "rparen" ? "多余的右括号" : "查询末尾存在意外内容";
-      throw new QuerySyntaxError(message, trailing.start, trailing.end);
+      const code = trailing.kind === "rparen" ? "query_extra_closing" : "query_trailing";
+      throw new QuerySyntaxError({ code }, trailing.start, trailing.end);
     }
     return {
       ok: true,
@@ -373,7 +374,7 @@ class Parser {
     while (this.current().kind === "or") {
       const operator = this.advance();
       if (!this.canStartUnary(this.current())) {
-        throw new QuerySyntaxError("运算符 | 后缺少表达式", operator.start, operator.end);
+        throw new QuerySyntaxError({ code: "query_missing_or" }, operator.start, operator.end);
       }
       children.push(this.parseAnd());
     }
@@ -386,7 +387,7 @@ class Parser {
       if (this.current().kind === "and") {
         const operator = this.advance();
         if (!this.canStartUnary(this.current())) {
-          throw new QuerySyntaxError("运算符 & 后缺少表达式", operator.start, operator.end);
+          throw new QuerySyntaxError({ code: "query_missing_and" }, operator.start, operator.end);
         }
         children.push(this.parseUnary());
         continue;
@@ -406,7 +407,7 @@ class Parser {
     }
     const operator = this.advance();
     if (!this.canStartUnary(this.current())) {
-      throw new QuerySyntaxError("否定符后缺少表达式", operator.start, operator.end);
+      throw new QuerySyntaxError({ code: "query_missing_not" }, operator.start, operator.end);
     }
     this.enterNesting(operator);
     try {
@@ -422,16 +423,16 @@ class Parser {
       const opening = this.advance();
       if (this.current().kind === "rparen") {
         const closing = this.current();
-        throw new QuerySyntaxError("括号内缺少表达式", closing.start, closing.end);
+        throw new QuerySyntaxError({ code: "query_empty_group" }, closing.start, closing.end);
       }
       if (this.current().kind === "eof") {
-        throw new QuerySyntaxError("缺少右括号", opening.start, opening.end);
+        throw new QuerySyntaxError({ code: "query_missing_closing" }, opening.start, opening.end);
       }
       this.enterNesting(opening);
       try {
         const child = this.parseOr();
         if (this.current().kind !== "rparen") {
-          throw new QuerySyntaxError("缺少右括号", opening.start, opening.end);
+          throw new QuerySyntaxError({ code: "query_missing_closing" }, opening.start, opening.end);
         }
         this.advance();
         return child;
@@ -447,7 +448,7 @@ class Parser {
       this.advance();
       return this.parseKey(token);
     }
-    throw new QuerySyntaxError("此处需要查询条件", token.start, token.end);
+    throw new QuerySyntaxError({ code: "query_expected_term" }, token.start, token.end);
   }
 
   private parseKey(token: KeyToken): QueryNode {
@@ -464,7 +465,7 @@ class Parser {
         assertNoModifier(token);
         const min = LEVEL_NAMES[token.value.toUpperCase()];
         if (min === undefined) {
-          throw new QuerySyntaxError(`未知日志等级: ${token.value}`, token.valueStart, token.valueEnd);
+          throw new QuerySyntaxError({ code: "query_unknown_level", params: { value: token.value } }, token.valueStart, token.valueEnd);
         }
         return { type: "level", min };
       }
@@ -477,7 +478,7 @@ class Parser {
         const lowered = token.value.toLowerCase();
         const kind = QUERY_IS_VALUES.find((value) => value === lowered);
         if (kind === undefined) {
-          throw new QuerySyntaxError(`未知 is: 值: ${token.value}`, token.valueStart, token.valueEnd);
+          throw new QuerySyntaxError({ code: "query_unknown_is", params: { value: token.value } }, token.valueStart, token.valueEnd);
         }
         return { type: "is", kind };
       }
@@ -501,7 +502,7 @@ class Parser {
   private enterNesting(token: Token): void {
     if (this.nesting >= MAX_QUERY_NESTING) {
       throw new QuerySyntaxError(
-        `查询嵌套不能超过 ${MAX_QUERY_NESTING} 层`,
+        { code: "query_nesting", params: { max: MAX_QUERY_NESTING } },
         token.start,
         token.end,
       );
@@ -513,7 +514,7 @@ class Parser {
 export function compileQuery(input: string): CompileResult {
   if (input.length > MAX_QUERY_LENGTH) {
     return failure(
-      `查询长度不能超过 ${MAX_QUERY_LENGTH} 个字符`,
+      { code: "query_length", params: { max: MAX_QUERY_LENGTH } },
       MAX_QUERY_LENGTH,
       input.length,
     );
@@ -526,7 +527,7 @@ export function compileQuery(input: string): CompileResult {
     return new Parser(tokenized.tokens).parse();
   } catch (error: unknown) {
     if (error instanceof QuerySyntaxError) {
-      return failure(error.message, error.start, error.end);
+      return failure(error.payload, error.start, error.end);
     }
     throw error;
   }

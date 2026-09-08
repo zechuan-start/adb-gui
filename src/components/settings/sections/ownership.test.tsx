@@ -72,6 +72,9 @@ describe("settings section ownership", () => {
     const markup = render("general", false);
     const { start } = fieldsetRange(markup);
     expect(markup).toContain('<fieldset disabled=""');
+    const language = markup.indexOf('aria-label="语言"');
+    expect(language).toBeGreaterThanOrEqual(0);
+    expect(language).toBeLessThan(start);
     expect(markup.indexOf('aria-label="主题"')).toBeLessThan(start);
     expect(markup.indexOf("启动页面")).toBeGreaterThan(start);
     expect(markup.indexOf("启动时检查更新")).toBeGreaterThan(start);

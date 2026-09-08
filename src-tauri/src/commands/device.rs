@@ -1,3 +1,4 @@
+use crate::{error::AppError, error_codes as codes};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::process::Output;
@@ -30,15 +31,15 @@ fn device_list_lock() -> &'static tokio::sync::Mutex<()> {
     DEVICE_LIST_LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
 }
 
-pub fn run_adb_output(app: &AppHandle, args: &[&str]) -> Result<Output, String> {
+pub fn run_adb_output(app: &AppHandle, args: &[&str]) -> Result<Output, AppError> {
     let adb_path = adb::resolve_adb_path(app)?;
     adb::prepare_command(app, &adb_path)
         .args(args)
         .output()
-        .map_err(|e| format!("Failed to execute adb: {e}"))
+        .map_err(|e| AppError::new(codes::ADB_EXECUTE_FAILED).detail(e.to_string()))
 }
 
-pub fn run_adb(app: &AppHandle, args: &[&str]) -> Result<String, String> {
+pub fn run_adb(app: &AppHandle, args: &[&str]) -> Result<String, AppError> {
     let output = run_adb_output(app, args)?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -47,7 +48,11 @@ pub fn run_adb(app: &AppHandle, args: &[&str]) -> Result<String, String> {
     }
 }
 
-pub fn run_adb_with_serial(app: &AppHandle, serial: &str, args: &[&str]) -> Result<String, String> {
+pub fn run_adb_with_serial(
+    app: &AppHandle,
+    serial: &str,
+    args: &[&str],
+) -> Result<String, AppError> {
     let mut full_args = vec!["-s", serial];
     full_args.extend_from_slice(args);
     run_adb(app, &full_args)
@@ -64,7 +69,7 @@ pub fn run_adb_output_with_serial(
     app: &AppHandle,
     serial: &str,
     args: &[&str],
-) -> Result<Output, String> {
+) -> Result<Output, AppError> {
     let mut full_args = vec!["-s", serial];
     full_args.extend_from_slice(args);
     run_adb_output(app, &full_args)
@@ -74,7 +79,7 @@ pub fn run_adb_bytes_with_serial(
     app: &AppHandle,
     serial: &str,
     args: &[&str],
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, AppError> {
     let output = run_adb_output_with_serial(app, serial, args)?;
     if output.status.success() {
         Ok(output.stdout)
@@ -83,17 +88,14 @@ pub fn run_adb_bytes_with_serial(
     }
 }
 
-pub(crate) fn adb_output_error(output: &Output) -> String {
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    if stderr.is_empty() {
-        format!("adb exited with status {}", output.status)
-    } else {
-        stderr
-    }
+pub(crate) fn adb_output_error(output: &Output) -> AppError {
+    AppError::new(codes::ADB_COMMAND_FAILED)
+        .param("status", output.status.to_string())
+        .detail(String::from_utf8_lossy(&output.stderr).trim().to_string())
 }
 
 #[tauri::command]
-pub fn get_adb_info(app: AppHandle) -> Result<serde_json::Value, String> {
+pub fn get_adb_info(app: AppHandle) -> Result<serde_json::Value, AppError> {
     let path = adb::resolve_adb_path(&app)?;
     let version = adb::get_adb_version(&app, &path);
     let source = adb::adb_source(&path, &app);
@@ -105,14 +107,16 @@ pub fn get_adb_info(app: AppHandle) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-pub async fn list_devices(app: AppHandle) -> Result<Vec<DeviceInfo>, String> {
+pub async fn list_devices(app: AppHandle) -> Result<Vec<DeviceInfo>, AppError> {
     let _guard = device_list_lock().lock().await;
     tauri::async_runtime::spawn_blocking(move || list_devices_blocking(&app))
         .await
-        .map_err(|error| format!("Failed to run device list worker: {error}"))?
+        .map_err(|error| {
+            AppError::new(codes::DEVICE_LIST_WORKER_FAILED).detail(error.to_string())
+        })?
 }
 
-fn list_devices_blocking(app: &AppHandle) -> Result<Vec<DeviceInfo>, String> {
+fn list_devices_blocking(app: &AppHandle) -> Result<Vec<DeviceInfo>, AppError> {
     let output = run_adb(app, &["devices", "-l"])?;
     let (mut devices, present_serials) = parse_devices_snapshot(&output);
     for device in &mut devices {
@@ -282,7 +286,7 @@ fn mdns_port_alias_base(serial: &str) -> Option<&str> {
 }
 
 #[tauri::command]
-pub fn get_current_activity(app: AppHandle, serial: String) -> Result<String, String> {
+pub fn get_current_activity(app: AppHandle, serial: String) -> Result<String, AppError> {
     let output = run_adb_with_serial(
         &app,
         &serial,

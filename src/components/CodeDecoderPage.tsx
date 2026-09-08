@@ -1,3 +1,4 @@
+import { useT, errorText, type Message } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
@@ -43,6 +44,7 @@ interface CodeDecoderPageProps {
 }
 
 export function CodeDecoderPage({ active = true }: CodeDecoderPageProps) {
+  const t = useT();
   const batch = useCodeDecoderStore((state) => state.batch);
   const progress = useCodeDecoderStore((state) => state.progress);
   const decodeSources = useCodeDecoderStore((state) => state.decodeSources);
@@ -58,22 +60,16 @@ export function CodeDecoderPage({ active = true }: CodeDecoderPageProps) {
   const submitPaths = useCallback(
     (paths: readonly string[]) => {
       if (useCodeDecoderStore.getState().progress !== null) {
-        showToast("error", "正在解码图片, 请稍候");
+        showToast("error", (t) => (t.decoder.codeDecoderPage.decodingImagesPleaseWait));
         return;
       }
 
       const { accepted, rejectedCount, truncatedCount } = partitionImagePaths(paths);
-      const notices: string[] = [];
-      if (rejectedCount > 0) {
-        notices.push(`已忽略 ${rejectedCount} 个不支持的文件`);
-      }
-      if (truncatedCount > 0) {
-        notices.push(
-          `单次最多解码 ${MAX_IMAGE_BATCH_SIZE} 张图片, 已截断 ${truncatedCount} 张`,
-        );
-      }
-      if (notices.length > 0) {
-        showToast("error", notices.join(", "));
+      if (rejectedCount > 0 || truncatedCount > 0) {
+        showToast("error", (t) => [
+          rejectedCount > 0 ? t.decoder.codeDecoderPage.ignoredUnsupportedFiles({ count: rejectedCount }) : null,
+          truncatedCount > 0 ? t.decoder.codeDecoderPage.decodeUpToImagesPerBatchSkipped({ limit: MAX_IMAGE_BATCH_SIZE, skipped: truncatedCount }) : null,
+        ].filter(Boolean).join(", "));
       }
       if (accepted.length === 0) {
         return;
@@ -81,7 +77,7 @@ export function CodeDecoderPage({ active = true }: CodeDecoderPageProps) {
 
       const sources = accepted.map(createPathSource);
       void decodeSources(sources).catch((error) => {
-        showToast("error", `解码任务失败: ${String(error)}`);
+        showToast("error", (t) => (t.decoder.codeDecoderPage.decodingTaskFailed({ detail: errorText(error, t) })));
       });
     },
     [decodeSources, showToast],
@@ -94,7 +90,7 @@ export function CodeDecoderPage({ active = true }: CodeDecoderPageProps) {
         submitPaths(paths);
       }
     } catch (error) {
-      showToast("error", `选择图片失败: ${String(error)}`);
+      showToast("error", (t) => (t.decoder.codeDecoderPage.couldNotChooseImages({ detail: errorText(error, t) })));
     }
   }, [showToast, submitPaths]);
 
@@ -103,7 +99,7 @@ export function CodeDecoderPage({ active = true }: CodeDecoderPageProps) {
       return;
     }
     if (useCodeDecoderStore.getState().progress !== null) {
-      showToast("error", "正在解码图片, 请稍候");
+      showToast("error", (t) => (t.decoder.codeDecoderPage.decodingImagesPleaseWait));
       return;
     }
 
@@ -111,22 +107,23 @@ export function CodeDecoderPage({ active = true }: CodeDecoderPageProps) {
     try {
       const imageData = await readClipboardImage();
       if (!imageData) {
-        showToast("error", "剪贴板中没有图片");
+        showToast("error", (t) => (t.decoder.codeDecoderPage.noImageInTheClipboard));
         return;
       }
       if (useCodeDecoderStore.getState().progress !== null) {
-        showToast("error", "正在解码图片, 请稍候");
+        showToast("error", (t) => (t.decoder.codeDecoderPage.decodingImagesPleaseWait));
         return;
       }
       await decodeSources([
         {
-          name: "剪贴板图片",
+          name: "",
+          sourceKind: "clipboard",
           path: null,
           loadInput: async () => imageData,
         },
       ]);
     } catch (error) {
-      showToast("error", `读取剪贴板图片失败: ${String(error)}`);
+      showToast("error", (t) => (t.decoder.codeDecoderPage.couldNotReadClipboardImage({ detail: errorText(error, t) })));
     } finally {
       pastePendingRef.current = false;
     }
@@ -164,7 +161,7 @@ export function CodeDecoderPage({ active = true }: CodeDecoderPageProps) {
       })
       .catch((error) => {
         if (!disposed && dragListenerEnabledRef.current) {
-          showToast("error", `拖拽监听启动失败: ${String(error)}`);
+          showToast("error", (t) => (t.decoder.codeDecoderPage.couldNotStartDropListener({ detail: errorText(error, t) })));
         }
       });
 
@@ -210,12 +207,12 @@ export function CodeDecoderPage({ active = true }: CodeDecoderPageProps) {
   }, [active, handlePaste]);
 
   const dropHint = busy
-    ? "正在逐张解码"
+    ? t.decoder.codeDecoderPage.decodingImagesOneByOne
     : dragState === "valid"
-      ? "释放以解码图片"
+      ? t.decoder.codeDecoderPage.dropToDecodeImages
       : dragState === "invalid"
-        ? "仅支持 PNG、JPEG、GIF、BMP 和 WebP"
-        : "拖拽图片到此处";
+        ? t.decoder.codeDecoderPage.supportsPNGJPEGGIFBMPAndWebPOnly
+        : t.decoder.codeDecoderPage.dropImagesHere;
 
   return (
     <section className="grid h-full min-h-0 grid-cols-1 grid-rows-[minmax(336px,52%)_minmax(0,1fr)] min-[900px]:grid-cols-[300px_minmax(0,1fr)] min-[900px]:grid-rows-1">
@@ -223,7 +220,7 @@ export function CodeDecoderPage({ active = true }: CodeDecoderPageProps) {
         <section className="border border-rule bg-surface2">
           <header className="flex h-10 items-center gap-2 border-b border-rule px-3">
             <ScanBarcode className="h-4 w-4 text-ink2" />
-            <h2 className="text-sm font-semibold text-ink">解码来源</h2>
+            <h2 className="text-sm font-semibold text-ink">{t.decoder.codeDecoderPage.decodeSource}</h2>
             <span className="ml-auto font-data text-[10px] text-note">D-01</span>
           </header>
           <div className="p-3">
@@ -252,7 +249,7 @@ export function CodeDecoderPage({ active = true }: CodeDecoderPageProps) {
                 className="inline-flex h-8 items-center justify-center gap-2 border border-ink bg-ink px-3 font-data text-[11px] font-medium text-onink hover:bg-ink2 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <FileUp className="h-4 w-4" />
-                选择图片
+                {t.decoder.codeDecoderPage.chooseImages}
               </button>
               <button
                 type="button"
@@ -261,16 +258,16 @@ export function CodeDecoderPage({ active = true }: CodeDecoderPageProps) {
                 className="inline-flex h-8 items-center justify-center gap-2 border border-rule px-3 font-data text-[11px] text-ink hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <ClipboardPaste className="h-4 w-4" />
-                粘贴图片
+                {t.decoder.codeDecoderPage.pasteImage}
               </button>
             </div>
 
             <div className="mt-3 flex min-h-6 items-center border-t border-dashed border-rule2 pt-2 font-data text-[10.5px] text-ink3">
               {progress
-                ? `正在解码 ${progress.done} / ${progress.total}`
+                ? t.decoder.codeDecoderPage.decoding({ done: progress.done, total: progress.total })
                 : batch
-                  ? `最近批次 ${batch.images.length} 张图片`
-                  : "等待图片"}
+                  ? t.decoder.codeDecoderPage.latestBatchImages({ count: batch.images.length })
+                  : t.decoder.codeDecoderPage.waitingForImages}
             </div>
 
             <button
@@ -280,8 +277,8 @@ export function CodeDecoderPage({ active = true }: CodeDecoderPageProps) {
                 setDragState("idle");
               }}
               disabled={!batch && !progress}
-              title="清空"
-              aria-label="清空解码结果"
+              title={t.decoder.codeDecoderPage.clear}
+              aria-label={t.decoder.codeDecoderPage.clearDecodedResults}
               className="mt-2 inline-flex h-8 w-8 items-center justify-center border border-rule text-ink2 hover:border-ink3 hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Eraser className="h-4 w-4" />
@@ -301,6 +298,7 @@ interface DecoderResultsPanelProps {
 }
 
 function DecoderResultsPanel({ batch, progressTotal }: DecoderResultsPanelProps) {
+  const t = useT();
   const showToast = useFeedbackStore((state) => state.showToast);
   const scrollRef = useRef<HTMLDivElement>(null);
   const images = batch?.images ?? EMPTY_IMAGES;
@@ -336,12 +334,12 @@ function DecoderResultsPanel({ batch, progressTotal }: DecoderResultsPanelProps)
   }, [batchId, virtualizer]);
 
   const copyText = useCallback(
-    async (text: string, message: string) => {
+    async (text: string, message: Message) => {
       try {
         await navigator.clipboard.writeText(text);
         showToast("success", message);
       } catch (error) {
-        showToast("error", `复制失败: ${String(error)}`);
+        showToast("error", (t) => (t.decoder.codeDecoderPage.copyFailed({ detail: errorText(error, t) })));
       }
     },
     [showToast],
@@ -352,7 +350,7 @@ function DecoderResultsPanel({ batch, progressTotal }: DecoderResultsPanelProps)
       try {
         await openUrlExternal(url);
       } catch (error) {
-        showToast("error", `打开链接失败: ${String(error)}`);
+        showToast("error", (t) => (t.decoder.codeDecoderPage.couldNotOpenLink({ detail: errorText(error, t) })));
       }
     },
     [showToast],
@@ -361,27 +359,25 @@ function DecoderResultsPanel({ batch, progressTotal }: DecoderResultsPanelProps)
   return (
     <div className="flex min-h-0 min-w-0 flex-col">
       <div className="flex h-10 shrink-0 items-center gap-3 border-b border-rule bg-surface px-4">
-        <h2 className="shrink-0 text-sm font-semibold text-ink">结果</h2>
+        <h2 className="shrink-0 text-sm font-semibold text-ink">{t.decoder.codeDecoderPage.results}</h2>
         {batch && (
           <span className="min-w-0 truncate font-data text-[10.5px] text-ink3">
-            {progressTotal ?? summary.imageCount} 张图, {summary.decodedImageCount} 张识别成功,
-            {" "}
-            {summary.codeCount} 个码
+            {t.decoder.batchSummary({ images: progressTotal ?? summary.imageCount, decoded: summary.decodedImageCount, codes: summary.codeCount })}
           </span>
         )}
         <button
           type="button"
           onClick={() => {
             if (batch) {
-              void copyText(buildCopyAllText(batch), "已复制全部解码结果");
+              void copyText(buildCopyAllText(batch), (t) => t.decoder.codeDecoderPage.allDecodedResultsCopied);
             }
           }}
           disabled={!batch || summary.codeCount === 0}
-          title="复制全部"
+          title={t.decoder.codeDecoderPage.copyAll}
           className="ml-auto inline-flex h-7 shrink-0 items-center justify-center gap-2 border border-rule px-2 font-data text-[10.5px] text-ink2 hover:border-ink3 hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
         >
           <ClipboardCopy className="h-4 w-4" />
-          <span className="hidden min-[1040px]:inline">复制全部</span>
+          <span className="hidden min-[1040px]:inline">{t.decoder.codeDecoderPage.copyAll}</span>
         </button>
       </div>
 
@@ -390,7 +386,7 @@ function DecoderResultsPanel({ batch, progressTotal }: DecoderResultsPanelProps)
           <div
             ref={scrollRef}
             role="region"
-            aria-label="解码结果列表"
+            aria-label={t.decoder.codeDecoderPage.decodedResults}
             tabIndex={0}
             className="min-h-0 flex-1 overflow-auto p-[18px] outline-none"
           >
@@ -417,14 +413,14 @@ function DecoderResultsPanel({ batch, progressTotal }: DecoderResultsPanelProps)
         ) : (
           <div className="m-[18px] flex min-h-36 flex-1 flex-col items-center justify-center gap-2 border border-dashed border-rule bg-surface px-5 text-center text-ink3">
             <ScanBarcode className="h-6 w-6" />
-            <span className="text-sm text-ink">等待首张图片完成</span>
+            <span className="text-sm text-ink">{t.decoder.codeDecoderPage.waitingForTheFirstImage}</span>
           </div>
         )
       ) : (
         <div className="m-[18px] flex min-h-36 flex-1 flex-col items-center justify-center gap-2 border border-dashed border-rule bg-surface px-5 text-center text-ink3">
           <ImageIcon className="h-6 w-6" />
-          <strong className="text-sm font-semibold text-ink">还没有解码结果</strong>
-          <span className="text-xs">拖入图片, 选择文件或粘贴图片.</span>
+          <strong className="text-sm font-semibold text-ink">{t.decoder.codeDecoderPage.noDecodedResultsYet}</strong>
+          <span className="text-xs">{t.decoder.codeDecoderPage.dropImagesChooseFilesOrPasteAnImage}</span>
         </div>
       )}
     </div>
@@ -433,19 +429,20 @@ function DecoderResultsPanel({ batch, progressTotal }: DecoderResultsPanelProps)
 
 interface DecodedImageCardProps {
   image: DecodedImage;
-  copyText: (text: string, message: string) => Promise<void>;
+  copyText: (text: string, message: Message) => Promise<void>;
   openUrl: (url: string) => Promise<void>;
 }
 
 function DecodedImageCard({ image, copyText, openUrl }: DecodedImageCardProps) {
+  const t = useT();
   return (
     <article className="overflow-hidden border border-rule bg-surface2">
       <header className="flex h-9 min-w-0 items-center gap-3 border-b border-rule px-3">
-        <span className="min-w-0 flex-1 truncate font-data text-[11.5px] font-medium text-ink" title={image.name}>
-          {image.name}
+        <span className="min-w-0 flex-1 truncate font-data text-[11.5px] font-medium text-ink" title={image.sourceKind === "clipboard" ? t.decoder.codeDecoderPage.clipboardImage : image.name}>
+          {image.sourceKind === "clipboard" ? t.decoder.codeDecoderPage.clipboardImage : image.name}
         </span>
         <span className="shrink-0 font-data text-[10.5px] text-ink3">
-          {image.error ? "失败" : `${image.codes.length} 个码`}
+          {image.error ? t.decoder.codeDecoderPage.failed : t.decoder.codeDecoderPage.codesLabel({ count: image.codes.length })}
         </span>
       </header>
       <div className="grid min-w-0 grid-cols-[96px_minmax(0,1fr)] gap-3 p-3">
@@ -464,9 +461,9 @@ function DecodedImageCard({ image, copyText, openUrl }: DecodedImageCardProps) {
 
         <div className="min-w-0">
           {image.error ? (
-            <div className="break-words text-xs text-err">解码失败: {image.error}</div>
+            <div className="break-words text-xs text-err">{t.decoder.decodeFailure({ detail: errorText(image.error, t) })}</div>
           ) : image.codes.length === 0 ? (
-            <div className="text-xs text-ink3">未识别到码</div>
+            <div className="text-xs text-ink3">{t.decoder.codeDecoderPage.noCodeFound}</div>
           ) : (
             <div className="divide-y divide-dashed divide-rule2">
               {image.codes.map((code, index) => (
@@ -487,11 +484,12 @@ function DecodedImageCard({ image, copyText, openUrl }: DecodedImageCardProps) {
 
 interface DecodedCodeRowProps {
   code: DecodedCode;
-  copyText: (text: string, message: string) => Promise<void>;
+  copyText: (text: string, message: Message) => Promise<void>;
   openUrl: (url: string) => Promise<void>;
 }
 
 function DecodedCodeRow({ code, copyText, openUrl }: DecodedCodeRowProps) {
+  const t = useT();
   return (
     <div className="flex min-w-0 items-start gap-2 py-2 first:pt-0 last:pb-0">
       <span className="shrink-0 border border-rule px-2 py-1 font-data text-[10.5px] text-ink2">
@@ -502,9 +500,9 @@ function DecodedCodeRow({ code, copyText, openUrl }: DecodedCodeRowProps) {
       </span>
       <button
         type="button"
-        onClick={() => void copyText(code.text, "已复制解码内容")}
-        title="复制"
-        aria-label="复制解码内容"
+        onClick={() => void copyText(code.text, (t) => t.decoder.codeDecoderPage.decodedContentCopied)}
+        title={t.common.copy}
+        aria-label={t.decoder.codeDecoderPage.copyDecodedContent}
         className="inline-flex h-7 w-7 shrink-0 items-center justify-center border border-rule text-ink3 hover:bg-hover hover:text-ink"
       >
         <Copy className="h-3.5 w-3.5" />
@@ -513,8 +511,8 @@ function DecodedCodeRow({ code, copyText, openUrl }: DecodedCodeRowProps) {
         <button
           type="button"
           onClick={() => void openUrl(code.text.trim())}
-          title="在浏览器中打开"
-          aria-label="在浏览器中打开链接"
+          title={t.decoder.codeDecoderPage.openInBrowser}
+          aria-label={t.decoder.codeDecoderPage.openLinkInBrowser}
           className="inline-flex h-7 w-7 shrink-0 items-center justify-center border border-rule text-ink3 hover:bg-hover hover:text-ink"
         >
           <ExternalLink className="h-3.5 w-3.5" />

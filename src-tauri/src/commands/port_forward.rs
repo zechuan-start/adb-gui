@@ -1,3 +1,4 @@
+use crate::{error::AppError, error_codes as codes};
 use serde::Serialize;
 use tauri::AppHandle;
 
@@ -12,7 +13,7 @@ pub struct ForwardRule {
 }
 
 #[tauri::command]
-pub fn list_port_forwards(app: AppHandle, serial: String) -> Result<Vec<ForwardRule>, String> {
+pub fn list_port_forwards(app: AppHandle, serial: String) -> Result<Vec<ForwardRule>, AppError> {
     let mut rules = Vec::new();
 
     let forward_output = run_adb_with_serial(&app, &serial, &["forward", "--list"])?;
@@ -31,7 +32,7 @@ pub fn add_port_forward(
     direction: String,
     local_port: String,
     remote_port: String,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let local_port = normalize_port(&local_port)?;
     let remote_port = normalize_port(&remote_port)?;
     let local_endpoint = format!("tcp:{local_port}");
@@ -40,7 +41,7 @@ pub fn add_port_forward(
     let args = match direction.as_str() {
         "forward" => vec!["forward", local_endpoint.as_str(), remote_endpoint.as_str()],
         "reverse" => vec!["reverse", remote_endpoint.as_str(), local_endpoint.as_str()],
-        _ => return Err("Invalid direction. Expected forward or reverse.".to_string()),
+        _ => return Err(AppError::new(codes::PORTS_INVALID_DIRECTION)),
     };
 
     run_adb_with_serial(&app, &serial, &args).map(|output| output.trim().to_string())
@@ -52,14 +53,14 @@ pub fn remove_port_forward(
     serial: String,
     direction: String,
     port: String,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let port = normalize_port(&port)?;
     let endpoint = format!("tcp:{port}");
 
     let args = match direction.as_str() {
         "forward" => vec!["forward", "--remove", endpoint.as_str()],
         "reverse" => vec!["reverse", "--remove", endpoint.as_str()],
-        _ => return Err("Invalid direction. Expected forward or reverse.".to_string()),
+        _ => return Err(AppError::new(codes::PORTS_INVALID_DIRECTION)),
     };
 
     run_adb_with_serial(&app, &serial, &args).map(|output| output.trim().to_string())
@@ -109,17 +110,17 @@ fn parse_forward_line(line: &str, direction: &str) -> Option<ForwardRule> {
     })
 }
 
-fn normalize_port(port: &str) -> Result<String, String> {
+fn normalize_port(port: &str) -> Result<String, AppError> {
     let trimmed = port.trim();
     if trimmed.is_empty() || !trimmed.chars().all(|ch| ch.is_ascii_digit()) {
-        return Err("Port must be an integer between 1 and 65535.".to_string());
+        return Err(AppError::new(codes::PORTS_INVALID_PORT));
     }
 
     let value: u16 = trimmed
         .parse()
-        .map_err(|_| "Port must be an integer between 1 and 65535.".to_string())?;
+        .map_err(|_| AppError::new(codes::PORTS_INVALID_PORT))?;
     if value == 0 {
-        return Err("Port must be an integer between 1 and 65535.".to_string());
+        return Err(AppError::new(codes::PORTS_INVALID_PORT));
     }
 
     Ok(value.to_string())

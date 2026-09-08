@@ -1,9 +1,10 @@
+use crate::error::AppError;
 use tauri::AppHandle;
 
 use super::device::run_adb_with_serial;
 
 #[tauri::command]
-pub fn list_packages(app: AppHandle, serial: String) -> Result<Vec<String>, String> {
+pub fn list_packages(app: AppHandle, serial: String) -> Result<Vec<String>, AppError> {
     let output = run_adb_with_serial(&app, &serial, &["shell", "pm", "list", "packages", "-3"])?;
     let packages: Vec<String> = output
         .lines()

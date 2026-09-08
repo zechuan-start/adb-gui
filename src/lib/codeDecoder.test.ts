@@ -17,7 +17,7 @@ function createImage(overrides: Partial<DecodedImage> = {}): DecodedImage {
     path: "/tmp/image.png",
     thumbnail: "",
     codes: [],
-    error: "",
+    error: null,
     ...overrides,
   };
 }
@@ -130,8 +130,8 @@ describe("summarizeBatch", () => {
             { text: "two", format: "Code128", isUrl: false },
           ],
         }),
-        createImage({ id: 2, codes: [], error: "" }),
-        createImage({ id: 3, codes: [], error: "cannot decode" }),
+        createImage({ id: 2, codes: [], error: null }),
+        createImage({ id: 3, codes: [], error: { code: "unknown", detail: "cannot decode" } }),
         createImage({
           id: 4,
           codes: [{ text: "three", format: "EAN13", isUrl: false }],

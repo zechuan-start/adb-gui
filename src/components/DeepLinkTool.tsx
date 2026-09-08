@@ -1,3 +1,4 @@
+import { errorText, useT } from "@/i18n";
 import { useState } from "react";
 import { ExternalLink, RefreshCw } from "lucide-react";
 import { useDeviceStore } from "@/store/device";
@@ -7,6 +8,7 @@ import { getDeviceBySerial, isOnlineDevice } from "@/lib/device";
 import { cn } from "@/lib/utils";
 
 export function DeepLinkTool() {
+  const t = useT();
   const devices = useDeviceStore((s) => s.devices);
   const selectedDevice = useDeviceStore((s) => s.selectedDevice);
   const device = getDeviceBySerial(devices, selectedDevice);
@@ -23,9 +25,9 @@ export function DeepLinkTool() {
     setBusy(true);
     try {
       const result = await openDeepLink(device.serial, target);
-      showToast("success", result || "已打开 Deep Link");
+      showToast("success", (t) => (result || t.tools.deepLinkTool.deepLinkOpened));
     } catch (error) {
-      showToast("error", `打开失败: ${error}`);
+      showToast("error", (t) => (t.tools.deepLinkTool.couldNotOpen({ detail: errorText(error, t) })));
     } finally {
       setBusy(false);
     }
@@ -44,7 +46,7 @@ export function DeepLinkTool() {
               void handleOpen();
             }
           }}
-          placeholder="https://example.com 或 myapp://path"
+          placeholder={t.tools.deepLinkTool.httpsExampleComOrMyappPath}
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
@@ -62,12 +64,12 @@ export function DeepLinkTool() {
           )}
         >
           {busy ? <RefreshCw className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
-          打开
+          {t.tools.deepLinkTool.open}
         </button>
       </div>
 
       <div className="mt-auto border-t border-dashed border-rule2 pt-3 text-xs text-ink2">
-        {device && isOnlineDevice(device) ? "等待输入地址" : "设备在线后可操作"}
+        {device && isOnlineDevice(device) ? t.tools.deepLinkTool.enterAnAddress : t.tools.deepLinkTool.availableWhenTheDeviceIsOnline}
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+use crate::{error::AppError, error_codes as codes};
 use tauri::AppHandle;
 
 use super::device::run_adb_with_serial;
@@ -7,17 +8,19 @@ pub async fn install_apk(
     app: AppHandle,
     serial: String,
     apk_path: String,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     tauri::async_runtime::spawn_blocking(move || install_apk_blocking(app, serial, apk_path))
         .await
-        .map_err(|error| format!("Failed to run APK install worker: {error}"))?
+        .map_err(|error| {
+            AppError::new(codes::APPS_INSTALL_WORKER_FAILED).detail(error.to_string())
+        })?
 }
 
 fn install_apk_blocking(
     app: AppHandle,
     serial: String,
     apk_path: String,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let output = run_adb_with_serial(&app, &serial, &["install", "-r", "-t", &apk_path])?;
     if output.contains("Success") {
         Ok("Success".to_string())
@@ -27,12 +30,12 @@ fn install_apk_blocking(
 }
 
 #[tauri::command]
-pub fn uninstall_app(app: AppHandle, serial: String, pkg: String) -> Result<String, String> {
+pub fn uninstall_app(app: AppHandle, serial: String, pkg: String) -> Result<String, AppError> {
     run_adb_with_serial(&app, &serial, &["uninstall", &pkg])
 }
 
 #[tauri::command]
-pub fn launch_app(app: AppHandle, serial: String, pkg: String) -> Result<String, String> {
+pub fn launch_app(app: AppHandle, serial: String, pkg: String) -> Result<String, AppError> {
     let component = resolve_launch_component(&app, &serial, &pkg)?;
     run_adb_with_serial(
         &app,
@@ -42,16 +45,16 @@ pub fn launch_app(app: AppHandle, serial: String, pkg: String) -> Result<String,
 }
 
 #[tauri::command]
-pub fn force_stop_app(app: AppHandle, serial: String, pkg: String) -> Result<String, String> {
+pub fn force_stop_app(app: AppHandle, serial: String, pkg: String) -> Result<String, AppError> {
     run_adb_with_serial(&app, &serial, &["shell", "am", "force-stop", &pkg])
 }
 
 #[tauri::command]
-pub fn clear_app_data(app: AppHandle, serial: String, pkg: String) -> Result<String, String> {
+pub fn clear_app_data(app: AppHandle, serial: String, pkg: String) -> Result<String, AppError> {
     run_adb_with_serial(&app, &serial, &["shell", "pm", "clear", &pkg])
 }
 
-fn resolve_launch_component(app: &AppHandle, serial: &str, pkg: &str) -> Result<String, String> {
+fn resolve_launch_component(app: &AppHandle, serial: &str, pkg: &str) -> Result<String, AppError> {
     let candidates = [
         &[
             "shell",
@@ -93,7 +96,7 @@ fn resolve_launch_component(app: &AppHandle, serial: &str, pkg: &str) -> Result<
         }
     }
 
-    Err(format!("无法找到 {pkg} 的启动 Activity"))
+    Err(AppError::new(codes::APPS_NO_LAUNCH_ACTIVITY).param("pkg", pkg))
 }
 
 fn parse_component(output: &str) -> Option<String> {

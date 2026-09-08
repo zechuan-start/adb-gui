@@ -21,6 +21,7 @@ React 19 + TypeScript + TailwindCSS v4 + Zustand v5. Tauri 桥接层封装在 li
 | [Quality Guidelines](./quality-guidelines.md) | TypeScript strict, forbidden patterns | ✅ Done |
 | [Type Safety](./type-safety.md) | Strict TS, interface/type conventions | ✅ Done |
 | [Settings and Clipboard](./settings-clipboard.md) | Persisted preferences, startup and transfer lifecycle | Done |
+| [Bilingual UI and Error Presentation](./i18n.md) | Locale ownership, typed catalogs, retained errors, native synchronization and Intl | Done |
 
 ---
 

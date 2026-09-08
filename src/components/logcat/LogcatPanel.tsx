@@ -1,3 +1,5 @@
+import { errorText } from "@/i18n/errors";
+import { useT } from "@/i18n";
 import { AlertTriangle } from "lucide-react";
 import { useLogcatPackageResolution } from "@/hooks/useLogcatPackageResolution";
 import { useDeviceStore } from "@/store/device";
@@ -10,6 +12,7 @@ interface LogcatPanelProps {
 }
 
 export function LogcatPanel({ visible }: LogcatPanelProps) {
+  const t = useT();
   const selectedDevice = useDeviceStore((state) => state.selectedDevice);
   const storedSerial = useLogcatStore((state) => state.serial);
   const totalCount = useLogcatStore((state) => state.totalCount);
@@ -34,10 +37,10 @@ export function LogcatPanel({ visible }: LogcatPanelProps) {
       {streamState === "disconnected" && (
         <div className="flex min-h-7 shrink-0 items-center gap-2 border-b border-err/40 bg-log-bg px-3 py-1 font-data text-[11px] text-err">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-          <span className="min-w-0 flex-1 truncate" title={disconnectDetail || "日志流已断开"}>
+          <span className="min-w-0 flex-1 truncate" title={disconnectDetail ? errorText(disconnectDetail, t) : t.logcat.disconnected}>
             {disconnectDetail
-              ? `日志流已断开: ${disconnectDetail}. 下方保留断开前日志`
-              : "日志流已断开. 下方保留断开前日志"}
+              ? t.logcat.disconnectReason({ detail: errorText(disconnectDetail, t) })
+              : t.logcat.retained}
           </span>
           <button
             type="button"
@@ -45,13 +48,13 @@ export function LogcatPanel({ visible }: LogcatPanelProps) {
             disabled={!selectedDevice}
             className="h-5 shrink-0 border border-err/40 px-2 font-medium hover:bg-err-band disabled:cursor-not-allowed disabled:opacity-50"
           >
-            重连
+            {t.logcat.reconnect}
           </button>
         </div>
       )}
       {waitingForDevice ? (
         <div className="flex min-h-0 flex-1 items-center justify-center bg-log-bg font-data text-xs text-log-dim">
-          请先连接设备以查看 Logcat
+          {t.logcat.connectDevice}
         </div>
       ) : (
         <LogcatList

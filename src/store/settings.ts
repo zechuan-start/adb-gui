@@ -1,3 +1,4 @@
+import { AppError, toAppError, type AppErrorPayload } from "@/i18n/errors";
 import { create } from "zustand";
 import {
   decodeSettings,
@@ -16,7 +17,7 @@ type SettingsStorage = Pick<Storage, "getItem" | "setItem">;
 interface SettingsState {
   preferences: SettingsPreferences;
   available: boolean;
-  error: string | null;
+  error: AppErrorPayload | null;
   update: <K extends keyof SettingsPreferences>(
     key: K,
     value: SettingsPreferences[K],
@@ -38,7 +39,7 @@ export function createSettingsStore(storage: () => SettingsStorage) {
       return {
         preferences: defaultSettings(),
         available: false,
-        error: `无法读取设置: ${String(error)}`,
+        error: new AppError("settings.load", {}, { causes: [toAppError(error)] }).payload,
       };
     }
   }
@@ -52,7 +53,7 @@ export function createSettingsStore(storage: () => SettingsStorage) {
         );
         set({ preferences, available: true, error: null });
       } catch (error) {
-        set({ error: `设置未保存: ${String(error)}` });
+        set({ error: new AppError("settings.save", {}, { causes: [toAppError(error)] }).payload });
       }
     }
     return {
@@ -76,6 +77,6 @@ export const useSettingsStore = createSettingsStore(
 
 export function requireSettings(): SettingsPreferences {
   const { preferences, available, error } = useSettingsStore.getState();
-  if (!available) throw new Error(error ?? "设置尚未加载");
+  if (!available) throw error ?? new AppError("settings.unavailable", {});
   return preferences;
 }

@@ -1,3 +1,5 @@
+import { toAppError } from "@/i18n/errors";
+import { useT } from "@/i18n";
 import {
   memo,
   useCallback,
@@ -204,6 +206,7 @@ const LogcatVirtualRows = memo(LogcatVirtualRowsView);
 LogcatVirtualRows.displayName = "LogcatVirtualRows";
 
 export function LogcatList({ visible, loading }: LogcatListProps) {
+  const t = useT();
   const buffer = useLogcatStore((state) => state.buffer);
   const filteredSeqs = useLogcatStore((state) => state.filteredSeqs);
   const filteredHead = useLogcatStore((state) => state.filteredHead);
@@ -342,7 +345,7 @@ export function LogcatList({ visible, loading }: LogcatListProps) {
       try {
         await navigator.clipboard.writeText(text);
       } catch (error) {
-        useFeedbackStore.getState().showToast("error", `复制日志失败: ${String(error)}`);
+        useFeedbackStore.getState().showToast("error", { code: "logcat_copy", causes: [toAppError(error)] });
       }
     }
 
@@ -421,15 +424,15 @@ export function LogcatList({ visible, loading }: LogcatListProps) {
       >
         {loading ? (
           <div className="flex h-full items-center justify-center text-sm text-log-dim">
-            正在连接日志流...
+            {t.logcat.connectingStream}
           </div>
         ) : totalCount === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-log-dim">
-            暂无日志
+            {t.logcat.empty}
           </div>
         ) : filteredCount === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-log-dim">
-            没有匹配当前查询的日志
+            {t.logcat.noMatch}
           </div>
         ) : (
           <LogcatVirtualRows
@@ -456,12 +459,12 @@ export function LogcatList({ visible, loading }: LogcatListProps) {
           type="button"
           onClick={followScroll.scrollToBottom}
           className="absolute bottom-3 right-3 inline-flex h-7 items-center gap-1.5 border border-rule bg-log-bg px-2.5 text-[11px] text-ink shadow-[2px_2px_0_var(--color-hard-shadow)] hover:bg-hover"
-          title="回到底部并跟随"
+          title={t.logcat.follow}
         >
           <ArrowDownToLine className="h-3.5 w-3.5" />
           {streamMode === "live" && detachedNewCount > 0
-            ? `新增 ${detachedNewCount} 行`
-            : "回到底部"}
+            ? t.logcat.newLines({ count: detachedNewCount })
+            : t.logcat.bottom}
         </button>
       )}
     </div>

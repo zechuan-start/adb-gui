@@ -1,3 +1,5 @@
+import { timeOfDay } from "@/i18n/format";
+import { useT, useLocale } from "@/i18n";
 import { useMemo, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   computeAdaptiveDomain,
@@ -69,6 +71,8 @@ interface MetricChartProps {
 }
 
 export function MetricChart({ title, metric, samples, revision }: MetricChartProps) {
+  const t = useT();
+  const locale = useLocale();
   const [hovered, setHovered] = useState<PositionedChartPoint | null>(null);
   const config = METRIC_CONFIG[metric];
   const chart = useMemo(() => {
@@ -153,9 +157,9 @@ export function MetricChart({ title, metric, samples, revision }: MetricChartPro
       areaPaths,
       grid,
       last: positioned[positioned.length - 1] ?? null,
-      spanLabel: points.length > 0 ? `${formatSpanLabel(lastAt - firstAt)} · 1s` : "",
+      spanLabel: points.length > 0 ? `${formatSpanLabel(lastAt - firstAt, t)} · 1s` : "",
     };
-  }, [config, revision, samples]);
+  }, [config, revision, samples, t]);
 
   function handlePointerMove(event: ReactPointerEvent<SVGSVGElement>) {
     if (chart.points.length === 0) {
@@ -173,7 +177,7 @@ export function MetricChart({ title, metric, samples, revision }: MetricChartPro
   }
 
   const readout = hovered
-    ? `${new Date(hovered.atMs).toLocaleTimeString("zh-CN", { hour12: false })} / ${config.formatReadout(hovered.value)}`
+    ? `${timeOfDay(locale).format(hovered.atMs)} / ${config.formatReadout(hovered.value)}`
     : chart.last
       ? config.formatReadout(chart.last.value)
       : "--";
@@ -190,7 +194,7 @@ export function MetricChart({ title, metric, samples, revision }: MetricChartPro
       <div className="relative h-[136px] w-full">
         {chart.points.length === 0 ? (
           <div className="absolute inset-0 flex items-center justify-center font-data text-xs text-ink3">
-            等待数据
+            {t.performance.waitingData}
           </div>
         ) : (
           <div className="pointer-events-none absolute inset-y-0 left-0 w-9" aria-hidden="true">
@@ -211,7 +215,7 @@ export function MetricChart({ title, metric, samples, revision }: MetricChartPro
             preserveAspectRatio="none"
             className="h-full w-full touch-none"
             role="img"
-            aria-label={`${title}曲线`}
+            aria-label={t.performance.chart({ title })}
             onPointerMove={handlePointerMove}
             onPointerLeave={() => setHovered(null)}
           >

@@ -1,3 +1,4 @@
+import { useT, messages, type Messages } from "@/i18n";
 import { useMemo } from "react";
 import { Usb, Wifi } from "lucide-react";
 import {
@@ -29,10 +30,10 @@ function statusSquareClass(state: string | null): string {
   }
 }
 
-export function getDevicePickerOptions(devices: DeviceInfo[]): BlueprintSelectOption[] {
+export function getDevicePickerOptions(devices: DeviceInfo[], t: Messages = messages()): BlueprintSelectOption[] {
   return mergeDevicesByIdentity(getSelectableDevices(devices)).map((merged) => ({
     value: merged.serial,
-    label: `${getDeviceLabel(merged.primary)}, ${merged.serial}, ${getDeviceStateLabel(merged.primary.state)}, ${transportSummary(merged)}`,
+    label: `${getDeviceLabel(merged.primary, t)}, ${merged.serial}, ${getDeviceStateLabel(merged.primary.state, t)}, ${transportSummary(merged, t)}`,
   }));
 }
 
@@ -47,10 +48,11 @@ function TransportIcon({ device, className }: TransportIconProps) {
 }
 
 function TransportBadges({ merged }: { merged: MergedDevice }) {
+  const t = useT();
   const primaryKind = transportKind(merged.primary);
   return (
     <span className="flex items-center gap-1">
-      <span className="sr-only">{transportSummary(merged)}</span>
+      <span className="sr-only">{transportSummary(merged, t)}</span>
       {activeTransports(merged).map((device) => {
         const kind = transportKind(device);
         return (
@@ -69,6 +71,7 @@ function TransportBadges({ merged }: { merged: MergedDevice }) {
 }
 
 export function DevicePicker() {
+  const t = useT();
   const devices = useDeviceStore((state) => state.devices);
   const selectedDevice = useDeviceStore((state) => state.selectedDevice);
   const setSelectedDevice = useDeviceStore((state) => state.setSelectedDevice);
@@ -76,7 +79,7 @@ export function DevicePicker() {
     () => mergeDevicesByIdentity(getSelectableDevices(devices)),
     [devices],
   );
-  const options = useMemo(() => getDevicePickerOptions(devices), [devices]);
+  const options = useMemo(() => getDevicePickerOptions(devices, t), [devices, t]);
 
   function optionMergedDevice(option: BlueprintSelectOption | null): MergedDevice | null {
     return mergedDevices.find((merged) => merged.serial === option?.value) ?? null;
@@ -88,8 +91,8 @@ export function DevicePicker() {
         value={selectedDevice ?? ""}
         options={options}
         onValueChange={(nextValue) => setSelectedDevice(nextValue || null)}
-        ariaLabel="选择设备"
-        emptyLabel="没有检测到设备"
+        ariaLabel={t.shell.topBar.chooseDevice}
+        emptyLabel={t.shell.status.noDevice}
         disabled={options.length === 0}
         className="h-[34px] gap-2.5 bg-transparent px-3 hover:bg-hover active:scale-[0.985] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-note"
         menuClassName="right-auto w-[292px] max-w-[calc(100vw-2rem)]"
@@ -105,8 +108,7 @@ export function DevicePicker() {
                   className="h-[7px] w-[7px] shrink-0 bg-transparent shadow-[inset_0_0_0_1px_var(--color-ink3)]"
                 />
                 <span className="truncate font-sans text-[13px] font-semibold text-ink3">
-                  没有检测到设备
-                </span>
+                  {t.shell.status.noDevice}</span>
               </span>
             );
           }

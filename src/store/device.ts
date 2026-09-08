@@ -1,3 +1,4 @@
+import { toAppError, type AppErrorPayload } from "@/i18n/errors";
 import { create } from "zustand";
 import {
   getDeviceInfo,
@@ -17,7 +18,7 @@ export interface DeviceDetailState {
   serial: string | null;
   detail: DeviceDetail | null;
   loading: boolean;
-  error: string | null;
+  error: AppErrorPayload | null;
 }
 
 interface ActiveDeviceDetailRequest {
@@ -169,7 +170,7 @@ export const useDeviceStore = create<DeviceStore>((set, get) => ({
             serial,
             detail: null,
             loading: false,
-            error: error instanceof Error ? error.message : String(error),
+            error: toAppError(error),
           },
         });
         throw error;

@@ -1,3 +1,4 @@
+use crate::error::AppError;
 use serde::Serialize;
 use tauri::AppHandle;
 
@@ -17,7 +18,7 @@ pub struct DeviceDetail {
 }
 
 #[tauri::command]
-pub fn get_device_info(app: AppHandle, serial: String) -> Result<DeviceDetail, String> {
+pub fn get_device_info(app: AppHandle, serial: String) -> Result<DeviceDetail, AppError> {
     let model = getprop(&app, &serial, "ro.product.model");
     let manufacturer = getprop(&app, &serial, "ro.product.manufacturer");
     let android_version = getprop(&app, &serial, "ro.build.version.release");
@@ -77,7 +78,7 @@ pub(crate) struct ParsedBattery {
 
 pub(crate) fn parse_battery_output(output: &str) -> ParsedBattery {
     let mut level = String::new();
-    let mut status = String::new();
+    let mut status = "unknown".to_string();
     let mut temperature_c = None;
 
     for line in output.lines() {
@@ -91,11 +92,11 @@ pub(crate) fn parse_battery_output(output: &str) -> ParsedBattery {
         } else if trimmed.starts_with("status:") {
             let code = trimmed.strip_prefix("status:").unwrap_or("").trim();
             status = match code {
-                "2" => "充电中".to_string(),
-                "3" => "放电中".to_string(),
-                "4" => "未充电".to_string(),
-                "5" => "已充满".to_string(),
-                _ => code.to_string(),
+                "2" => "charging".to_string(),
+                "3" => "discharging".to_string(),
+                "4" => "not_charging".to_string(),
+                "5" => "full".to_string(),
+                _ => "unknown".to_string(),
             };
         } else if trimmed.starts_with("temperature:") {
             temperature_c = trimmed
@@ -122,7 +123,7 @@ mod tests {
             parse_battery_output("status: 2\nlevel: 87\ntemperature: 321\n"),
             ParsedBattery {
                 level: "87".to_string(),
-                status: "充电中".to_string(),
+                status: "charging".to_string(),
                 temperature_c: Some(32.1),
             }
         );
@@ -134,7 +135,7 @@ mod tests {
             parse_battery_output("status: 9\nlevel: 50\ntemperature: unknown\n"),
             ParsedBattery {
                 level: "50".to_string(),
-                status: "9".to_string(),
+                status: "unknown".to_string(),
                 temperature_c: None,
             }
         );

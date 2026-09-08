@@ -1,0 +1,32 @@
+{
+  "id": "i18n-bilingual",
+  "name": "i18n-bilingual",
+  "title": "界面中英双语与语言设置",
+  "description": "全应用中英双语: 自研 typed catalog, 语言设置项默认跟随系统, 非中文回落英文, 前端与 Rust 后端文案全部可切换.",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "qi",
+  "assignee": "qi",
+  "createdAt": "2026-09-08",
+  "completedAt": "2026-09-08",
+  "branch": "claude/bilingual-project-plan-ng1o7s",
+  "base_branch": "claude/bilingual-project-plan-ng1o7s",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "09-08-i18n-foundation",
+    "09-08-i18n-shell-settings",
+    "09-08-i18n-tool-pages",
+    "09-08-i18n-backend-errors",
+    "09-08-i18n-docs-release"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-09-08: 按用户要求归档翻译实现并提交推送. 前端458测试, Rust135测试, 双语浏览器矩阵及macOS原生冒烟通过. 未实测设备场景及中文错误组合变化保留于validation.md. 空格mDNS解析缺陷将在main独立修复.",
+  "meta": {}
+}
