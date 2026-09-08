@@ -1,3 +1,5 @@
+import { en } from "@/i18n/messages/en";
+import { zhCN } from "@/i18n/messages/zh-CN";
 import { describe, expect, it } from "vitest";
 import type { DeviceDirectoryListing, DeviceFileEntry } from "@/lib/tauri";
 import {
@@ -8,6 +10,7 @@ import {
   deviceTransferSummary,
   deviceFileTypeLabel,
   formatDeviceFileSize,
+  formatDeviceModifiedAt,
   hasLoadedDeviceDirectory,
   invalidateDeviceOperationContext,
   isDeviceDirectoryViewLoading,
@@ -44,8 +47,8 @@ describe("device file helpers", () => {
   it("formats file metadata without changing path semantics", () => {
     expect(formatDeviceFileSize(0)).toBe("0 B");
     expect(formatDeviceFileSize(1536)).toBe("1.5 KiB");
-    expect(deviceFileTypeLabel(imageEntry)).toBe("PNG");
-    expect(deviceFileTypeLabel({ ...imageEntry, kind: "directory" })).toBe("文件夹");
+    expect(deviceFileTypeLabel(imageEntry, zhCN)).toBe("PNG");
+    expect(deviceFileTypeLabel({ ...imageEntry, kind: "directory" }, zhCN)).toBe("文件夹");
     expect(localFileName("C:\\Users\\qi\\photo.png")).toBe("photo.png");
   });
 
@@ -112,7 +115,7 @@ describe("device file helpers", () => {
         status: "success" as const,
         resultName: "a.txt",
         targetPath: "/sdcard/Download/a.txt",
-        error: "",
+        error: null,
       },
       {
         sourcePath: "/tmp/b.txt",
@@ -120,11 +123,11 @@ describe("device file helpers", () => {
         status: "error" as const,
         resultName: "",
         targetPath: "",
-        error: "permission denied",
+        error: { code: "unknown", detail: "permission denied" },
       },
     ];
 
-    expect(deviceTransferSummary({ kind: "upload", status: "finished", items })).toBe(
+    expect(deviceTransferSummary({ kind: "upload", status: "finished", items }, zhCN)).toBe(
       "上传: 1 个成功, 1 个失败",
     );
     expect(
@@ -132,7 +135,7 @@ describe("device file helpers", () => {
         kind: "download",
         status: "finished",
         items: [items[1]],
-      }),
+      }, zhCN),
     ).toBe("下载失败: 1 个");
   });
 });
@@ -222,7 +225,7 @@ describe("deviceFileManagerReducer", () => {
       type: "list-error",
       serial: "device-a",
       requestId: 2,
-      error: "permission denied",
+      error: { code: "unknown", detail: "permission denied" },
     });
 
     expect(state.path).toBe(listing.path);
@@ -277,7 +280,7 @@ describe("deviceFileManagerReducer", () => {
       type: "transfer-item-error",
       serial: "device-a",
       index: 1,
-      error: "permission denied",
+      error: { code: "unknown", detail: "permission denied" },
     });
     state = deviceFileManagerReducer(state, {
       type: "transfer-finish",
@@ -287,4 +290,13 @@ describe("deviceFileManagerReducer", () => {
     expect(state.transfer?.status).toBe("finished");
     expect(state.transfer?.items.map((item) => item.status)).toEqual(["success", "error"]);
   });
+});
+
+
+it("formats device dates and type labels in the selected language", () => {
+  const seconds = new Date(2026, 0, 2, 15, 4).getTime() / 1000;
+  expect(formatDeviceModifiedAt(seconds, "zh-CN")).toBe("2026/01/02 15:04");
+  expect(formatDeviceModifiedAt(seconds, "en")).toBe("01/02/2026, 15:04");
+  expect(deviceFileTypeLabel({ ...imageEntry, kind: "directory" }, en)).toBe(en.files.kinds.directory);
+  expect(deviceFileTypeLabel(imageEntry, en)).toBe("PNG");
 });

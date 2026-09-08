@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { getDevicePickerOptions } from "@/components/layout/DevicePicker";
 import type { DeviceInfo } from "@/lib/tauri";
+import { en } from "@/i18n/messages/en";
+import { zhCN } from "@/i18n/messages/zh-CN";
 
 function device(overrides: Partial<DeviceInfo>): DeviceInfo {
   const serial = overrides.serial ?? "R5CT30ZXJKQ";
@@ -17,6 +19,11 @@ function device(overrides: Partial<DeviceInfo>): DeviceInfo {
 }
 
 describe("getDevicePickerOptions", () => {
+  it("updates accessible state and transport labels without changing devices", () => {
+    const devices = [device({ state: "unauthorized" })];
+    expect(getDevicePickerOptions(devices, zhCN)[0].label).toContain("未授权, USB 连接");
+    expect(getDevicePickerOptions(devices, en)[0].label).toContain("Unauthorized, USB connection");
+  });
   it("keeps model, serial, state, and transport in each accessible label", () => {
     const options = getDevicePickerOptions([
       device({}),

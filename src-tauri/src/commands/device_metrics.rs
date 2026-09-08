@@ -1,3 +1,4 @@
+use crate::{error::AppError, error_codes as codes};
 use std::collections::{HashMap, HashSet};
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
@@ -102,7 +103,7 @@ pub struct DeviceMetricsExit {
     pub serial: String,
     pub session_id: u64,
     pub reason: String,
-    pub detail: String,
+    pub detail: Option<AppError>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -245,29 +246,31 @@ fn parse_initialization(line: &str) -> Option<(u64, u32)> {
     Some((page_size, core_count))
 }
 
-fn parse_cpu_snapshot(line: &str) -> Result<CpuSnapshot, String> {
+fn parse_cpu_snapshot(line: &str) -> Result<CpuSnapshot, AppError> {
     let mut fields = line.split_whitespace();
     if fields.next() != Some("cpu") {
-        return Err("CPU frame is missing the aggregate cpu row".to_string());
+        return Err(AppError::new(codes::METRICS_MISSING_CPU_ROW));
     }
     let values = fields
         .map(|value| {
-            value
-                .parse::<u64>()
-                .map_err(|error| format!("invalid CPU counter {value}: {error}"))
+            value.parse::<u64>().map_err(|error| {
+                AppError::new(codes::METRICS_INVALID_CPU_COUNTER)
+                    .param("value", value)
+                    .detail(error.to_string())
+            })
         })
         .collect::<Result<Vec<_>, _>>()?;
     if values.len() < 4 {
-        return Err("CPU frame has fewer than four counters".to_string());
+        return Err(AppError::new(codes::METRICS_MISSING_CPU_COUNTERS));
     }
     // guest and guest_nice are already included in user and nice.
     let total = values.iter().take(8).try_fold(0_u64, |sum, value| {
         sum.checked_add(*value)
-            .ok_or_else(|| "CPU counter total overflowed".to_string())
+            .ok_or_else(|| AppError::new(codes::METRICS_CPU_TOTAL_OVERFLOW))
     })?;
     let idle = values[3]
         .checked_add(values.get(4).copied().unwrap_or(0))
-        .ok_or_else(|| "CPU idle counter overflowed".to_string())?;
+        .ok_or_else(|| AppError::new(codes::METRICS_CPU_IDLE_OVERFLOW))?;
     Ok(CpuSnapshot { total, idle })
 }
 
@@ -280,7 +283,7 @@ fn cpu_percent(previous: CpuSnapshot, current: CpuSnapshot) -> Option<f32> {
     Some((total_delta - idle_delta) as f32 * 100.0 / total_delta as f32)
 }
 
-fn parse_memory(lines: &[String]) -> Result<MemoryUsage, String> {
+fn parse_memory(lines: &[String]) -> Result<MemoryUsage, AppError> {
     let mut total_kb: Option<u64> = None;
     let mut available_kb: Option<u64> = None;
     let mut free_kb: Option<u64> = None;
@@ -303,16 +306,14 @@ fn parse_memory(lines: &[String]) -> Result<MemoryUsage, String> {
             _ => {}
         }
     }
-    let total_kb = total_kb.ok_or_else(|| "Memory frame is missing MemTotal".to_string())?;
+    let total_kb = total_kb.ok_or_else(|| AppError::new(codes::METRICS_MISSING_MEM_TOTAL))?;
     let available_kb = match available_kb {
         Some(value) => value,
         None => free_kb
             .zip(buffers_kb)
             .zip(cached_kb)
             .and_then(|((free, buffers), cached)| free.checked_add(buffers)?.checked_add(cached))
-            .ok_or_else(|| {
-                "Memory frame is missing MemAvailable and its fallback fields".to_string()
-            })?,
+            .ok_or_else(|| AppError::new(codes::METRICS_MISSING_MEM_AVAILABLE))?,
     };
     Ok(MemoryUsage {
         total_kb,
@@ -321,36 +322,36 @@ fn parse_memory(lines: &[String]) -> Result<MemoryUsage, String> {
     })
 }
 
-fn parse_process_snapshot(line: &str) -> Result<ProcessSnapshot, String> {
+fn parse_process_snapshot(line: &str) -> Result<ProcessSnapshot, AppError> {
     let open = line
         .find('(')
-        .ok_or_else(|| "process stat is missing '('".to_string())?;
+        .ok_or_else(|| AppError::new(codes::METRICS_MISSING_PROCESS_OPEN))?;
     let close = line
         .rfind(')')
         .filter(|index| *index > open)
-        .ok_or_else(|| "process stat is missing ')'".to_string())?;
+        .ok_or_else(|| AppError::new(codes::METRICS_MISSING_PROCESS_CLOSE))?;
     let pid = line[..open].trim();
     if pid.is_empty() || !pid.bytes().all(|byte| byte.is_ascii_digit()) {
-        return Err("process stat has an invalid pid".to_string());
+        return Err(AppError::new(codes::METRICS_INVALID_PID));
     }
     let comm = &line[open + 1..close];
     let fields = line[close + 1..].split_whitespace().collect::<Vec<_>>();
     if fields.len() <= 21 {
-        return Err("process stat has too few fields".to_string());
+        return Err(AppError::new(codes::METRICS_MISSING_PROCESS_FIELDS));
     }
     let utime = fields[11]
         .parse::<u64>()
-        .map_err(|error| format!("invalid process utime: {error}"))?;
+        .map_err(|error| AppError::new(codes::METRICS_INVALID_UTIME).detail(error.to_string()))?;
     let stime = fields[12]
         .parse::<u64>()
-        .map_err(|error| format!("invalid process stime: {error}"))?;
+        .map_err(|error| AppError::new(codes::METRICS_INVALID_STIME).detail(error.to_string()))?;
     let rss_pages = fields[21]
         .parse::<i64>()
-        .map_err(|error| format!("invalid process RSS: {error}"))?
+        .map_err(|error| AppError::new(codes::METRICS_INVALID_RSS).detail(error.to_string()))?
         .max(0) as u64;
-    let start_time = fields[19]
-        .parse::<u64>()
-        .map_err(|error| format!("invalid process start time: {error}"))?;
+    let start_time = fields[19].parse::<u64>().map_err(|error| {
+        AppError::new(codes::METRICS_INVALID_START_TIME).detail(error.to_string())
+    })?;
     Ok(ProcessSnapshot {
         pid: pid.to_string(),
         comm: comm.to_string(),
@@ -425,11 +426,11 @@ fn parse_frame(
     state: &mut MetricsState,
     serial: &str,
     session_id: u64,
-) -> Result<DeviceMetricsFrame, String> {
+) -> Result<DeviceMetricsFrame, AppError> {
     let current_cpu = parse_cpu_snapshot(
         raw.cpu
             .as_deref()
-            .ok_or_else(|| "Metrics frame is missing CPU data".to_string())?,
+            .ok_or_else(|| AppError::new(codes::METRICS_MISSING_CPU_DATA))?,
     )?;
     let memory = parse_memory(&raw.memory)?;
     let cpu = state
@@ -496,12 +497,10 @@ fn append_stderr_tail(tail: &mut Vec<u8>, bytes: &[u8]) {
     tail.drain(..start);
 }
 
-fn build_exit_detail(read_error: Option<&str>, stderr_detail: &str) -> String {
-    match (read_error, stderr_detail.is_empty()) {
-        (Some(error), true) => error.to_string(),
-        (Some(error), false) => format!("{error}\n{stderr_detail}"),
-        (None, true) => "Device metrics process exited (stdout EOF)".to_string(),
-        (None, false) => stderr_detail.to_string(),
+fn build_exit_detail(read_error: Option<AppError>, stderr_detail: &str) -> AppError {
+    match read_error {
+        Some(error) => error.detail(stderr_detail),
+        None => AppError::new(codes::METRICS_EOF).detail(stderr_detail),
     }
 }
 
@@ -528,48 +527,50 @@ where
     Ok(Some(line))
 }
 
-async fn stop_metrics_session(mut session: DeviceMetricsSession) -> Result<(), String> {
+async fn stop_metrics_session(mut session: DeviceMetricsSession) -> Result<(), AppError> {
     let session_id = session.session_id;
     let kill_error = session.child.start_kill().err();
     let wait_error = match tokio::time::timeout(CHILD_SHUTDOWN_TIMEOUT, session.child.wait()).await
     {
         Ok(Ok(_)) => None,
-        Ok(Err(error)) => Some(format!("wait failed: {error}")),
-        Err(_) => Some("wait timed out".to_string()),
+        Ok(Err(error)) => Some(AppError::new(codes::METRICS_WAIT_FAILED).detail(error.to_string())),
+        Err(_) => Some(AppError::new(codes::METRICS_WAIT_TIMEOUT)),
     };
-    match (kill_error, wait_error) {
-        (_, None) => Ok(()),
-        (None, Some(wait_error)) => {
-            Err(format!("Device metrics session {session_id} {wait_error}"))
-        }
-        (Some(kill_error), Some(wait_error)) => Err(format!(
-            "Device metrics session {session_id} kill failed: {kill_error}; {wait_error}"
-        )),
+    let Some(wait_error) = wait_error else {
+        return Ok(());
+    };
+    let mut error = AppError::new(codes::METRICS_STOP_FAILED)
+        .param("session", session_id)
+        .cause(wait_error);
+    if let Some(kill_error) = kill_error {
+        error =
+            error.cause(AppError::new(codes::METRICS_KILL_FAILED).detail(kill_error.to_string()));
     }
+    Err(error)
 }
 
 #[tauri::command]
 pub async fn start_device_metrics(
     app: AppHandle,
     serial: String,
-) -> Result<DeviceMetricsSessionInfo, String> {
+) -> Result<DeviceMetricsSessionInfo, AppError> {
     let _start_guard = METRICS_START_LOCK.lock().await;
     if METRICS_SHUTTING_DOWN.load(Ordering::SeqCst) {
-        return Err("Device metrics session rejected: application is shutting down".to_string());
+        return Err(AppError::new(codes::METRICS_SHUTTING_DOWN));
     }
 
     let session_id = NEXT_SESSION_ID
         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
             current.checked_add(1)
         })
-        .map_err(|_| "Device metrics session ID exhausted".to_string())?;
+        .map_err(|_| AppError::new(codes::METRICS_SESSION_ID_EXHAUSTED))?;
     let adb_path = adb::resolve_adb_path(&app)?;
     let previous = METRICS_SESSION.lock().await.take();
     if let Some(previous) = previous {
         stop_metrics_session(previous).await?;
     }
     if METRICS_SHUTTING_DOWN.load(Ordering::SeqCst) {
-        return Err("Device metrics session rejected: application is shutting down".to_string());
+        return Err(AppError::new(codes::METRICS_SHUTTING_DOWN));
     }
 
     let mut child = adb::prepare_async_command(&app, &adb_path)
@@ -581,29 +582,29 @@ pub async fn start_device_metrics(
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|error| format!("Failed to start device metrics: {error}"))?;
+        .map_err(|error| AppError::new(codes::METRICS_START_FAILED).detail(error.to_string()))?;
 
     let stdout = match child.stdout.take() {
         Some(stdout) => stdout,
         None => {
             let _ = child.kill().await;
-            return Err("Failed to capture device metrics stdout".to_string());
+            return Err(AppError::new(codes::METRICS_MISSING_STDOUT));
         }
     };
     let stderr = match child.stderr.take() {
         Some(stderr) => stderr,
         None => {
             let _ = child.kill().await;
-            return Err("Failed to capture device metrics stderr".to_string());
+            return Err(AppError::new(codes::METRICS_MISSING_STDERR));
         }
     };
 
     let registration = {
         let mut active = METRICS_SESSION.lock().await;
         if METRICS_SHUTTING_DOWN.load(Ordering::SeqCst) {
-            Err((child, "application is shutting down"))
+            Err((child, AppError::new(codes::METRICS_SHUTTING_DOWN)))
         } else if active.is_some() {
-            Err((child, "another session became active while restarting"))
+            Err((child, AppError::new(codes::METRICS_SUPERSEDED)))
         } else {
             *active = Some(DeviceMetricsSession {
                 serial: serial.clone(),
@@ -621,12 +622,13 @@ pub async fn start_device_metrics(
         })
         .await;
         return match cleanup {
-            Ok(()) => Err(format!(
-                "Device metrics session {session_id} rejected: {reason}"
-            )),
-            Err(error) => Err(format!(
-                "Device metrics session {session_id} rejected because {reason}; {error}"
-            )),
+            Ok(()) => Err(AppError::new(codes::METRICS_REJECTED)
+                .param("session", session_id)
+                .cause(reason)),
+            Err(error) => Err(AppError::new(codes::METRICS_REJECTED)
+                .param("session", session_id)
+                .cause(reason)
+                .cause(error)),
         };
     }
 
@@ -685,7 +687,10 @@ pub async fn start_device_metrics(
                 }
                 Err(error) => {
                     decoder.discard_incomplete();
-                    break ("error", Some(error.to_string()));
+                    break (
+                        "error",
+                        Some(AppError::new(codes::METRICS_READ_FAILED).detail(error.to_string())),
+                    );
                 }
             }
         };
@@ -710,14 +715,14 @@ pub async fn start_device_metrics(
         let stderr_detail = String::from_utf8_lossy(&stderr_tail.lock().await)
             .trim()
             .to_string();
-        let detail = build_exit_detail(read_error.as_deref(), &stderr_detail);
+        let detail = build_exit_detail(read_error, &stderr_detail);
         if let Err(error) = app_clone.emit(
             "device-metrics-exit",
             DeviceMetricsExit {
                 serial: reader_serial,
                 session_id,
                 reason: reason.to_string(),
-                detail,
+                detail: Some(detail),
             },
         ) {
             eprintln!("failed to emit device metrics exit: {error}");
@@ -728,7 +733,7 @@ pub async fn start_device_metrics(
 }
 
 #[tauri::command]
-pub async fn stop_device_metrics(serial: String, session_id: u64) -> Result<(), String> {
+pub async fn stop_device_metrics(serial: String, session_id: u64) -> Result<(), AppError> {
     let session = {
         let mut active = METRICS_SESSION.lock().await;
         if active
@@ -746,7 +751,7 @@ pub async fn stop_device_metrics(serial: String, session_id: u64) -> Result<(), 
     Ok(())
 }
 
-pub async fn shutdown_device_metrics_sessions() -> Result<(), String> {
+pub async fn shutdown_device_metrics_sessions() -> Result<(), AppError> {
     METRICS_SHUTTING_DOWN.store(true, Ordering::SeqCst);
     let _start_guard = METRICS_START_LOCK.lock().await;
     let session = METRICS_SESSION.lock().await.take();
@@ -758,6 +763,19 @@ pub async fn shutdown_device_metrics_sessions() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn exit_payload_keeps_protocol_failure_and_raw_device_diagnostics() {
+        use super::build_exit_detail;
+        use crate::error_codes as codes;
+        let parse_error = parse_cpu_snapshot("not a CPU frame").unwrap_err();
+        let exit = build_exit_detail(Some(parse_error), "error: device offline");
+        assert_eq!(exit.code, codes::METRICS_MISSING_CPU_ROW);
+        assert_eq!(exit.detail.as_deref(), Some("error: device offline"));
+        let eof = build_exit_detail(None, "");
+        assert_eq!(eof.code, codes::METRICS_EOF);
+        assert!(eof.detail.is_none());
+    }
+
     use super::{
         build_process_usage, cpu_percent, parse_cpu_snapshot, parse_initialization, parse_memory,
         parse_process_snapshot, CpuSnapshot, DecodedMetricsLine, MetricsFrameDecoder,

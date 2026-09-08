@@ -1,3 +1,4 @@
+import { useT } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import { ClipboardCopy, RefreshCw, Send } from "lucide-react";
 import {
@@ -20,6 +21,7 @@ import { useDeviceStore } from "@/store/device";
 import { useFeedbackStore } from "@/store/feedback";
 
 export function ClipboardTool() {
+  const t = useT();
   const devices = useDeviceStore((s) => s.devices);
   const selected = useDeviceStore((s) => s.selectedDevice);
   const device = getDeviceBySerial(devices, selected);
@@ -39,9 +41,9 @@ export function ClipboardTool() {
       onSuccess: (direction) =>
         showToast(
           "success",
-          direction === "to-device"
-            ? "文本已发送到手机剪贴板"
-            : "手机文本已复制到电脑剪贴板",
+          (t) => (direction === "to-device"
+            ? t.tools.clipboardTool.textSentToTheDeviceClipboard
+            : t.tools.clipboardTool.deviceTextCopiedToTheComputerClipboard),
         ),
       onError: (message) => showToast("error", message),
     });
@@ -67,8 +69,8 @@ export function ClipboardTool() {
       <div className="grid h-9 grid-cols-2 gap-2">
         {(
           [
-            { direction: "to-device", label: "发送到手机", icon: Send },
-            { direction: "to-host", label: "复制到电脑", icon: ClipboardCopy },
+            { direction: "to-device", label: t.tools.clipboardTool.sendToDevice, icon: Send },
+            { direction: "to-host", label: t.tools.clipboardTool.copyToComputer, icon: ClipboardCopy },
           ] as const
         ).map(({ direction, label, icon: Icon }) => (
           <button
@@ -91,7 +93,7 @@ export function ClipboardTool() {
         className="min-h-8 break-words border-y border-dashed border-rule2 py-2 text-[11px] text-ink2"
         title={device ? getDeviceDisplayLabel(device) : undefined}
       >
-        {device ? getDeviceDisplayLabel(device) : "未连接设备"}
+        {device ? getDeviceDisplayLabel(device) : t.tools.clipboardTool.noDeviceConnected}
       </div>
     </div>
   );

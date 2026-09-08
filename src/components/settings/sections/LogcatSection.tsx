@@ -1,3 +1,4 @@
+import { useT } from "@/i18n";
 import {
   SettingRow,
   SettingsFieldset,
@@ -17,19 +18,21 @@ import { logcatPreset, STARTUP_OPTIONS } from "@/lib/settings";
 import { useSettingsStore } from "@/store/settings";
 import { useUiStore, type PaneId } from "@/store/ui";
 
+
+
+export function LogcatSection() {
+  const t = useT();
 const FORMAT_OPTIONS: ReadonlyArray<{ value: ViewFormat; label: string }> = [
-  { value: "standard", label: "标准" },
-  { value: "compact", label: "紧凑" },
+  { value: "standard", label: t.settings.logcat.standard },
+  { value: "compact", label: t.settings.logcat.compact },
 ];
 
 const COLUMN_OPTIONS: ReadonlyArray<{ value: LogcatColumn; label: string }> =
   LOGCAT_COLUMNS.map(({ column, label }) => ({ value: column, label }));
 
 const LOG_PANE_OPTIONS = STARTUP_OPTIONS.filter(
-  (item): item is { value: PaneId; label: string } => item.value !== "last",
+  (item) => item.value !== "last",
 );
-
-export function LogcatSection() {
   const preferences = useSettingsStore((s) => s.preferences);
   const available = useSettingsStore((s) => s.available);
   const update = useSettingsStore((s) => s.update);
@@ -49,7 +52,7 @@ export function LogcatSection() {
             value={format}
             options={FORMAT_OPTIONS}
             disabled={!available}
-            ariaLabel="显示格式"
+            ariaLabel={t.settings.rows.logcatFormat.label}
             onChange={(nextFormat) =>
               update("logcat", {
                 ...preferences.logcat,
@@ -63,7 +66,7 @@ export function LogcatSection() {
             options={COLUMN_OPTIONS}
             selected={preferences.logcat.columns}
             disabled={!available}
-            ariaLabel="显示列"
+            ariaLabel={t.settings.rows.logcatColumns.label}
             onToggle={(column, selected) =>
               update("logcat", {
                 ...preferences.logcat,
@@ -103,9 +106,9 @@ export function LogcatSection() {
       {/* Pane visibility belongs to the window store and remains editable. */}
       <SettingRow id="logPanes" layout="stacked">
         <ChipGroup
-          options={LOG_PANE_OPTIONS}
+          options={LOG_PANE_OPTIONS.map(option => ({ value: option.value as PaneId, label: option.label(t) }))}
           selected={logOpen}
-          ariaLabel="显示日志的工作区"
+          ariaLabel={t.settings.rows.logPanes.label}
           onToggle={setLogOpen}
         />
       </SettingRow>

@@ -1,3 +1,4 @@
+use crate::{error::AppError, error_codes as codes};
 use serde::{Deserialize, Serialize};
 use std::process::Stdio;
 use std::time::Duration;
@@ -47,7 +48,7 @@ struct Request<'a> {
 pub async fn get_device_clipboard(
     app: AppHandle,
     serial: String,
-) -> Result<ClipboardResult, String> {
+) -> Result<ClipboardResult, AppError> {
     run(&app, &serial, None).await
 }
 
@@ -56,21 +57,21 @@ pub async fn set_device_clipboard(
     app: AppHandle,
     serial: String,
     text: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     run(&app, &serial, Some(&text)).await.map(|_| ())
 }
 
-fn validate_text(text: &str) -> Result<(), String> {
+fn validate_text(text: &str) -> Result<(), AppError> {
     if text.is_empty() {
-        return Err("剪贴板没有可用文本".to_string());
+        return Err(AppError::new(codes::CLIPBOARD_NO_TEXT));
     }
     if text.len() > MAX_TEXT_BYTES {
-        return Err("剪贴板文本超过 256 KiB 限制".to_string());
+        return Err(AppError::new(codes::CLIPBOARD_TOO_LARGE));
     }
     Ok(())
 }
 
-fn encode_request(text: Option<&str>) -> Result<Vec<u8>, String> {
+fn encode_request(text: Option<&str>) -> Result<Vec<u8>, AppError> {
     if let Some(text) = text {
         validate_text(text)?;
     }
@@ -79,17 +80,23 @@ fn encode_request(text: Option<&str>) -> Result<Vec<u8>, String> {
         operation: if text.is_some() { "set" } else { "get" },
         text,
     })
-    .map_err(|_| "无法编码剪贴板请求".to_string())
+    .map_err(|error| AppError::new(codes::CLIPBOARD_ENCODE_FAILED).detail(error.to_string()))
 }
 
-async fn run(app: &AppHandle, serial: &str, text: Option<&str>) -> Result<ClipboardResult, String> {
+async fn run(
+    app: &AppHandle,
+    serial: &str,
+    text: Option<&str>,
+) -> Result<ClipboardResult, AppError> {
     let request = encode_request(text)?;
     let local = device_helper::resolve_app_info_dex_path(app)?;
-    let dex = std::fs::read(&local).map_err(|_| "无法读取剪贴板 DEX".to_string())?;
+    let dex = std::fs::read(&local).map_err(|error| {
+        AppError::new(codes::CLIPBOARD_READ_DEX_FAILED).detail(error.to_string())
+    })?;
     let remote = device_helper::remote_dex_path(device_helper::fnv1a_64(&dex));
     device_helper::ensure_dex_pushed(app, serial, &local, &remote, dex.len() as u64, false)
         .await
-        .map_err(|error| format!("准备剪贴板 DEX 失败: {error}"))?;
+        .map_err(|error| AppError::new(codes::CLIPBOARD_PREPARE_DEX_FAILED).cause(error))?;
     let adb_path = adb::resolve_adb_path(app)?;
     let mut command = adb::prepare_async_command(app, &adb_path);
     command.args([
@@ -109,7 +116,7 @@ async fn run(app: &AppHandle, serial: &str, text: Option<&str>) -> Result<Clipbo
     .await;
     result.map_err(|error| {
         if text.is_some() {
-            format!("{error}. 本次写入结果未确认, 不会自动重试")
+            AppError::new(codes::CLIPBOARD_WRITE_UNCONFIRMED).cause(error)
         } else {
             error
         }
@@ -120,15 +127,17 @@ fn helper_command(remote: &str) -> String {
     format!("CLASSPATH={remote} /system/bin/toybox timeout -s KILL {DEVICE_TIMEOUT_SECS} app_process /data/local/tmp com.adbgui.clipboard.Main")
 }
 
-async fn read_bounded(reader: impl AsyncRead + Unpin, limit: usize) -> Result<Vec<u8>, String> {
+async fn read_bounded(reader: impl AsyncRead + Unpin, limit: usize) -> Result<Vec<u8>, AppError> {
     let mut output = Vec::new();
     reader
         .take(limit as u64 + 1)
         .read_to_end(&mut output)
         .await
-        .map_err(|_| "读取剪贴板进程输出失败".to_string())?;
+        .map_err(|error| {
+            AppError::new(codes::CLIPBOARD_READ_OUTPUT_FAILED).detail(error.to_string())
+        })?;
     if output.len() > limit {
-        return Err("剪贴板进程输出超过限制".to_string());
+        return Err(AppError::new(codes::CLIPBOARD_OUTPUT_TOO_LARGE));
     }
     Ok(output)
 }
@@ -137,34 +146,41 @@ async fn exchange(
     command: &mut tokio::process::Command,
     request: &[u8],
     timeout: Duration,
-) -> Result<(bool, Vec<u8>), String> {
+) -> Result<(bool, Vec<u8>), AppError> {
     let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|_| "无法启动剪贴板进程".to_string())?;
-    let mut stdin = child.stdin.take().ok_or("缺少剪贴板输入管道")?;
-    let stdout = child.stdout.take().ok_or("缺少剪贴板输出管道")?;
-    let stderr = child.stderr.take().ok_or("缺少剪贴板错误管道")?;
+        .map_err(|error| AppError::new(codes::CLIPBOARD_START_FAILED).detail(error.to_string()))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| AppError::new(codes::CLIPBOARD_MISSING_STDIN))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| AppError::new(codes::CLIPBOARD_MISSING_STDOUT))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| AppError::new(codes::CLIPBOARD_MISSING_STDERR))?;
     let result = tokio::time::timeout(timeout, async {
         tokio::try_join!(
             async {
-                stdin
-                    .write_all(request)
-                    .await
-                    .map_err(|_| "发送剪贴板请求失败".to_string())?;
+                stdin.write_all(request).await.map_err(|error| {
+                    AppError::new(codes::CLIPBOARD_SEND_FAILED).detail(error.to_string())
+                })?;
                 drop(stdin);
-                Ok::<_, String>(())
+                Ok::<_, AppError>(())
             },
             read_bounded(stdout, MAX_WIRE_BYTES),
             read_bounded(stderr, 4096),
             async {
-                child
-                    .wait()
-                    .await
-                    .map_err(|_| "等待剪贴板进程失败".to_string())
+                child.wait().await.map_err(|error| {
+                    AppError::new(codes::CLIPBOARD_WAIT_FAILED).detail(error.to_string())
+                })
             },
         )
     })
@@ -172,21 +188,27 @@ async fn exchange(
     let error = match result {
         Ok(Ok(((), stdout, _stderr, status))) => return Ok((status.success(), stdout)),
         Ok(Err(error)) => error,
-        Err(_) => "剪贴板操作超时".to_string(),
+        Err(_) => AppError::new(codes::CLIPBOARD_TIMEOUT),
     };
-    child
-        .kill()
-        .await
-        .map_err(|_| format!("{error}; 终止剪贴板进程失败"))?;
-    child
-        .wait()
-        .await
-        .map_err(|_| format!("{error}; 回收剪贴板进程失败"))?;
+    child.kill().await.map_err(|cleanup| {
+        AppError::new(codes::CLIPBOARD_KILL_FAILED)
+            .detail(cleanup.to_string())
+            .cause(error.clone())
+    })?;
+    child.wait().await.map_err(|cleanup| {
+        AppError::new(codes::CLIPBOARD_REAP_FAILED)
+            .detail(cleanup.to_string())
+            .cause(error.clone())
+    })?;
     Err(error)
 }
 
-fn parse_response(stdout: &[u8], success: bool, writing: bool) -> Result<ClipboardResult, String> {
-    let invalid = || "剪贴板助手响应无效或版本不兼容".to_string();
+fn parse_response(
+    stdout: &[u8],
+    success: bool,
+    writing: bool,
+) -> Result<ClipboardResult, AppError> {
+    let invalid = || AppError::new(codes::CLIPBOARD_INVALID_RESPONSE);
     if stdout.len() > MAX_WIRE_BYTES {
         return Err(invalid());
     }
@@ -215,20 +237,19 @@ fn parse_response(stdout: &[u8], success: bool, writing: bool) -> Result<Clipboa
             return Err(invalid());
         }
         let error = envelope.error.ok_or_else(invalid)?;
-        return Err(match error.code.as_str() {
-            "locked" => "手机已锁屏, 请解锁后重试",
-            "user" => "仅支持主用户的剪贴板",
-            "permission" | "identity" => "系统拒绝 shell 剪贴板访问",
-            "no_text" => "手机剪贴板没有可用文本",
-            "too_large" => "剪贴板文本超过 256 KiB 限制",
-            "unverified" => "手机未返回一致的写入内容",
-            "request" | "version" => "剪贴板协议不兼容",
-            _ => "此设备不支持当前剪贴板助手",
-        }
-        .to_string());
+        return Err(AppError::new(match error.code.as_str() {
+            "locked" => codes::CLIPBOARD_LOCKED,
+            "user" => codes::CLIPBOARD_USER,
+            "permission" | "identity" => codes::CLIPBOARD_PERMISSION,
+            "no_text" => codes::CLIPBOARD_DEVICE_NO_TEXT,
+            "too_large" => codes::CLIPBOARD_TOO_LARGE,
+            "unverified" => codes::CLIPBOARD_UNVERIFIED,
+            "request" | "version" => codes::CLIPBOARD_PROTOCOL,
+            _ => codes::CLIPBOARD_UNSUPPORTED,
+        }));
     }
     if !success {
-        return Err("剪贴板进程未正常退出, 请检查设备连接".to_string());
+        return Err(AppError::new(codes::CLIPBOARD_ABNORMAL_EXIT));
     }
     if envelope.error.is_some() {
         return Err(invalid());
@@ -288,7 +309,7 @@ mod tests {
             serde_json::json!({"version":1,"ok":false}),
         ] {
             let error = parse_response(&response(json), true, true).unwrap_err();
-            assert!(!error.contains("secret"));
+            assert!(!serde_json::to_string(&error).unwrap().contains("secret"));
         }
         let output =
             response(serde_json::json!({"version":1,"ok":true,"result":{"kind":"written"}}));
@@ -305,9 +326,10 @@ mod tests {
     fn surfaces_locked_and_no_text_without_fabricating_success() {
         let locked =
             response(serde_json::json!({"version":1,"ok":false,"error":{"code":"locked"}}));
-        assert!(parse_response(&locked, false, false)
-            .unwrap_err()
-            .contains("锁屏"));
+        assert_eq!(
+            parse_response(&locked, false, false).unwrap_err().code,
+            codes::CLIPBOARD_LOCKED
+        );
         let empty =
             response(serde_json::json!({"version":1,"ok":true,"result":{"kind":"no_text"}}));
         assert_eq!(
@@ -328,15 +350,21 @@ mod tests {
         assert_eq!(input, output);
         let mut slow = tokio::process::Command::new("/bin/sleep");
         slow.arg("2");
-        assert!(exchange(&mut slow, b"", Duration::from_millis(20))
-            .await
-            .unwrap_err()
-            .contains("超时"));
+        assert_eq!(
+            exchange(&mut slow, b"", Duration::from_millis(20))
+                .await
+                .unwrap_err()
+                .code,
+            codes::CLIPBOARD_TIMEOUT
+        );
         let mut noisy = tokio::process::Command::new("/bin/sh");
         noisy.args(["-c", "head -c 5000 /dev/zero >&2"]);
-        assert!(exchange(&mut noisy, b"", Duration::from_secs(2))
-            .await
-            .unwrap_err()
-            .contains("超过限制"));
+        assert_eq!(
+            exchange(&mut noisy, b"", Duration::from_secs(2))
+                .await
+                .unwrap_err()
+                .code,
+            codes::CLIPBOARD_OUTPUT_TOO_LARGE
+        );
     }
 }

@@ -37,3 +37,12 @@
 ## 测试现状
 
 `ownership.test.tsx`, `StatusBanner.test.tsx`, `settingsSections.test.ts` 等 22 个测试文件直接断言中文字面量 (例如 `expect(html).toContain("设备未授权")`). 迁移后这类断言改为引用 `zh-CN` 词典的同一条目, 文案调整不再破坏测试.
+
+## 原生菜单语言初始化补充 (2026-09-08)
+
+- 当前 `src-tauri/src/lib.rs` 的 `macos_menu` 与 `builder.menu(macos_menu)` 均受 `cfg(target_os = "macos")` 限定. 设置菜单项保留 `open-settings` ID 与 `Cmd+,` 快捷键, 语言初始化只更换其文本来源.
+- 当前 `Cargo.toml` / `Cargo.lock` 未引入 `sys-locale` 或 `tauri-plugin-os`. 检索本机锁定的 Tauri 2.11.3 源码未发现可直接复用的公开系统首选语言读取接口.
+- 已核对上游 [sys-locale v0.3.2 API](https://github.com/1Password/sys-locale/blob/v0.3.2/src/lib.rs): `get_locales()` 按偏好顺序返回 BCP 47 标签, 读取不到时返回空迭代器; `get_locale()` 等价于取首项.
+- 已核对 [macOS 实现](https://github.com/1Password/sys-locale/blob/v0.3.2/src/apple.rs): 调用 CoreFoundation 的 `CFLocaleCopyPreferredLanguages`, 不依赖启动 shell 的语言环境变量.
+- 决策: 实现阶段将 `sys-locale = "0.3.2"` 加入 macOS target dependencies. 初始化菜单时按与前端一致的首选语言规则处理; 前端就绪后仅由前端生效语言驱动更新. 不新增 OS 插件或项目自有 FFI.
+- 本次完成源码与文档核对, 未添加依赖, 未进行原生菜单运行验证. 实施时须覆盖系统初值, 显式偏好不同的冷启动和后续切换.

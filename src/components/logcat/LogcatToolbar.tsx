@@ -1,3 +1,4 @@
+import { useT } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import { ListCollapse, WrapText } from "lucide-react";
 import type { LogcatPackageResolutionState } from "@/hooks/useLogcatPackageResolution";
@@ -25,6 +26,7 @@ export function LogcatToolbar({
   exportSerial,
   packageResolution,
 }: LogcatToolbarProps) {
+  const t = useT();
   const toolbarRef = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
   const totalCount = useLogcatStore((state) => state.totalCount);
@@ -61,17 +63,17 @@ export function LogcatToolbar({
   }, []);
 
   const status = streamState === "disconnected"
-    ? { label: "已断开", tone: "bg-err" }
+    ? { label: t.logcat.disconnectedStatus, tone: "bg-err" }
     : streamState === "starting"
-      ? { label: "连接中", tone: "bg-ink3" }
+      ? { label: t.logcat.connecting, tone: "bg-ink3" }
       : streamMode === "paused"
         ? {
-            label: pausedBacklog > 0 ? `暂停 +${pausedBacklog}` : "已暂停",
+            label: pausedBacklog > 0 ? t.logcat.pausedCount({ count: pausedBacklog }) : t.logcat.paused,
             tone: "bg-warn",
           }
         : streamState === "live"
-          ? { label: "实时", tone: "bg-ok" }
-          : { label: "等待设备", tone: "bg-ink3" };
+          ? { label: t.logcat.live, tone: "bg-ok" }
+          : { label: t.logcat.waitingDevice, tone: "bg-ink3" };
 
   return (
     <div
@@ -105,7 +107,7 @@ export function LogcatToolbar({
             "inline-flex h-7 w-7 items-center justify-center border border-rule text-log-dim hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40",
             autoFold && "border-note bg-note/15 text-note",
           )}
-          title={autoFold ? "关闭自动折叠堆栈" : "自动折叠堆栈"}
+          title={autoFold ? t.logcat.disableAutoFold : t.logcat.autoFold}
         >
           <ListCollapse className="h-3.5 w-3.5" />
         </button>
@@ -118,7 +120,7 @@ export function LogcatToolbar({
             "inline-flex h-7 w-7 items-center justify-center border border-rule text-log-dim hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40",
             softWrap && "border-note bg-note/15 text-note",
           )}
-          title={softWrap ? "关闭 Soft-Wrap" : "开启 Soft-Wrap"}
+          title={softWrap ? t.logcat.disableWrap : t.logcat.enableWrap}
         >
           <WrapText className="h-3.5 w-3.5" />
         </button>

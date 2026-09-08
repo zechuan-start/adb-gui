@@ -1,3 +1,5 @@
+import { AppError, type AppErrorPayload } from "@/i18n/errors";
+import type { Messages } from "@/i18n";
 import {
   COMPACT_COLUMNS,
   LOGCAT_COLUMNS,
@@ -13,20 +15,20 @@ import {
 } from "@/lib/codeGenerator";
 
 export const SORT_DIRECTIONS = [
-  { value: "asc", label: "升序" },
-  { value: "desc", label: "降序" },
+  { value: "asc", label: (t: Messages) => t.settings.sort.asc },
+  { value: "desc", label: (t: Messages) => t.settings.sort.desc },
 ] as const;
 export const FILE_SORT_OPTIONS = [
-  { value: "name", label: "名称" },
-  { value: "modifiedAt", label: "修改时间" },
-  { value: "size", label: "大小" },
+  { value: "name", label: (t: Messages) => t.settings.sort.name },
+  { value: "modifiedAt", label: (t: Messages) => t.settings.sort.modifiedAt },
+  { value: "size", label: (t: Messages) => t.settings.sort.size },
 ] as const;
 export const APP_SORT_OPTIONS = [
-  { value: "name", label: "应用名称" },
-  { value: "packageName", label: "包名" },
-  { value: "firstInstallTime", label: "安装时间" },
-  { value: "lastUpdateTime", label: "更新时间" },
-  { value: "apkSize", label: "APK 大小" },
+  { value: "name", label: (t: Messages) => t.settings.sort.appName },
+  { value: "packageName", label: (t: Messages) => t.settings.sort.packageName },
+  { value: "firstInstallTime", label: (t: Messages) => t.settings.sort.firstInstallTime },
+  { value: "lastUpdateTime", label: (t: Messages) => t.settings.sort.lastUpdateTime },
+  { value: "apkSize", label: (t: Messages) => t.settings.sort.apkSize },
 ] as const;
 export type SortDirection = (typeof SORT_DIRECTIONS)[number]["value"];
 export interface FilePreferences {
@@ -45,15 +47,15 @@ export const SETTINGS_STORAGE_KEY = "adb-gui-settings";
 export const SETTINGS_VERSION = 1;
 export const STARTUP_OPTIONS: ReadonlyArray<{
   value: "last" | PaneId;
-  label: string;
+  label: (t: Messages) => string;
 }> = [
-  { value: "last", label: "恢复上次页面" },
-  { value: "tools", label: "工具" },
-  { value: "apps", label: "应用" },
-  { value: "files", label: "文件" },
-  { value: "codegen", label: "生码" },
-  { value: "decoder", label: "解码" },
-  { value: "perf", label: "性能" },
+  { value: "last", label: (t: Messages) => t.settings.startup.last },
+  { value: "tools", label: (t: Messages) => t.shell.workspace.tools },
+  { value: "apps", label: (t: Messages) => t.shell.workspace.apps },
+  { value: "files", label: (t: Messages) => t.shell.workspace.files },
+  { value: "codegen", label: (t: Messages) => t.shell.workspace.codegen },
+  { value: "decoder", label: (t: Messages) => t.shell.workspace.decoder },
+  { value: "perf", label: (t: Messages) => t.shell.workspace.perf },
 ];
 
 export interface SaveBehavior {
@@ -108,7 +110,7 @@ export function defaultSettings(): SettingsPreferences {
 
 function record(value: unknown): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("设置格式无效");
+    throw new AppError("settings.invalidFormat", {});
   }
   return value as Record<string, unknown>;
 }
@@ -123,7 +125,7 @@ function flag(
   initial: boolean,
 ): boolean {
   if (source[key] === undefined) return initial;
-  if (typeof source[key] !== "boolean") throw new Error(`设置字段 ${key} 无效`);
+  if (typeof source[key] !== "boolean") throw new AppError("settings.invalidField", { key });
   return source[key];
 }
 
@@ -135,7 +137,7 @@ function choice<T extends string>(
 ): T {
   if (source[key] === undefined) return initial;
   const option = options.find(({ value }) => value === source[key]);
-  if (!option) throw new Error(`设置字段 ${key} 无效`);
+  if (!option) throw new AppError("settings.invalidField", { key });
   return option.value;
 }
 
@@ -145,13 +147,13 @@ function text(
   initial: string,
 ): string {
   if (source[key] === undefined) return initial;
-  if (typeof source[key] !== "string") throw new Error(`设置字段 ${key} 无效`);
+  if (typeof source[key] !== "string") throw new AppError("settings.invalidField", { key });
   return source[key];
 }
 
-export function deviceStartDirectoryError(path: string): string | null {
+export function deviceStartDirectoryError(path: string): AppErrorPayload | null {
   return !path.startsWith("/") || path.includes("\0")
-    ? "请输入不含 NUL 的 Android 绝对路径"
+    ? { code: "settings.directoryInput" }
     : null;
 }
 
@@ -159,7 +161,7 @@ function startDirectory(source: Record<string, unknown>): string | null {
   const path = source.startDirectory;
   if (path === undefined || path === null) return null;
   if (typeof path !== "string" || deviceStartDirectoryError(path))
-    throw new Error("文件起始目录设置无效");
+    throw new AppError("settings.invalidStartDirectory", {});
   return path;
 }
 
@@ -181,12 +183,12 @@ export function migrateSettings(
     version < 1 ||
     version > SETTINGS_VERSION
   ) {
-    throw new Error("不支持此设置版本");
+    throw new AppError("settings.unsupportedVersion", {});
   }
   let migrated = record(settings);
   for (let from = version; from < SETTINGS_VERSION; from += 1) {
     const migrate = MIGRATIONS[from];
-    if (!migrate) throw new Error("不支持此设置版本");
+    if (!migrate) throw new AppError("settings.unsupportedVersion", {});
     migrated = record(migrate(migrated));
   }
   return migrated;
@@ -213,7 +215,7 @@ export function decodeSettings(raw: string | null): SettingsPreferences {
       captureDirectory.length === 0 ||
       captureDirectory.includes("\0"))
   ) {
-    throw new Error("截图录屏保存目录设置无效");
+    throw new AppError("settings.invalidCaptureDirectory", {});
   }
   const files = group(source.files);
   const apps = group(source.apps);
@@ -225,7 +227,7 @@ export function decodeSettings(raw: string | null): SettingsPreferences {
   const startup = STARTUP_OPTIONS.find(
     (option) => option.value === startupPane,
   );
-  if (!startup) throw new Error("启动页面设置无效");
+  if (!startup) throw new AppError("settings.invalidStartup", {});
   return {
     capture: {
       directory: captureDirectory === undefined ? null : captureDirectory,

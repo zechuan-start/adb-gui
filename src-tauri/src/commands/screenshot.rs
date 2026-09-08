@@ -1,3 +1,4 @@
+use crate::{error::AppError, error_codes as codes};
 use tauri::{image::Image, AppHandle};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_opener::OpenerExt;
@@ -19,12 +20,12 @@ pub async fn take_screenshot(
     serial: String,
     behavior: ScreenshotBehavior,
     destination: CaptureDestination,
-) -> Result<ScreenshotResult, String> {
+) -> Result<ScreenshotResult, AppError> {
     tauri::async_runtime::spawn_blocking(move || {
         save_screenshot(app, serial, behavior, destination)
     })
     .await
-    .map_err(|error| format!("截图任务失败: {error}"))?
+    .map_err(|error| AppError::new(codes::SCREENSHOT_WORKER_FAILED).detail(error.to_string()))?
 }
 
 fn save_screenshot(
@@ -32,11 +33,12 @@ fn save_screenshot(
     serial: String,
     behavior: ScreenshotBehavior,
     destination: CaptureDestination,
-) -> Result<ScreenshotResult, String> {
+) -> Result<ScreenshotResult, AppError> {
     let file_path = capture_target(&destination, &serial, &capture_id()?, "png")?;
     let mut output = CaptureOutput::new(&file_path)?;
     let png = capture_screenshot(&app, &serial)?;
-    Image::from_bytes(&png).map_err(|error| format!("截图 PNG 无效: {error}"))?;
+    Image::from_bytes(&png)
+        .map_err(|error| AppError::new(codes::SCREENSHOT_INVALID_PNG).detail(error.to_string()))?;
     output.write(&png)?;
     output.verify_size(png.len() as u64)?;
     output.publish(false)?;
@@ -57,16 +59,17 @@ fn save_screenshot(
 }
 
 #[tauri::command]
-pub fn copy_screenshot(app: AppHandle, serial: String) -> Result<(), String> {
+pub fn copy_screenshot(app: AppHandle, serial: String) -> Result<(), AppError> {
     let png = capture_screenshot(&app, &serial)?;
-    let image = Image::from_bytes(&png).map_err(|e| format!("Failed to decode screenshot: {e}"))?;
+    let image = Image::from_bytes(&png)
+        .map_err(|e| AppError::new(codes::SCREENSHOT_DECODE_FAILED).detail(e.to_string()))?;
 
     app.clipboard()
         .write_image(&image)
-        .map_err(|e| format!("Failed to copy screenshot: {e}"))
+        .map_err(|e| AppError::new(codes::SCREENSHOT_COPY_FAILED).detail(e.to_string()))
 }
 
-fn capture_screenshot(app: &AppHandle, serial: &str) -> Result<Vec<u8>, String> {
+fn capture_screenshot(app: &AppHandle, serial: &str) -> Result<Vec<u8>, AppError> {
     let adb_path = adb::resolve_adb_path(app)?;
 
     let output = adb::prepare_command(app, &adb_path)
@@ -76,10 +79,10 @@ fn capture_screenshot(app: &AppHandle, serial: &str) -> Result<Vec<u8>, String> 
         .arg("screencap")
         .arg("-p")
         .output()
-        .map_err(|e| format!("Failed to take screenshot: {e}"))?;
+        .map_err(|e| AppError::new(codes::SCREENSHOT_CAPTURE_FAILED).detail(e.to_string()))?;
 
     if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        return Err(super::device::adb_output_error(&output));
     }
 
     Ok(output.stdout)

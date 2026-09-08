@@ -1,3 +1,5 @@
+import { toAppError } from "@/i18n/errors";
+import { useT } from "@/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowDownToLine,
@@ -40,6 +42,7 @@ export function LogcatActions({
   onToggleMaximized,
   onHide,
 }: LogcatActionsProps) {
+  const t = useT();
   const showToast = useFeedbackStore((state) => state.showToast);
   const totalCount = useLogcatStore((state) => state.totalCount);
   const streamMode = useLogcatStore((state) => state.streamMode);
@@ -109,9 +112,9 @@ export function LogcatActions({
     }
     try {
       const result = await exportLogcat(exportSerial, rawLines.join("\n"));
-      showToast("success", `日志已导出到 ${result.path}`);
+      showToast("success", (t) => t.logcat.exported({ path: result.path }));
     } catch (error) {
-      showToast("error", `导出日志失败: ${String(error)}`);
+      showToast("error", { code: "logcat_export", causes: [toAppError(error)] });
     } finally {
       closeMenu();
     }
@@ -128,9 +131,9 @@ export function LogcatActions({
     setClearingDevice(true);
     try {
       await clearLogcat(serial);
-      showToast("success", "设备日志缓冲区已清空");
+      showToast("success", (t) => t.logcat.clearedDevice);
     } catch (error) {
-      showToast("error", `清空设备日志缓冲区失败: ${String(error)}`);
+      showToast("error", { code: "logcat_clear", causes: [toAppError(error)] });
     } finally {
       setClearingDevice(false);
       closeMenu();
@@ -164,7 +167,7 @@ export function LogcatActions({
         onClick={streamMode === "paused" ? resume : pause}
         disabled={!serial}
         className={cn(ACTION_BUTTON, streamMode === "paused" && "border-warn bg-warn-band text-warn")}
-        title={streamMode === "paused" ? "恢复日志流" : "暂停日志流"}
+        title={streamMode === "paused" ? t.logcat.resumeStream : t.logcat.pauseStream}
       >
         {streamMode === "paused" ? (
           <Play className="h-3.5 w-3.5" />
@@ -177,14 +180,14 @@ export function LogcatActions({
         onClick={() => setFollowMode("follow")}
         disabled={followMode === "follow" || totalCount === 0}
         className={ACTION_BUTTON}
-        title="回到底部并跟随"
+        title={t.logcat.follow}
       >
         <ArrowDownToLine className="h-3.5 w-3.5" />
       </button>
 
       {!compact && (
         <>
-          <button type="button" onClick={restart} disabled={!serial} className={ACTION_BUTTON} title="清空并重连">
+          <button type="button" onClick={restart} disabled={!serial} className={ACTION_BUTTON} title={t.logcat.restart}>
             <RotateCcw className="h-3.5 w-3.5" />
           </button>
           <button
@@ -192,22 +195,22 @@ export function LogcatActions({
             onClick={() => void handleExport()}
             disabled={!exportSerial || filteredCount === 0}
             className={ACTION_BUTTON}
-            title="导出当前过滤结果"
+            title={t.logcat.export}
           >
             <Download className="h-3.5 w-3.5" />
           </button>
-          <button type="button" onClick={clearScreen} disabled={totalCount === 0} className={ACTION_BUTTON} title="清屏">
+          <button type="button" onClick={clearScreen} disabled={totalCount === 0} className={ACTION_BUTTON} title={t.logcat.clearScreen}>
             <Eraser className="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
             onClick={onToggleMaximized}
             className={ACTION_BUTTON}
-            title={maximized ? "还原日志面板" : "铺满日志面板"}
+            title={maximized ? t.logcat.restore : t.logcat.maximize}
           >
             {maximized ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
           </button>
-          <button type="button" onClick={onHide} className={ACTION_BUTTON} title="隐藏日志面板">
+          <button type="button" onClick={onHide} className={ACTION_BUTTON} title={t.logcat.hide}>
             <PanelBottomClose className="h-3.5 w-3.5" />
           </button>
         </>
@@ -222,7 +225,7 @@ export function LogcatActions({
           aria-controls="logcat-more-menu"
           onClick={() => menuOpen ? closeMenu() : setMenuOpen(true)}
           className={ACTION_BUTTON}
-          title="更多操作"
+          title={t.logcat.more}
         >
           <MoreHorizontal className="h-3.5 w-3.5" />
         </button>
@@ -235,21 +238,21 @@ export function LogcatActions({
             {compact && (
               <>
                 <button ref={firstMenuItemRef} type="button" role="menuitem" disabled={!serial} onClick={handleRestart} className={MENU_ITEM}>
-                  <RotateCcw className="h-3.5 w-3.5" /> 清空并重连
+                  <RotateCcw className="h-3.5 w-3.5" /> {t.logcat.restart}
                 </button>
                 <button type="button" role="menuitem" disabled={!exportSerial || filteredCount === 0} onClick={() => void handleExport()} className={MENU_ITEM}>
-                  <Download className="h-3.5 w-3.5" /> 导出过滤结果
+                  <Download className="h-3.5 w-3.5" /> {t.logcat.exportMenu}
                 </button>
                 <button type="button" role="menuitem" disabled={totalCount === 0} onClick={handleClearScreen} className={MENU_ITEM}>
-                  <Eraser className="h-3.5 w-3.5" /> 清屏
+                  <Eraser className="h-3.5 w-3.5" /> {t.logcat.clearScreen}
                 </button>
                 <div className="my-1 border-t border-rule" />
                 <button type="button" role="menuitem" onClick={handleToggleMaximized} className={MENU_ITEM}>
                   {maximized ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-                  {maximized ? "还原日志面板" : "铺满日志面板"}
+                  {maximized ? t.logcat.restore : t.logcat.maximize}
                 </button>
                 <button type="button" role="menuitem" onClick={handleHide} className={MENU_ITEM}>
-                  <PanelBottomClose className="h-3.5 w-3.5" /> 隐藏日志面板
+                  <PanelBottomClose className="h-3.5 w-3.5" /> {t.logcat.hide}
                 </button>
                 <div className="my-1 border-t border-rule" />
               </>
@@ -264,13 +267,13 @@ export function LogcatActions({
             >
               <Eraser className="h-3.5 w-3.5" />
               {clearingDevice
-                ? "正在清空设备缓冲区..."
+                ? t.logcat.clearingDevice
                 : confirmClearDevice
-                  ? "确认清空设备缓冲区?"
-                  : "清空设备日志缓冲区"}
+                  ? t.logcat.confirmClear
+                  : t.logcat.clearDevice}
             </button>
             {confirmClearDevice && (
-              <p className="px-2.5 pb-2 text-[10px] text-err">再次点击以执行, 该操作不可恢复.</p>
+              <p className="px-2.5 pb-2 text-[10px] text-err">{t.logcat.irreversible}</p>
             )}
           </div>
         )}

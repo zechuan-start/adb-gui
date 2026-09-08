@@ -1,3 +1,4 @@
+import type { AppErrorPayload } from "@/i18n/errors";
 import { create } from "zustand";
 import {
   LOGCAT_CAPACITY,
@@ -37,7 +38,7 @@ export interface LogcatStore {
   serial: string | null;
   sessionId: number | null;
   streamState: LogcatStreamState;
-  disconnectDetail: string;
+  disconnectDetail: AppErrorPayload | null;
   buffer: LogcatRingBuffer;
   filteredSeqs: number[];
   filteredHead: number;
@@ -61,7 +62,7 @@ export interface LogcatStore {
   processMapUpdatedAt: number;
   processMapLoading: boolean;
   processMapKey: string | null;
-  processMapError: string | null;
+  processMapError: AppErrorPayload | null;
   expandedCrashSeqs: Set<number>;
   pendingLines: PendingLogcatLine[];
   pendingHead: number;
@@ -71,12 +72,12 @@ export interface LogcatStore {
   flushFrame: (
     lines: BackendLogcatLine[],
     sessionId: number,
-    disconnectDetail: string | null,
+    disconnectDetail: AppErrorPayload | null,
   ) => void;
   appendBatch: (lines: BackendLogcatLine[], sessionId: number) => void;
-  markDisconnected: (sessionId: number, detail: string) => void;
-  markDeviceUnavailable: (detail: string) => void;
-  failStart: (detail: string) => void;
+  markDisconnected: (sessionId: number, detail: AppErrorPayload) => void;
+  markDeviceUnavailable: (detail: AppErrorPayload) => void;
+  failStart: (detail: AppErrorPayload) => void;
   setStreamState: (state: LogcatStreamState) => void;
   setQueryInput: (value: string) => void;
   commitQuery: (value: string) => void;
@@ -89,7 +90,7 @@ export interface LogcatStore {
     entries: ProcessEntry[],
     updatedAt: number,
   ) => void;
-  failProcessMapRefresh: (key: string, error: string) => void;
+  failProcessMapRefresh: (key: string, error: AppErrorPayload) => void;
   clearProcessMap: () => void;
   setFollowMode: (mode: LogcatFollowMode) => void;
   setAnchoredSeq: (seq: number | null) => void;
@@ -119,7 +120,7 @@ function retainedExpandedCrashSeqs(state: LogcatStore): Set<number> {
 
 function sameCompileFailure(left: CompileFailure | null, right: CompileFailure): boolean {
   return left !== null &&
-    left.message === right.message &&
+    JSON.stringify(left.error) === JSON.stringify(right.error) &&
     left.start === right.start &&
     left.end === right.end;
 }
@@ -266,7 +267,7 @@ function applyStreamFrame(
   state: LogcatStore,
   lines: BackendLogcatLine[],
   sessionId: number,
-  disconnectDetail: string | null,
+  disconnectDetail: AppErrorPayload | null,
 ): Partial<LogcatStore> | LogcatStore {
   if (state.sessionId !== sessionId) {
     return state;
@@ -337,7 +338,7 @@ export const useLogcatStore = create<LogcatStore>((set) => ({
   serial: null,
   sessionId: null,
   streamState: "idle",
-  disconnectDetail: "",
+  disconnectDetail: null,
   buffer: new LogcatRingBuffer(),
   filteredSeqs: [],
   filteredHead: 0,
@@ -368,7 +369,7 @@ export const useLogcatStore = create<LogcatStore>((set) => ({
   nextSeq: 0,
   restartNonce: 0,
   beginSession: (serial, sessionId) => {
-    set({ serial, sessionId, streamState: "live", disconnectDetail: "" });
+    set({ serial, sessionId, streamState: "live", disconnectDetail: null });
   },
   flushFrame: (lines, sessionId, disconnectDetail) => {
     if (lines.length === 0 && disconnectDetail === null) {
@@ -647,7 +648,7 @@ export const useLogcatStore = create<LogcatStore>((set) => ({
       return {
         sessionId: null,
         streamState: "starting",
-        disconnectDetail: "",
+        disconnectDetail: null,
         filteredHead: 0,
         pendingHead: 0,
         totalCount: 0,
@@ -674,7 +675,7 @@ export const useLogcatStore = create<LogcatStore>((set) => ({
       serial: null,
       sessionId: null,
       streamState: "idle",
-      disconnectDetail: "",
+      disconnectDetail: null,
       buffer: new LogcatRingBuffer(),
       filteredSeqs: [],
       filteredHead: 0,

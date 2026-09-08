@@ -11,12 +11,13 @@
   const BACKFILL_FRAMES = 180;
   const LOG_BACKFILL_LINES = 320;
   const LOG_STEP_MS = 420;
-  const LOG_TAIL_INTERVAL_MS = 1200;
 
   const callbacks = new Map();
   const listeners = new Map();
   let nextCallbackId = 1;
   let nextSessionId = 1;
+  const calls = {};
+  window.__ADB_GUI_MOCK_CALLS = calls;
 
   function transformCallback(callback, once = false) {
     const id = nextCallbackId++;
@@ -171,7 +172,7 @@
       resolution: "1080x2400",
       density: "420",
       battery_level: "76",
-      battery_status: "充电中",
+      battery_status: "charging",
     },
     [SECOND_SERIAL]: {
       model: "Xiaomi 14",
@@ -182,7 +183,7 @@
       resolution: "1200x2670",
       density: "440",
       battery_level: "63",
-      battery_status: "放电中",
+      battery_status: "discharging",
     },
   };
 
@@ -376,21 +377,11 @@
       lines.push(makeLogLine(level, tag, message, crashAt));
     }
 
-    // Backfill the buffer, then keep a slow live tail so the stream reads as "实时".
+    // Publish one deterministic snapshot. The session stays connected without a live tail.
     timers.push(
       setTimeout(() => {
         emit("logcat-batch", { serial, session_id: sessionId, lines });
       }, 120),
-    );
-    const nextTailLine = createLogGenerator(77777, NOW);
-    timers.push(
-      setInterval(() => {
-        emit("logcat-batch", {
-          serial,
-          session_id: sessionId,
-          lines: [nextTailLine()],
-        });
-      }, LOG_TAIL_INTERVAL_MS),
     );
     return { serial, session_id: sessionId };
   }
@@ -413,7 +404,7 @@
         available_kb: totalKb - usedKb,
         used_kb: usedKb,
       },
-      battery: { level: "76", status: "充电中", temperature_c: 31.4 },
+      battery: { level: "76", status: "charging", temperature_c: 31.4 },
       processes: METRIC_PROCESSES.map(([pid, comm, cpuPercent, rssKb], processIndex) => ({
         pid,
         comm,
@@ -434,7 +425,7 @@
     let index = 0;
     timers.push(
       setTimeout(() => {
-        const startedAt = Date.now() - BACKFILL_FRAMES * FRAME_INTERVAL_MS;
+        const startedAt = NOW - BACKFILL_FRAMES * FRAME_INTERVAL_MS;
         for (; index < BACKFILL_FRAMES; index += 1) {
           emit(
             "device-metrics-frame",
@@ -442,12 +433,6 @@
           );
         }
       }, 80),
-    );
-    timers.push(
-      setInterval(() => {
-        emit("device-metrics-frame", metricsFrame(serial, sessionId, Date.now(), index, random));
-        index += 1;
-      }, FRAME_INTERVAL_MS),
     );
     return { serial, session_id: sessionId };
   }
@@ -465,6 +450,7 @@
   }
 
   const COMMANDS = {
+    resolve_capture_directory: ({ destination }) => destination.kind === "directory" ? destination.path : "/Users/dev/Downloads",
     get_adb_info: () => ({
       path: "/Users/dev/Library/Android/sdk/platform-tools/adb",
       version: "36.0.0-13206524",
@@ -509,10 +495,8 @@
       },
     ],
     get_screen_record_status: () => ({
-      active: false,
-      serial: null,
-      elapsed_secs: 0,
-      pending_pull: false,
+      phase: "idle", session_id: null, serial: null, elapsed_secs: 0,
+      local_path: null, remote_path: null, error: null, attempted_path: null,
     }),
     start_logcat: ({ serial }) => startLogcatSession(serial),
     stop_logcat: ({ sessionId }) => {
@@ -528,6 +512,7 @@
   };
 
   function invoke(cmd, args = {}) {
+    calls[cmd] = (calls[cmd] ?? 0) + 1;
     if (cmd === "plugin:event|listen") {
       const ids = listeners.get(args.event) ?? new Set();
       ids.add(args.handler);
@@ -537,6 +522,10 @@
     if (cmd === "plugin:event|unlisten") {
       listeners.get(args.event)?.delete(args.eventId);
       callbacks.delete(args.eventId);
+      return Promise.resolve(null);
+    }
+    if (cmd === "plugin:event|emit") {
+      emit(args.event, args.payload);
       return Promise.resolve(null);
     }
     if (cmd === "plugin:updater|check") {
@@ -553,8 +542,7 @@
     }
     const handler = COMMANDS[cmd];
     if (!handler) {
-      console.warn(`[mock-tauri] unhandled command: ${cmd}`);
-      return Promise.resolve(null);
+      return Promise.reject({ code: "unknown", detail: `Unhandled documentation mock command: ${cmd}` });
     }
     return Promise.resolve(handler(args));
   }

@@ -1,3 +1,4 @@
+import { useT } from "@/i18n";
 import { ArrowDown, ArrowUp, Settings } from "lucide-react";
 import { BlueprintSelect } from "@/components/BlueprintSelect";
 import { SettingRow } from "@/components/settings/SettingRow";
@@ -46,11 +47,12 @@ export function SortPreferences({
   section: SortSection;
   showSettings?: boolean;
 }) {
+  const t = useT();
   const preferences = useSettingsStore((state) => state.preferences[section]);
   const available = useSettingsStore((state) => state.available);
   const openSettings = useUiStore((state) => state.openSettings);
   const ascending = preferences.sortDirection === "asc";
-  const label = section === "files" ? "文件" : "应用";
+  const label = section === "files" ? t.shell.workspace.files : t.shell.workspace.apps;
   const buttonClass =
     "flex h-7 w-7 shrink-0 items-center justify-center border border-rule text-ink2 hover:bg-hover disabled:opacity-40";
 
@@ -58,9 +60,9 @@ export function SortPreferences({
     <div className="flex shrink-0 items-center gap-1">
       <BlueprintSelect
         value={preferences.sortBy}
-        options={section === "files" ? FILE_SORT_OPTIONS : APP_SORT_OPTIONS}
+        options={(section === "files" ? FILE_SORT_OPTIONS : APP_SORT_OPTIONS).map(option => ({ ...option, label: option.label(t) }))}
         disabled={!available}
-        ariaLabel={`${label}排序`}
+        ariaLabel={t.settings.sort.by({ label })}
         containerClassName="w-28"
         onValueChange={(value) => setSortBy(section, value)}
       />
@@ -68,8 +70,8 @@ export function SortPreferences({
         type="button"
         disabled={!available}
         className={buttonClass}
-        title={ascending ? "升序, 切换为降序" : "降序, 切换为升序"}
-        aria-label={`${label}${ascending ? "升序, 切换为降序" : "降序, 切换为升序"}`}
+        title={ascending ? t.settings.sort.ascendingAction : t.settings.sort.descendingAction}
+        aria-label={t.settings.sort.action({ label, action: ascending ? t.settings.sort.ascendingAction : t.settings.sort.descendingAction })}
         onClick={() =>
           setSortDirection(section, ascending ? "desc" : "asc")
         }
@@ -83,8 +85,8 @@ export function SortPreferences({
       {showSettings && (
         <button
           type="button"
-          title={`${label}设置`}
-          aria-label={`${label}设置`}
+          title={t.settings.sort.settings({ label })}
+          aria-label={t.settings.sort.settings({ label })}
           className={buttonClass}
           onClick={() => openSettings(section)}
         >
@@ -96,27 +98,28 @@ export function SortPreferences({
 }
 
 export function SortRow({ section }: { section: SortSection }) {
+  const t = useT();
   const preferences = useSettingsStore((state) => state.preferences[section]);
   const available = useSettingsStore((state) => state.available);
-  const label = section === "files" ? "文件" : "应用";
+  const label = section === "files" ? t.shell.workspace.files : t.shell.workspace.apps;
 
   return (
     <SettingRow id={section === "files" ? "fileSort" : "appSort"}>
       <div className="flex min-w-0 items-center gap-2">
         <BlueprintSelect
           value={preferences.sortBy}
-          options={section === "files" ? FILE_SORT_OPTIONS : APP_SORT_OPTIONS}
+          options={(section === "files" ? FILE_SORT_OPTIONS : APP_SORT_OPTIONS).map(option => ({ ...option, label: option.label(t) }))}
           disabled={!available}
-          ariaLabel={`${label}排序字段`}
+          ariaLabel={t.settings.sort.field({ label })}
           containerClassName="w-32"
           className="h-8"
           onValueChange={(value) => setSortBy(section, value)}
         />
         <SegmentedControl
           value={preferences.sortDirection}
-          options={SORT_DIRECTIONS}
+          options={SORT_DIRECTIONS.map(option => ({ ...option, label: option.label(t) }))}
           disabled={!available}
-          ariaLabel={`${label}排序方向`}
+          ariaLabel={t.settings.sort.direction({ label })}
           onChange={(value) => setSortDirection(section, value)}
         />
       </div>

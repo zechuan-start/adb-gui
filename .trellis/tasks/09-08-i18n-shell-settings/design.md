@@ -49,9 +49,9 @@ export type ToastBody =
 
 调用方从 `showToast("success", "已复制")` 变为 `showToast("success", (m) => m.common.copied)`.
 
-## 设置搜索
+## 设置导航
 
-`SettingsDialog` 的搜索目前对中文 label/description 做匹配. 迁移后匹配对象改为"当前语言下求值出来的 label/description", 因此搜索天然跟随语言. 需确认匹配前统一 `toLowerCase()`, 否则英文大小写会漏匹配.
+当前 `SettingsDialog` 为六分组连续滚动布局, 已移除搜索. 翻译注册表标签并保留锚点导航, scrollspy, 方向键, Tab 和 Escape. 不为旧规划重新加入搜索.
 
 ## 原生对话框
 

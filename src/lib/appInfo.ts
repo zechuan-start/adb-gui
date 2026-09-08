@@ -1,10 +1,6 @@
 import type { AppIconEntry, AppInfo } from "@/lib/tauri";
 import type { AppPreferences } from "@/lib/settings";
 
-const APP_NAME_COLLATOR = new Intl.Collator("zh-CN", {
-  numeric: true,
-  sensitivity: "base",
-});
 
 export function appDisplayName(app: AppInfo): string {
   return app.appName.trim() || app.packageName;
@@ -23,9 +19,9 @@ export function fallbackAppInfo(packageName: string): AppInfo {
   };
 }
 
-export function sortAppInfo(apps: AppInfo[], preferences: AppPreferences): AppInfo[] {
+export function sortAppInfo(apps: AppInfo[], preferences: AppPreferences, collator: Intl.Collator): AppInfo[] {
   return [...apps].sort((left, right) => {
-    const byName = APP_NAME_COLLATOR.compare(appDisplayName(left), appDisplayName(right));
+    const byName = collator.compare(appDisplayName(left), appDisplayName(right));
     const tie = byName || left.packageName.localeCompare(right.packageName);
     const direction = preferences.sortDirection === "asc" ? 1 : -1;
     if (preferences.sortBy === "name") return byName * direction || left.packageName.localeCompare(right.packageName);

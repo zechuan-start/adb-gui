@@ -3,7 +3,7 @@
   "name": "i18n-shell-settings",
   "title": "框架与设置面板文案迁移",
   "description": "AppShell/TopBar/IndexRail/StatusBanner/DevicePicker 与 settings 全部分组文案接入词典.",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -12,7 +12,7 @@
   "assignee": "qi",
   "createdAt": "2026-09-08",
   "completedAt": null,
-  "branch": null,
+  "branch": "claude/bilingual-project-plan-ng1o7s",
   "base_branch": "claude/bilingual-project-plan-ng1o7s",
   "worktree_path": null,
   "commit": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": "09-08-i18n-bilingual",
   "relatedFiles": [],
-  "notes": "",
+  "notes": "2026-09-08: 按用户要求归档翻译实现并提交推送. 前端458测试, Rust135测试, 双语浏览器矩阵及macOS原生冒烟通过. 未实测设备场景及中文错误组合变化保留于validation.md. 空格mDNS解析缺陷将在main独立修复.",
   "meta": {}
 }

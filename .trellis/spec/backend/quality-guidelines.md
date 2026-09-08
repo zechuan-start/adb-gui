@@ -21,7 +21,7 @@
 
 ## Required Patterns
 
-- 所有 `#[tauri::command]` 函数返回 `Result<T, String>`.
+- Return `Result<T, AppError>` from fallible `#[tauri::command]` functions. Follow [Error Handling](./error-handling.md) for code/params/detail/causes and catalog parity.
 - ADB 调用统一通过 `run_adb` / `run_adb_with_serial` helper.
 - 跨平台兼容: 使用 `cfg!(target_os = "...")` 处理平台差异.
 - 新 command 必须在 `lib.rs` 的 `generate_handler!` 中注册.
@@ -58,14 +58,14 @@ Rust commands and pure helpers use colocated `#[cfg(test)]` unit tests. Verifica
 - `new_command(program: &str) -> std::process::Command`
 - `prepare_command(app: &AppHandle, adb_path: &str) -> std::process::Command`
 - `prepare_async_command(app: &AppHandle, adb_path: &str) -> tokio::process::Command`
-- `which_adb() -> Result<String, String>` must create `where` / `which` through the shared synchronous constructor.
+- `which_adb() -> Result<String, AppError>` must create `where` / `which` through the shared synchronous constructor.
 
 ### 3. Contracts
 
 - On Windows, every host console process created by the ADB infrastructure uses `CREATE_NO_WINDOW` (`0x08000000`).
 - Both `std::process::Command` and `tokio::process::Command` paths have the same hidden-window behavior.
 - On macOS and Linux, command creation remains unchanged.
-- Process arguments, exit status, stdout, stderr, and existing `Result<T, String>` behavior are unchanged.
+- Process arguments, exit status, stdout, stderr, and command success/failure semantics remain unchanged by the shared process constructor; errors follow the structured `AppError` contract.
 
 ### 4. Validation & Error Matrix
 
@@ -112,7 +112,7 @@ command.creation_flags(CREATE_NO_WINDOW);
 
 ### 2. Signatures
 
-- Runtime cleanup helper: `shutdown_embedded_adb_server(app: &AppHandle) -> Result<(), String>`.
+- Runtime cleanup helper: `shutdown_embedded_adb_server(app: &AppHandle) -> Result<(), AppError>`.
 - NSIS lifecycle hooks: `!macro NSIS_HOOK_PREINSTALL` and `!macro NSIS_HOOK_PREUNINSTALL`, registered through `bundle.windows.nsis.installerHooks`.
 - Graceful server command: `<installed resource dir>/windows/adb.exe kill-server`.
 
@@ -184,8 +184,8 @@ nsExec::ExecToLog 'taskkill /IM adb.exe /F'
 ### 2. Signatures
 
 - Java entry point: `com.adbgui.appinfo.Main.main(String[] args)`.
-- Rust command: `get_installed_apps(app: AppHandle, serial: String) -> Result<Vec<AppInfo>, String>`.
-- Rust command: `get_installed_app_icons(app: AppHandle, serial: String, packages: Option<Vec<String>>) -> Result<Vec<AppIconEntry>, String>`.
+- Rust command: `get_installed_apps(app: AppHandle, serial: String) -> Result<Vec<AppInfo>, AppError>`.
+- Rust command: `get_installed_app_icons(app: AppHandle, serial: String, packages: Option<Vec<String>>) -> Result<Vec<AppIconEntry>, AppError>`.
 - Frontend bridge: `getInstalledApps(serial: string) -> Promise<AppInfo[]>`.
 - Frontend bridge: `getInstalledAppIcons(serial: string, packages?: string[]) -> Promise<AppIconEntry[]>`.
 - `AppInfo { packageName, appName, versionName, versionCode, icon, firstInstallTime, lastUpdateTime, apkSize }`.
@@ -270,8 +270,8 @@ Sequential guarded batches bound lock occupancy and prevent stale device writes;
 
 ### 2. Signatures
 
-- `read_app_info_cache(app: AppHandle, device_key: String) -> Result<Vec<AppInfo>, String>` with `#[tauri::command(async)]`.
-- `write_app_info_cache(app: AppHandle, device_key: String, apps: Vec<AppInfo>, new_icons: Vec<AppIconEntry>) -> Result<(), String>` with `#[tauri::command(async)]`.
+- `read_app_info_cache(app: AppHandle, device_key: String) -> Result<Vec<AppInfo>, AppError>` with `#[tauri::command(async)]`.
+- `write_app_info_cache(app: AppHandle, device_key: String, apps: Vec<AppInfo>, new_icons: Vec<AppIconEntry>) -> Result<(), AppError>` with `#[tauri::command(async)]`.
 - `deviceCacheKey(device: DeviceInfo) -> string`.
 - `appIconKey(packageName: string, lastUpdateTime: number) -> string`.
 - `missingIconPackages(fresh: AppInfo[], cachedIcons: Map<string, string>) -> string[]`.
@@ -347,9 +347,9 @@ The controller owns the per-request phase flag, so a late cache result cannot be
 
 ### 2. Signatures
 
-- `list_port_forwards(app: AppHandle, serial: String) -> Result<Vec<ForwardRule>, String>`
-- `add_port_forward(app: AppHandle, serial: String, direction: String, local_port: String, remote_port: String) -> Result<String, String>`
-- `remove_port_forward(app: AppHandle, serial: String, direction: String, port: String) -> Result<String, String>`
+- `list_port_forwards(app: AppHandle, serial: String) -> Result<Vec<ForwardRule>, AppError>`
+- `add_port_forward(app: AppHandle, serial: String, direction: String, local_port: String, remote_port: String) -> Result<String, AppError>`
+- `remove_port_forward(app: AppHandle, serial: String, direction: String, port: String) -> Result<String, AppError>`
 
 ### 3. Contracts
 
@@ -413,10 +413,10 @@ The command already used `-s <serial>`, so parse the scoped output by extracting
 
 ### 2. Signatures
 
-- `start_screen_record(app, serial, destination: CaptureDestination) -> Result<ScreenRecordStatus, String>`
-- `stop_screen_record(app, request: SaveRecordingRequest) -> Result<ScreenRecordResult, String>`
-- `discard_screen_record(app, session_id) -> Result<DiscardRecordingResult, String>`
-- `get_screen_record_status() -> Result<ScreenRecordStatus, String>`
+- `start_screen_record(app, serial, destination: CaptureDestination) -> Result<ScreenRecordStatus, AppError>`
+- `stop_screen_record(app, request: SaveRecordingRequest) -> Result<ScreenRecordResult, AppError>`
+- `discard_screen_record(app, session_id) -> Result<DiscardRecordingResult, AppError>`
+- `get_screen_record_status() -> Result<ScreenRecordStatus, AppError>`
 - `resolve_capture_directory(destination)` and `take_screenshot(app, serial, behavior, destination)` share `capture_output.rs`.
 
 ### 3. Contracts
@@ -482,14 +482,15 @@ Preserve source ownership until a complete local file has been published.
 
 ### 2. Signatures
 
-- `collect_quick_bug_report(app: AppHandle, serial: String) -> Result<QuickReportResult, String>`
-- `collect_full_bugreport(app: AppHandle, serial: String) -> Result<BugreportResult, String>`
+- `collect_quick_bug_report(app: AppHandle, serial: String) -> Result<QuickReportResult, AppError>`
+- `collect_full_bugreport(app: AppHandle, serial: String) -> Result<BugreportResult, AppError>`
 
 ### 3. Contracts
 
 - Quick reports must write to `dirs::document_dir()/ADB GUI/reports/<safe_serial>-<timestamp>/`.
 - Quick report output must include `screenshot.png`, `info.txt`, and `logcat.txt`.
 - `info.txt` must include current activity plus model, Android version, SDK level, resolution, and battery level.
+- Preserve the report's historical Chinese battery-status labels in `info.txt`. Keep this export format separate from the stable `DeviceDetail.battery_status` UI codes documented in [Bilingual UI and Error Presentation](../frontend/i18n.md).
 - Quick logcat collection must use `adb -s <serial> logcat -d -t 50 -v brief`; it must not depend on the frontend Logcat tab buffer.
 - Full bugreport must write to `dirs::document_dir()/ADB GUI/reports/<safe_serial>-<timestamp>-bugreport.zip`.
 - `adb bugreport [PATH]` accepts a file path; if `PATH` is a directory, adb chooses the filename itself.
@@ -530,11 +531,11 @@ Preserve source ownership until a complete local file has been published.
 
 ### 2. Signatures
 
-- `list_device_directory(app, serial, path: Option<String>) -> Result<DeviceDirectoryListing, String>`
-- `create_device_directory(app, serial, parent_path, name) -> Result<DeviceFileEntry, String>`
-- `upload_device_file(app, serial, local_path, remote_dir) -> Result<DeviceTransferResult, String>`
-- `download_device_file(app, serial, remote_path, local_path) -> Result<DeviceTransferResult, String>`
-- `preview_device_image(app, serial, remote_path) -> Result<DeviceImagePreview, String>`
+- `list_device_directory(app, serial, path: Option<String>) -> Result<DeviceDirectoryListing, AppError>`
+- `create_device_directory(app, serial, parent_path, name) -> Result<DeviceFileEntry, AppError>`
+- `upload_device_file(app, serial, local_path, remote_dir) -> Result<DeviceTransferResult, AppError>`
+- `download_device_file(app, serial, remote_path, local_path) -> Result<DeviceTransferResult, AppError>`
+- `preview_device_image(app, serial, remote_path) -> Result<DeviceImagePreview, AppError>`
 - `DeviceFileEntry { name, path, kind, size, modified_at, previewable }`
 - `DeviceDirectoryListing { path, parent, entries }`
 - `DeviceTransferResult { name, remote_path, local_path }`
@@ -628,11 +629,12 @@ The backend owns normalized device paths, shell quoting, collision checks, final
 
 ### 2. Signatures
 
-- `start_device_metrics(app: AppHandle, serial: String) -> Result<DeviceMetricsSessionInfo, String>`
-- `stop_device_metrics(serial: String, session_id: u64) -> Result<(), String>`
-- `shutdown_device_metrics_sessions() -> Result<(), String>`
+- `start_device_metrics(app: AppHandle, serial: String) -> Result<DeviceMetricsSessionInfo, AppError>`
+- `stop_device_metrics(serial: String, session_id: u64) -> Result<(), AppError>`
+- `shutdown_device_metrics_sessions() -> Result<(), AppError>`
 - Events: `device-metrics-frame` and `device-metrics-exit`
 - `DeviceMetricsFrame { serial, session_id, at_ms, cpu, memory, battery, processes }`
+- `DeviceMetricsExit { serial, session_id, reason, detail: Option<AppError> }`; retain the `error`/`eof` lifecycle markers and structured diagnostic payload.
 - Frontend bridge: `startDeviceMetrics`, `stopDeviceMetrics`, `onDeviceMetricsFrame`, and `onDeviceMetricsExit`
 
 ### 3. Contracts
@@ -654,7 +656,7 @@ The backend owns normalized device paths, shell quoting, collision checks, final
 - Counter rollback, wrap, or zero total delta -> emit no CPU value for that interval; never draw a false zero.
 - Start races with shutdown or another registration -> kill and wait the candidate before returning a contextual `Err`.
 - Stop or cleanup identity mismatch -> return successfully without touching the active child.
-- Stdout EOF/read failure -> discard any half frame, remove only the matching registered session, stop/wait it, and emit one exit event with bounded stderr detail.
+- Stdout EOF/read failure -> discard any half frame, remove only the matching registered session, stop/wait it, and emit one exit event with coded detail and bounded raw stderr. EOF without stderr still supplies `METRICS_EOF`; follow [Error Handling](./error-handling.md).
 - Event listener setup or start failure -> remove installed listeners, surface one user-visible error, and do not report a streaming state.
 
 ### 5. Good/Base/Bad Cases
@@ -708,9 +710,9 @@ One owned stream and one bounded history are the only sources of metrics lifecyc
 
 ### 2. Signatures
 
-- `start_logcat(app: AppHandle, serial: String) -> Result<LogcatSessionInfo, String>`
-- `stop_logcat(serial: String, session_id: u64) -> Result<(), String>`
-- `shutdown_logcat_sessions() -> Result<(), String>`
+- `start_logcat(app: AppHandle, serial: String) -> Result<LogcatSessionInfo, AppError>`
+- `stop_logcat(serial: String, session_id: u64) -> Result<(), AppError>`
+- `shutdown_logcat_sessions() -> Result<(), AppError>`
 - `decode_logcat_record(bytes: &[u8]) -> String`
 - `read_logcat_record(reader, record_bytes) -> Result<Option<String>, std::io::Error>`
 - `LogcatSessionInfo { serial, session_id }`
@@ -729,7 +731,7 @@ One owned stream and one bounded history are the only sources of metrics lifecyc
 - Spawn every streaming child with `kill_on_drop(true)` as abnormal-path protection. Normal application exit must set a shutdown gate, atomically drain every registered session under the mutex, release the mutex, then attempt `start_kill + wait` for every drained child while aggregating failures.
 - Wire shutdown only to Tauri `RunEvent::Exit` and synchronously await it before the process exits. Do not use `ExitRequested`, because macOS close/hide and `Reopen` must keep the application lifecycle intact.
 - Emit `logcat-batch` after 200 lines or 50 ms from the first buffered line, whichever occurs first. Do not reset the deadline after each line and do not emit empty batches.
-- Emit `logcat-exit` for stdout EOF or read failure. Preserve an UTF-8-safe stderr tail of about 2 KiB, and provide a non-empty `detail` even when EOF has no stderr.
+- Emit `logcat-exit` for stdout EOF or read failure. Preserve an UTF-8-safe stderr tail of about 2 KiB, and provide a coded `detail: Some(AppError)` even when EOF has no stderr. Keep `reason` as the `error`/`eof` marker and attach raw diagnostics to the payload; see [Error Handling](./error-handling.md).
 - Treat stdout as a byte stream. Frame records with `read_until(b'\n')`, remove only the final LF and optional preceding CR, then decode that record with `String::from_utf8_lossy`. Invalid byte sequences become U+FFFD in that record and must not terminate the stream.
 - A 50 ms batch timeout may cancel an in-progress `read_until`; retain the same partial byte buffer for the next read so cancellation cannot drop the beginning of a record.
 - Rust and TypeScript payloads must stay field-for-field aligned. `serial` belongs to `LogcatBatch` and `LogcatExit`, not to every `LogcatLine`.
@@ -746,7 +748,7 @@ One owned stream and one bounded history are the only sources of metrics lifecyc
 - Start races with application shutdown -> reject the candidate after spawn, kill and wait for it, and never insert it into the session map.
 - Stop or reader cleanup has a non-matching `session_id` -> no-op for the map entry; never affect the current process.
 - Application exit -> close the registration gate, drain the map without awaiting under the mutex, and attempt to stop every drained child. One failure must not skip later sessions; return one aggregated error after all attempts.
-- Stdout EOF -> flush the final non-empty batch, remove only the matching session, and emit exit reason `eof` with non-empty detail.
+- Stdout EOF -> flush the final non-empty batch, remove only the matching session, and emit exit reason `eof` with the `LOGCAT_EOF` coded detail payload.
 - Stdout read failure -> flush the final non-empty batch and include both the read error and stderr tail when available.
 - Invalid UTF-8 inside one stdout record -> replace only the invalid sequence with U+FFFD, emit the decoded record, and continue reading subsequent records without a disconnect event.
 - Regex mismatch -> fallback `LogcatLine`, no command error.
@@ -835,7 +837,7 @@ let child = start_after_stopping(previous, stop_logcat_session, || {
         .arg(&serial)
         .arg("logcat")
         .spawn()
-        .map_err(|error| error.to_string())
+        .map_err(|error| AppError::new(codes::LOGCAT_START_FAILED).detail(error.to_string()))
 })
 .await?;
 ```
@@ -863,7 +865,7 @@ record_bytes.clear();
 
 ### 2. Signatures
 
-- `get_package_pids(app: AppHandle, serial: String, pkg: String) -> Result<Vec<String>, String>`
+- `get_package_pids(app: AppHandle, serial: String, pkg: String) -> Result<Vec<String>, AppError>`
 - `is_pidof_no_process(status_code: Option<i32>, stdout: &[u8], stderr: &[u8]) -> bool`
 - Frontend bridge: `getPackagePids(serial: string, pkg: string) -> Promise<string[]>`
 
@@ -932,9 +934,9 @@ An empty process set is domain data; an ADB failure is an error and must remain 
 
 ### 2. Signatures
 
-- `list_device_processes(app: AppHandle, serial: String) -> Result<Vec<ProcessEntry>, String>`
+- `list_device_processes(app: AppHandle, serial: String) -> Result<Vec<ProcessEntry>, AppError>`
 - `ProcessEntry { pid: String, name: String }`
-- `parse_process_table(output: &str) -> Result<Vec<ProcessEntry>, String>`
+- `parse_process_table(output: &str) -> Result<Vec<ProcessEntry>, AppError>`
 - `next_process_ps_attempt(attempt, status_code, stdout, stderr) -> Option<ProcessPsAttempt>`
 - Frontend bridge: `listDeviceProcesses(serial: string) -> Promise<ProcessEntry[]>`
 - Frontend row identity: `LogcatEntry { processName: string | null, packageName: string | null, ... }`
@@ -1016,7 +1018,7 @@ Compatibility fallback is valid only for a proven unsupported option. Device and
 
 ### 2. Signatures
 
-- `async list_devices(app: AppHandle) -> Result<Vec<DeviceInfo>, String>`
+- `async list_devices(app: AppHandle) -> Result<Vec<DeviceInfo>, AppError>`
 - `parse_devices_output(output: &str) -> Vec<DeviceInfo>`
 - `mdns_port_alias_base(serial: &str) -> Option<&str>`
 - `DeviceInfo { serial, state, model, transport, is_network, alias_identity, device_id }`

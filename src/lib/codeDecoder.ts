@@ -1,3 +1,4 @@
+import type { AppErrorPayload } from "@/i18n/errors";
 export const SUPPORTED_IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "bmp", "webp"] as const;
 
 export const MAX_IMAGE_BATCH_SIZE = 50;
@@ -15,9 +16,10 @@ export interface DecodedImage {
   id: number;
   name: string;
   path: string | null;
+  sourceKind?: "file" | "clipboard";
   thumbnail: string;
   codes: readonly DecodedCode[];
-  error: string;
+  error: AppErrorPayload | null;
 }
 
 export interface DecodedBatch {
@@ -28,6 +30,7 @@ export interface DecodedBatch {
 export interface DecodeSource {
   name: string;
   path: string | null;
+  sourceKind?: "file" | "clipboard";
   loadInput: () => Promise<DecodeInput>;
 }
 

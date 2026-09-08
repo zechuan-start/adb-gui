@@ -135,6 +135,9 @@ describe("manual clipboard transfers", () => {
     expect(deps.setDevice).not.toHaveBeenCalled();
     expect(deps.writeHost).not.toHaveBeenCalled();
     expect(deps.onError).toHaveBeenCalledTimes(5);
+    expect(deps.onError.mock.calls.map(([error]) => error.code)).toEqual([
+      "clipboard_empty", "clipboard_too_large", "unknown", "clipboard_device_empty", "clipboard_empty",
+    ]);
   });
 
   it("never retries a submitted write and disposes pending reads", async () => {

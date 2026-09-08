@@ -21,6 +21,28 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 describe("screenRecordPollingController", () => {
+  it("reports changed structured failures while deduplicating equivalent payloads", async () => {
+    const first = { code: "settings.invalidField", params: { key: "path" }, detail: "IPC disconnected" };
+    const changed = { ...first, detail: "permission denied" };
+    const scheduled: Array<() => void> = [];
+    const onError = vi.fn();
+    const controller = createScreenRecordPollingController({
+      loadStatus: vi.fn().mockRejectedValueOnce(first)
+        .mockRejectedValueOnce({ detail: first.detail, params: first.params, code: first.code })
+        .mockRejectedValueOnce(changed),
+      schedule: (callback) => { scheduled.push(callback); return scheduled.length; },
+      cancelSchedule: vi.fn(), onStatus: vi.fn(), onError,
+    });
+    controller.run();
+    await flushMicrotasks();
+    scheduled[0]();
+    await flushMicrotasks();
+    expect(onError).toHaveBeenCalledTimes(1);
+    scheduled[1]();
+    await flushMicrotasks();
+    expect(onError.mock.calls.map(([error]) => error)).toEqual([first, changed]);
+    controller.dispose();
+  });
   it("waits for the current request before scheduling the next refresh", async () => {
     const first = deferred<ScreenRecordStatus>();
     const scheduled: Array<() => void> = [];

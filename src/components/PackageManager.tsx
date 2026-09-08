@@ -1,3 +1,6 @@
+import { errorText, useT, useLocale, type Locale } from "@/i18n";
+import { toAppError, type AppErrorPayload } from "@/i18n/errors";
+import { appNameCollator } from "@/i18n/format";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Box, Play, RefreshCw, Search, Square, Trash2 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -36,7 +39,7 @@ import { SortPreferences } from "@/components/settings/SortPreferences";
 const iconCache = new Map<string, string>();
 const ICON_BATCH_SIZE = 50;
 
-type FallbackState = { kind: "cache" | "packages"; reason: string } | null;
+type FallbackState = { kind: "cache" | "packages"; reason: AppErrorPayload } | null;
 type IconLoadMode = "bulk-pending" | "bulk-done" | "lazy";
 
 function appIconCacheKey(
@@ -54,8 +57,8 @@ function appVersionLabel(app: AppInfo): string {
   return app.versionCode > 0 ? String(app.versionCode) : "-";
 }
 
-function appTimestampLabel(timestamp: number): string {
-  return timestamp > 0 ? formatDeviceModifiedAt(timestamp / 1000) : "-";
+function appTimestampLabel(timestamp: number, locale: Locale): string {
+  return timestamp > 0 ? formatDeviceModifiedAt(timestamp / 1000, locale) : "-";
 }
 
 function AppIcon({ src, size = 20 }: { src?: string; size?: number }) {
@@ -83,6 +86,8 @@ function AppIcon({ src, size = 20 }: { src?: string; size?: number }) {
 type DestructiveAction = "clear" | "uninstall";
 
 export function PackageManagerPanel() {
+  const t = useT();
+  const locale = useLocale();
   const preferences = useSettingsStore((state) => state.preferences.apps);
   const settingsError = useSettingsStore((state) => state.error);
   const devices = useDeviceStore((state) => state.devices);
@@ -169,11 +174,11 @@ export function PackageManagerPanel() {
         setIconLoadMode("lazy");
         if (source.cached.length > 0) {
           publishApps(source.cached);
-          setFallback({ kind: "cache", reason: String(source.error) });
+          setFallback({ kind: "cache", reason: toAppError(source.error) });
           return;
         }
 
-        setFallback({ kind: "packages", reason: String(source.error) });
+        setFallback({ kind: "packages", reason: toAppError(source.error) });
         try {
           const fallbackApps = (await listPackages(serial)).map(fallbackAppInfo);
           if (!isCurrent()) {
@@ -182,7 +187,7 @@ export function PackageManagerPanel() {
           publishApps(fallbackApps);
         } catch (fallbackError) {
           if (isCurrent()) {
-            showToast("error", `加载应用列表失败: ${String(fallbackError)}`);
+            showToast("error", (t) => (t.apps.packageManager.couldNotLoadApps({ detail: errorText(fallbackError, t) })));
           }
         }
         return;
@@ -286,8 +291,8 @@ export function PackageManagerPanel() {
   }, [loadApps, online]);
 
   const filtered = useMemo(() => {
-    return sortAppInfo(filterAppInfo(apps, search), preferences);
-  }, [apps, search, preferences]);
+    return sortAppInfo(filterAppInfo(apps, search), preferences, appNameCollator(locale));
+  }, [apps, search, preferences, locale]);
 
   useEffect(() => {
     if (parentRef.current) parentRef.current.scrollTop = 0;
@@ -375,13 +380,13 @@ export function PackageManagerPanel() {
       } else {
         result = await uninstallApp(onlineSerial, selectedPkg);
       }
-      showToast("success", result || `${selectedPkg} 操作成功`);
+      showToast("success", (t) => (result || t.apps.packageManager.completedSuccessfully({ packageName: selectedPkg })));
       if (action === "uninstall") {
         setApps((current) => current.filter((app) => app.packageName !== selectedPkg));
         setSelectedPkg("");
       }
     } catch (error) {
-      showToast("error", `操作失败: ${String(error)}`);
+      showToast("error", (t) => (t.apps.packageManager.operationFailed({ detail: errorText(error, t) })));
     } finally {
       setActing(false);
       setConfirmAction(null);
@@ -393,8 +398,8 @@ export function PackageManagerPanel() {
       <div className="flex h-full items-center justify-center p-[18px]">
         <div className="flex min-h-36 w-full max-w-xl flex-col items-center justify-center border border-dashed border-rule bg-surface px-6 text-center">
           <Box className="mb-3 h-5 w-5 text-ink3" aria-hidden="true" />
-          <strong className="text-sm font-semibold text-ink">应用列表不可用</strong>
-          <span className="mt-1 text-xs text-ink2">连接在线设备后可浏览和管理用户应用.</span>
+          <strong className="text-sm font-semibold text-ink">{t.apps.packageManager.appListUnavailable}</strong>
+          <span className="mt-1 text-xs text-ink2">{t.apps.packageManager.connectAnOnlineDeviceToBrowseAndManage}</span>
         </div>
       </div>
     );
@@ -405,12 +410,12 @@ export function PackageManagerPanel() {
       <section className="flex min-h-0 min-w-0 flex-col border-r border-rule bg-surface">
         <div className="flex min-h-[43px] shrink-0 flex-wrap items-center gap-2 border-b border-rule bg-surface2 px-3 py-1">
           <label className="relative min-w-0 max-w-[340px] flex-1">
-            <span className="sr-only">搜索应用名称或包名</span>
+            <span className="sr-only">{t.apps.packageManager.searchAppNameOrPackage}</span>
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink3" />
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="搜索应用名称或包名"
+              placeholder={t.apps.packageManager.searchAppNameOrPackage}
               autoComplete="off"
               autoCorrect="off"
               autoCapitalize="off"
@@ -424,32 +429,32 @@ export function PackageManagerPanel() {
             onClick={() => void loadApps()}
             disabled={loading}
             className="inline-flex h-7 items-center gap-1.5 border border-rule px-2 font-data text-[10.5px] text-ink2 hover:border-ink3 hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
-            title="刷新应用列表"
+            title={t.apps.packageManager.refreshAppList}
           >
             <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-            <span className="hidden min-[1040px]:inline">刷新</span>
+            <span className="hidden min-[1040px]:inline">{t.common.refresh}</span>
           </button>
           <span className="ml-auto shrink-0 font-data text-[10.5px] text-ink3">
             {filtered.length} / {apps.length}
           </span>
         </div>
 
-        {settingsError && <div role="alert" className="border-b border-err bg-err-band px-3 py-2 text-xs text-err">{settingsError}</div>}
+        {settingsError && <div role="alert" className="border-b border-err bg-err-band px-3 py-2 text-xs text-err">{errorText(settingsError, t)}</div>}
         {fallback && (
           <div className="shrink-0 border-b border-warn/45 bg-warn-band px-3 py-2 text-[11px] text-warn">
             <div className="flex items-center gap-2">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               <span className="min-w-0 flex-1">
                 {fallback.kind === "cache"
-                  ? "实时读取失败, 当前显示上次读取的数据."
-                  : "应用名称和版本读取失败, 当前显示精简信息."}
+                  ? t.apps.packageManager.liveDataUnavailableShowingPreviouslyLoadedData
+                  : t.apps.packageManager.appNamesAndVersionsUnavailableShowingBasicInfo}
               </span>
               <button
                 type="button"
                 onClick={() => setFallbackDetailsExpanded((expanded) => !expanded)}
                 className="h-6 shrink-0 border border-warn/45 px-2 font-data text-[10px] hover:bg-hover"
               >
-                {fallbackDetailsExpanded ? "收起详情" : "查看详情"}
+                {fallbackDetailsExpanded ? t.apps.packageManager.hideDetails : t.apps.packageManager.viewDetails}
               </button>
               <button
                 type="button"
@@ -457,33 +462,33 @@ export function PackageManagerPanel() {
                 disabled={loading}
                 className="h-6 shrink-0 border border-warn/45 px-2 font-data text-[10px] hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
               >
-                重试
+                {t.common.retry}
               </button>
             </div>
             {fallbackDetailsExpanded && (
               <div
                 className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-all border-t border-warn/30 pt-2 font-data text-[10px] leading-4"
-                title={fallback.reason}
+                title={errorText(fallback.reason, t)}
               >
-                {fallback.reason}
+                {errorText(fallback.reason, t)}
               </div>
             )}
           </div>
         )}
 
         <div className="grid h-7 shrink-0 grid-cols-[minmax(0,1fr)_92px] items-center border-b border-dashed border-rule px-3 font-data text-[10px] uppercase text-ink3">
-          <span>应用 / 包名</span>
-          <span className="text-right">版本</span>
+          <span>{t.apps.packageManager.appPackage}</span>
+          <span className="text-right">{t.apps.packageManager.version}</span>
         </div>
 
         <div ref={parentRef} className="min-h-0 flex-1 overflow-auto bg-log-bg/45">
           {filtered.length === 0 ? (
             <div className="flex h-full min-h-28 items-center justify-center px-5 text-center text-xs text-ink3">
               {loading
-                ? "正在读取应用信息..."
+                ? t.apps.packageManager.readingAppInfo
                 : apps.length === 0
-                  ? "设备上没有可管理的用户应用."
-                  : "没有匹配的应用."}
+                  ? t.apps.packageManager.noUserAppsToManageOnThisDevice
+                  : t.apps.packageManager.noMatchingApps}
             </div>
           ) : (
             <div className="relative" style={{ height: `${virtualizer.getTotalSize()}px` }}>
@@ -592,37 +597,37 @@ export function PackageManagerPanel() {
             </div>
             <dl className="divide-y divide-dashed divide-rule2 px-4 font-data text-[11px]">
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 py-2.5">
-                <dt className="text-ink3">类型</dt>
-                <dd className="m-0 text-ink">用户应用</dd>
+                <dt className="text-ink3">{t.apps.packageManager.type}</dt>
+                <dd className="m-0 text-ink">{t.apps.packageManager.userApp}</dd>
               </div>
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 py-2.5">
-                <dt className="text-ink3">版本</dt>
+                <dt className="text-ink3">{t.apps.packageManager.version}</dt>
                 <dd className="m-0 truncate text-ink" title={appVersionLabel(selectedApp)}>
                   {appVersionLabel(selectedApp)}
                 </dd>
               </div>
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 py-2.5">
-                <dt className="text-ink3">版本代码</dt>
+                <dt className="text-ink3">{t.apps.packageManager.versionCode}</dt>
                 <dd className="m-0 text-ink">
                   {selectedApp.versionCode > 0 ? selectedApp.versionCode : "-"}
                 </dd>
               </div>
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 py-2.5">
-                <dt className="text-ink3">首次安装</dt>
-                <dd className="m-0 text-ink">{appTimestampLabel(selectedApp.firstInstallTime)}</dd>
+                <dt className="text-ink3">{t.apps.packageManager.firstInstalled}</dt>
+                <dd className="m-0 text-ink">{appTimestampLabel(selectedApp.firstInstallTime, locale)}</dd>
               </div>
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 py-2.5">
-                <dt className="text-ink3">最后更新</dt>
-                <dd className="m-0 text-ink">{appTimestampLabel(selectedApp.lastUpdateTime)}</dd>
+                <dt className="text-ink3">{t.apps.packageManager.lastUpdated}</dt>
+                <dd className="m-0 text-ink">{appTimestampLabel(selectedApp.lastUpdateTime, locale)}</dd>
               </div>
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 py-2.5">
-                <dt className="text-ink3">APK 大小</dt>
+                <dt className="text-ink3">{t.apps.packageManager.apkSize}</dt>
                 <dd className="m-0 text-ink">
                   {selectedApp.apkSize > 0 ? formatDeviceFileSize(selectedApp.apkSize) : "-"}
                 </dd>
               </div>
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 py-2.5">
-                <dt className="text-ink3">设备</dt>
+                <dt className="text-ink3">{t.apps.packageManager.device}</dt>
                 <dd className="m-0 truncate text-ink" title={device.serial}>{device.serial}</dd>
               </div>
             </dl>
@@ -631,7 +636,7 @@ export function PackageManagerPanel() {
                 <div className="flex min-h-10 items-center gap-2 border border-err bg-err-band px-2.5 text-[11px] text-err">
                   <AlertTriangle className="h-4 w-4 shrink-0" />
                   <span className="min-w-0 flex-1">
-                    确认{confirmAction === "clear" ? "清除数据" : "卸载"}?
+                    {t.apps.confirmAction({ action: confirmAction })}
                   </span>
                   <button
                     type="button"
@@ -639,7 +644,7 @@ export function PackageManagerPanel() {
                     disabled={acting}
                     className="h-7 border border-rule px-2 font-data text-[10.5px] text-ink hover:bg-hover disabled:opacity-40"
                   >
-                    取消
+                    {t.common.cancel}
                   </button>
                   <button
                     type="button"
@@ -647,7 +652,7 @@ export function PackageManagerPanel() {
                     disabled={acting}
                     className="h-7 border border-err bg-err px-2 font-data text-[10.5px] text-onink disabled:opacity-40"
                   >
-                    {acting ? "处理中" : "确认"}
+                    {acting ? t.apps.packageManager.processing : t.apps.packageManager.confirm}
                   </button>
                 </div>
               ) : (
@@ -658,32 +663,28 @@ export function PackageManagerPanel() {
                     onClick={() => void handleAction("launch")}
                     className="inline-flex h-8 items-center justify-center gap-2 border border-rule bg-paper font-data text-[11px] text-ink hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    <Play className="h-3.5 w-3.5" /> 启动
-                  </button>
+                    <Play className="h-3.5 w-3.5" /> {t.apps.packageManager.launch}</button>
                   <button
                     type="button"
                     disabled={!canAct}
                     onClick={() => void handleAction("force-stop")}
                     className="inline-flex h-8 items-center justify-center gap-2 border border-rule bg-paper font-data text-[11px] text-ink hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    <Square className="h-3.5 w-3.5" /> 强停
-                  </button>
+                    <Square className="h-3.5 w-3.5" /> {t.apps.packageManager.forceStop}</button>
                   <button
                     type="button"
                     disabled={!canAct}
                     onClick={() => setConfirmAction("clear")}
                     className="inline-flex h-8 items-center justify-center gap-2 border border-err font-data text-[11px] text-err hover:bg-err-band disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    <AlertTriangle className="h-3.5 w-3.5" /> 清数据
-                  </button>
+                    <AlertTriangle className="h-3.5 w-3.5" /> {t.apps.packageManager.clearDataLabel}</button>
                   <button
                     type="button"
                     disabled={!canAct}
                     onClick={() => setConfirmAction("uninstall")}
                     className="inline-flex h-8 items-center justify-center gap-2 border border-err font-data text-[11px] text-err hover:bg-err-band disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    <Trash2 className="h-3.5 w-3.5" /> 卸载
-                  </button>
+                    <Trash2 className="h-3.5 w-3.5" /> {t.apps.packageManager.uninstall}</button>
                 </div>
               )}
             </div>
@@ -691,8 +692,8 @@ export function PackageManagerPanel() {
         ) : (
           <div className="flex h-full flex-col items-center justify-center px-6 text-center">
             <Box className="mb-3 h-5 w-5 text-ink3" />
-            <strong className="text-sm font-semibold text-ink">未选择应用</strong>
-            <span className="mt-1 text-xs leading-5 text-ink3">从左侧选择一个包名查看操作.</span>
+            <strong className="text-sm font-semibold text-ink">{t.apps.packageManager.noAppSelected}</strong>
+            <span className="mt-1 text-xs leading-5 text-ink3">{t.apps.packageManager.selectAPackageOnTheLeftToView}</span>
           </div>
         )}
       </aside>

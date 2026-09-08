@@ -112,7 +112,7 @@ describe("createDeviceMetricsSessionController", () => {
       serial: "device-a",
       session_id: 3,
       reason: "eof",
-      detail: "closed",
+      detail: { code: "unknown", detail: "closed" },
     });
     deps.emitFrame(frame(3));
 

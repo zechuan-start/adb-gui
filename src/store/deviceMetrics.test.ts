@@ -96,6 +96,6 @@ describe("useDeviceMetricsStore", () => {
     const restarted = useDeviceMetricsStore.getState();
     expect(restarted.paused).toBe(false);
     expect(restarted.restartNonce).toBe(1);
-    expect(restarted.error).toBe("");
+    expect(restarted.error).toBeNull();
   });
 });

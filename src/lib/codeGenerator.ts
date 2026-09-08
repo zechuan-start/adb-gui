@@ -1,3 +1,4 @@
+import type { Messages } from "@/i18n";
 export type CodeType = "qr" | "code128";
 
 export type SeparatorMode = "newline" | "comma" | "semicolon" | "tab" | "custom";
@@ -20,20 +21,20 @@ export interface GeneratedBatch extends GeneratorOptions {
 
 interface SeparatorOption {
   value: SeparatorMode;
-  label: string;
+  label: (t: Messages) => string;
 }
 
 export const SEPARATOR_OPTIONS: readonly SeparatorOption[] = [
-  { value: "newline", label: "换行" },
-  { value: "comma", label: "逗号" },
-  { value: "semicolon", label: "分号" },
-  { value: "tab", label: "制表符" },
-  { value: "custom", label: "自定义" },
+  { value: "newline", label: (t: Messages) => t.codegen.options.newline },
+  { value: "comma", label: (t: Messages) => t.codegen.options.comma },
+  { value: "semicolon", label: (t: Messages) => t.codegen.options.semicolon },
+  { value: "tab", label: (t: Messages) => t.codegen.options.tab },
+  { value: "custom", label: (t: Messages) => t.codegen.options.custom },
 ];
 
 export const CODE_TYPE_OPTIONS = [
-  { value: "qr", label: "二维码" },
-  { value: "code128", label: "Code 128" },
+  { value: "qr", label: (t: Messages) => t.codegen.options.qr },
+  { value: "code128", label: (_t: Messages) => "Code 128" },
 ] as const;
 
 export const DEFAULT_GENERATOR_OPTIONS: GeneratorOptions = {
@@ -56,7 +57,7 @@ export function isGeneratedBatchStale(batch: GeneratedBatch | null, revision: nu
   return Boolean(batch && (batch.sourceRevision !== revision || !generatorOptionsMatch(batch, options)));
 }
 
-type ParseBatchErrorCode = "empty-input" | "empty-separator" | "no-values";
+type ParseBatchErrorCode = "generator_empty_input" | "generator_empty_separator" | "generator_no_values";
 
 interface ParseBatchSuccess {
   ok: true;
@@ -66,7 +67,6 @@ interface ParseBatchSuccess {
 interface ParseBatchFailure {
   ok: false;
   code: ParseBatchErrorCode;
-  message: string;
 }
 
 export type ParseBatchResult = ParseBatchSuccess | ParseBatchFailure;
@@ -77,7 +77,7 @@ export function isSeparatorMode(value: string): value is SeparatorMode {
 
 export function parseBatchInput(draft: GeneratorDraft): ParseBatchResult {
   if (draft.input.length === 0) {
-    return { ok: false, code: "empty-input", message: "请输入要生成的数据" };
+    return { ok: false, code: "generator_empty_input" };
   }
 
   const splitResult = splitInput(draft);
@@ -87,7 +87,7 @@ export function parseBatchInput(draft: GeneratorDraft): ParseBatchResult {
 
   const values = splitResult.values.filter((value) => value.length > 0);
   if (values.length === 0) {
-    return { ok: false, code: "no-values", message: "没有可生成的数据" };
+    return { ok: false, code: "generator_no_values" };
   }
 
   return { ok: true, values };
@@ -105,7 +105,7 @@ function splitInput(draft: GeneratorDraft): ParseBatchResult {
       return { ok: true, values: draft.input.split("\t") };
     case "custom":
       if (draft.customSeparator.length === 0) {
-        return { ok: false, code: "empty-separator", message: "请输入自定义分隔符" };
+        return { ok: false, code: "generator_empty_separator" };
       }
       return { ok: true, values: draft.input.split(draft.customSeparator) };
   }

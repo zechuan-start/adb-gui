@@ -1,3 +1,5 @@
+import { errorText, useT, useLocale } from "@/i18n";
+import { toAppError, type AppErrorPayload } from "@/i18n/errors";
 import {
   useCallback,
   useEffect,
@@ -75,6 +77,7 @@ interface DeviceFileManagerProps {
 }
 
 export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
+  const t = useT();
   const preferences = useSettingsStore((state) => state.preferences.files);
   const settingsAvailable = useSettingsStore((state) => state.available);
   const settingsError = useSettingsStore((state) => state.error);
@@ -96,7 +99,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
   const [dragActive, setDragActive] = useState(false);
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [folderName, setFolderName] = useState("");
-  const [folderError, setFolderError] = useState("");
+  const [folderError, setFolderError] = useState<AppErrorPayload | null>(null);
   const [folderBusy, setFolderBusy] = useState(false);
   const [operationBusy, setOperationBusy] = useState(false);
   const listRequestRef = useRef(0);
@@ -156,7 +159,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
         if (!activeRef.current || requestId !== listRequestRef.current) {
           return;
         }
-        const message = errorMessage(error);
+        const message = toAppError(error);
         dispatch({ type: "list-error", serial, requestId, error: message });
         if (
           operationContextRef.current.serial === serial &&
@@ -175,7 +178,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
     } catch (error) {
       const requestId = ++listRequestRef.current;
       dispatch({ type: "list-start", serial, requestId });
-      dispatch({ type: "list-error", serial, requestId, error: errorMessage(error) });
+      dispatch({ type: "list-error", serial, requestId, error: toAppError(error) });
     }
   }, [loadDirectory]);
 
@@ -198,7 +201,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
         serial,
         requestId,
         path: entry.path,
-        error: errorMessage(error),
+        error: toAppError(error),
       });
     }
   }, []);
@@ -216,7 +219,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
     setDragActive(false);
     setFolderDialogOpen(false);
     setFolderName("");
-    setFolderError("");
+    setFolderError(null);
     if (onlineSerial) {
       loadStartDirectory(onlineSerial);
     }
@@ -240,7 +243,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
         return;
       }
       if (operationBusyRef.current) {
-        showToast("error", "已有文件传输正在进行");
+        showToast("error", (t) => (t.files.deviceFileManager.aFileTransferIsAlreadyRunning));
         return;
       }
 
@@ -283,7 +286,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
               type: "transfer-item-error",
               serial,
               index,
-              error: errorMessage(error),
+              error: toAppError(error),
             });
           }
         }
@@ -297,9 +300,9 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
         }
         showToast(
           failureCount === 0 ? "success" : "error",
-          failureCount === 0
-            ? `已上传 ${successCount} 个文件`
-            : `上传完成: ${successCount} 个成功, ${failureCount} 个失败`,
+          (t) => (failureCount === 0
+            ? t.files.deviceFileManager.uploadedFiles({ count: successCount })
+            : t.files.deviceFileManager.uploadCompleteSucceededFailed({ succeeded: successCount, failed: failureCount })),
         );
       } finally {
         if (isDeviceOperationContextCurrent(operationContextRef.current, operationContext)) {
@@ -370,7 +373,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
       })
       .catch((error) => {
         if (!disposed && activeRef.current) {
-          showToast("error", `拖拽监听启动失败: ${errorMessage(error)}`);
+          showToast("error", (t) => (t.files.deviceFileManager.couldNotStartDropListener({ detail: errorText(error, t) })));
         }
       });
 
@@ -390,7 +393,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
       await startUpload(paths, operationContext);
     } catch (error) {
       if (isDeviceOperationContextCurrent(operationContextRef.current, operationContext)) {
-        showToast("error", `选择上传文件失败: ${errorMessage(error)}`);
+        showToast("error", (t) => (t.files.deviceFileManager.couldNotChooseUploadFiles({ detail: errorText(error, t) })));
       }
     }
   }
@@ -407,7 +410,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
       return;
     }
     if (operationBusyRef.current) {
-      showToast("error", "已有文件传输正在进行");
+      showToast("error", (t) => (t.files.deviceFileManager.aFileTransferIsAlreadyRunning));
       return;
     }
 
@@ -420,7 +423,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
         return;
       }
       if (operationBusyRef.current) {
-        showToast("error", "已有文件传输正在进行");
+        showToast("error", (t) => (t.files.deviceFileManager.aFileTransferIsAlreadyRunning));
         return;
       }
 
@@ -445,14 +448,14 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
           resultName: result.name,
           targetPath: result.local_path ?? localPath,
         });
-        showToast("success", `文件已保存到 ${result.local_path ?? localPath}`);
+        showToast("success", (t) => (t.files.deviceFileManager.fileSavedTo({ path: result.local_path ?? localPath })));
       } catch (error) {
         if (!isDeviceOperationContextCurrent(operationContextRef.current, operationContext)) {
           return;
         }
-        const message = errorMessage(error);
+        const message = toAppError(error);
         dispatch({ type: "transfer-item-error", serial, index: 0, error: message });
-        showToast("error", `下载文件失败: ${message}`);
+        showToast("error", (t) => (t.files.deviceFileManager.couldNotDownloadFile({ detail: errorText(message, t) })));
       } finally {
         if (isDeviceOperationContextCurrent(operationContextRef.current, operationContext)) {
           dispatch({ type: "transfer-finish", serial });
@@ -462,7 +465,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
       }
     } catch (error) {
       if (isDeviceOperationContextCurrent(operationContextRef.current, operationContext)) {
-        showToast("error", `选择保存位置失败: ${errorMessage(error)}`);
+        showToast("error", (t) => (t.files.deviceFileManager.couldNotChooseSaveLocation({ detail: errorText(error, t) })));
       }
     }
   }
@@ -483,9 +486,9 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
     }
     try {
       await navigator.clipboard.writeText(path);
-      showToast("success", "路径已复制");
+      showToast("success", (t) => (t.files.deviceFileManager.pathCopied));
     } catch (error) {
-      showToast("error", `复制路径失败: ${errorMessage(error)}`);
+      showToast("error", (t) => (t.files.deviceFileManager.couldNotCopyPath({ detail: errorText(error, t) })));
     }
   }
 
@@ -510,20 +513,20 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
 
     operationBusyRef.current = true;
     setFolderBusy(true);
-    setFolderError("");
+    setFolderError(null);
     try {
       await createDeviceDirectory(serial, parentPath, name);
       if (isDeviceOperationContextCurrent(operationContextRef.current, operationContext)) {
         setFolderDialogOpen(false);
         setFolderName("");
-        showToast("success", `已新建目录 ${name}`);
+        showToast("success", (t) => (t.files.deviceFileManager.createdDirectory({ path: name })));
         await loadDirectory(serial, parentPath);
       }
     } catch (error) {
-      const message = errorMessage(error);
+      const message = toAppError(error);
       if (isDeviceOperationContextCurrent(operationContextRef.current, operationContext)) {
         setFolderError(message);
-        showToast("error", `新建目录失败: ${message}`);
+        showToast("error", (t) => (t.files.deviceFileManager.couldNotCreateDirectory({ detail: errorText(message, t) })));
       }
     } finally {
       if (isDeviceOperationContextCurrent(operationContextRef.current, operationContext)) {
@@ -537,7 +540,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
     try {
       await revealFile(path);
     } catch (error) {
-      showToast("error", `无法在文件管理器中显示文件: ${errorMessage(error)}`);
+      showToast("error", (t) => (t.files.deviceFileManager.couldNotRevealFile({ detail: errorText(error, t) })));
     }
   }
 
@@ -556,7 +559,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
           onClick={() => onlineSerial && loadStartDirectory(onlineSerial)}
           disabled={!settingsAvailable || !onlineSerial || operationBusy || transferBusy || folderBusy}
           className={iconButtonClass}
-          title="返回起始目录"
+          title={t.files.deviceFileManager.goToStartDirectory}
         >
           <Home className="h-4 w-4" />
         </button>
@@ -565,7 +568,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
           onClick={() => onlineSerial && state.parent && void loadDirectory(onlineSerial, state.parent)}
           disabled={controlsDisabled || !state.parent}
           className={iconButtonClass}
-          title="返回上级目录"
+          title={t.files.deviceFileManager.goToParentDirectory}
         >
           <ArrowUp className="h-4 w-4" />
         </button>
@@ -575,8 +578,8 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
             value={contextMatches ? state.pathDraft : ""}
             onChange={(event) => dispatch({ type: "set-path-draft", value: event.target.value })}
             disabled={!onlineSerial || operationBusy || transferBusy || folderBusy}
-            placeholder={onlineSerial ? "设备绝对路径" : "连接设备后可浏览文件"}
-            aria-label="设备绝对路径"
+            placeholder={onlineSerial ? t.files.deviceFileManager.absoluteDevicePath : t.files.deviceFileManager.connectADeviceToBrowseFiles}
+            aria-label={t.files.deviceFileManager.absoluteDevicePath}
             className="h-8 min-w-0 flex-1 border border-rule bg-paper px-3 font-data text-[11.5px] text-ink outline-none placeholder:text-ink3 disabled:cursor-not-allowed disabled:opacity-60"
           />
           <button
@@ -584,7 +587,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
             onClick={() => void handleCopyPath(visiblePath)}
             disabled={!visiblePath}
             className={iconButtonClass}
-            title="复制当前路径"
+            title={t.files.deviceFileManager.copyCurrentPath}
           >
             <Copy className="h-4 w-4" />
           </button>
@@ -599,7 +602,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
               folderBusy
             }
             className={iconButtonClass}
-            title="前往路径"
+            title={t.files.deviceFileManager.goToPath}
           >
             <ArrowRight className="h-4 w-4" />
           </button>
@@ -610,7 +613,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
           onClick={() => onlineSerial && state.path && void loadDirectory(onlineSerial, state.path)}
           disabled={controlsDisabled || state.listLoading}
           className={iconButtonClass}
-          title="刷新目录"
+          title={t.files.deviceFileManager.refreshDirectory}
         >
           <RefreshCw className={cn("h-4 w-4", state.listLoading && "animate-spin")} />
         </button>
@@ -635,7 +638,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
               </div>
             ))
           ) : (
-            <span className="text-ink3">设备文件</span>
+            <span className="text-ink3">{t.files.deviceFileManager.deviceFiles}</span>
           )}
         </div>
         <SortPreferences section="files" showSettings />
@@ -644,13 +647,13 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
           onClick={() => {
             setFolderDialogOpen(true);
             setFolderName("");
-            setFolderError("");
+            setFolderError(null);
           }}
           disabled={controlsDisabled}
           className={commandButtonClass}
         >
           <FolderPlus className="h-3.5 w-3.5" />
-          <span className="hidden min-[1040px]:inline">新建目录</span>
+          <span className="hidden min-[1040px]:inline">{t.files.deviceFileManager.newDirectory}</span>
         </button>
         <button
           type="button"
@@ -659,19 +662,19 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
           className="inline-flex h-7 items-center gap-1.5 border border-ink bg-ink px-2 font-data text-[10.5px] font-medium text-onink hover:bg-ink2 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Upload className="h-3.5 w-3.5" />
-          <span className="hidden min-[1040px]:inline">上传文件</span>
+          <span className="hidden min-[1040px]:inline">{t.files.deviceFileManager.uploadFiles}</span>
         </button>
       </div>
 
       {settingsError && <div role="alert" className="flex items-center gap-2 border-b border-err bg-err-band px-3 py-2 text-xs text-err">
-        <span className="min-w-0 flex-1 break-words">{settingsError}</span>
-        <button type="button" className="shrink-0 border border-rule px-2 py-1" onClick={() => useUiStore.getState().openSettings("files")}>设置</button>
+        <span className="min-w-0 flex-1 break-words">{errorText(settingsError, t)}</span>
+        <button type="button" className="shrink-0 border border-rule px-2 py-1" onClick={() => useUiStore.getState().openSettings("files")}>{t.files.deviceFileManager.settings}</button>
       </div>}
       {contextMatches && state.listError && onlineSerial && <div className="flex shrink-0 gap-2 border-b border-rule px-3 py-2 text-xs">
         <button type="button" disabled={state.listLoading || operationBusy || transferBusy || folderBusy}
-          className={commandButtonClass} onClick={() => state.pathDraft ? void loadDirectory(onlineSerial, state.pathDraft) : loadStartDirectory(onlineSerial)}><RefreshCw className="h-3.5 w-3.5" />重试</button>
+          className={commandButtonClass} onClick={() => state.pathDraft ? void loadDirectory(onlineSerial, state.pathDraft) : loadStartDirectory(onlineSerial)}><RefreshCw className="h-3.5 w-3.5" />{t.common.retry}</button>
         <button type="button" disabled={state.listLoading || operationBusy || transferBusy || folderBusy}
-          className={commandButtonClass} onClick={() => void loadDirectory(onlineSerial, null)}><Download className="h-3.5 w-3.5" />打开下载目录</button>
+          className={commandButtonClass} onClick={() => void loadDirectory(onlineSerial, null)}><Download className="h-3.5 w-3.5" />{t.files.deviceFileManager.openDownloadsFolder}</button>
       </div>}
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,7fr)_minmax(260px,3fr)]">
         <DeviceFileList
@@ -682,7 +685,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
           selectedPath={contextMatches ? state.selectedPath : null}
           loading={directoryLoading}
           loaded={directoryLoaded}
-          error={contextMatches ? state.listError : ""}
+          error={contextMatches ? state.listError : null}
           online={Boolean(onlineSerial)}
           disabled={operationBusy || transferBusy || folderBusy || state.listLoading}
           dragActive={dragActive && dragDropEnabled}
@@ -709,13 +712,13 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
             className="w-full max-w-sm border border-rule bg-paper p-0 text-ink shadow-[3px_3px_0_var(--color-hard-shadow)]"
           >
             <div className="flex h-10 items-center justify-between gap-3 border-b border-rule bg-surface px-3">
-              <h2 className="text-sm font-semibold text-ink">新建目录</h2>
+              <h2 className="text-sm font-semibold text-ink">{t.files.deviceFileManager.newDirectory}</h2>
               <button
                 type="button"
                 onClick={() => setFolderDialogOpen(false)}
                 disabled={folderBusy}
                 className={iconButtonClass}
-                title="关闭"
+                title={t.common.close}
               >
                 <X className="h-4 w-4" />
               </button>
@@ -727,14 +730,14 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
                 value={folderName}
                 onChange={(event) => {
                   setFolderName(event.target.value);
-                  setFolderError("");
+                  setFolderError(null);
                 }}
                 disabled={folderBusy || operationBusy || transferBusy}
-                placeholder="目录名称"
-                aria-label="新目录名称"
+                placeholder={t.files.deviceFileManager.directoryName}
+                aria-label={t.files.deviceFileManager.newDirectoryName}
                 className="mt-3 h-8 w-full border border-rule bg-paper px-3 text-xs text-ink outline-none placeholder:text-ink3 disabled:opacity-60"
               />
-              <div className="mt-2 min-h-5 text-xs text-err">{folderError}</div>
+              <div className="mt-2 min-h-5 text-xs text-err">{folderError ? errorText(folderError, t) : ""}</div>
               <div className="mt-3 flex justify-end gap-2">
                 <button
                   type="button"
@@ -742,7 +745,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
                   disabled={folderBusy}
                   className={commandButtonClass}
                 >
-                  取消
+                  {t.common.cancel}
                 </button>
                 <button
                   type="submit"
@@ -760,7 +763,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
                   ) : (
                     <FolderPlus className="h-4 w-4" />
                   )}
-                  创建
+                  {t.files.deviceFileManager.create}
                 </button>
               </div>
             </div>
@@ -779,7 +782,7 @@ interface DeviceFileListProps {
   selectedPath: string | null;
   loading: boolean;
   loaded: boolean;
-  error: string;
+  error: AppErrorPayload | null;
   online: boolean;
   disabled: boolean;
   dragActive: boolean;
@@ -802,6 +805,8 @@ function DeviceFileList({
   onSelect,
   onOpenDirectory,
 }: DeviceFileListProps) {
+  const t = useT();
+  const locale = useLocale();
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: entries.length,
@@ -820,14 +825,14 @@ function DeviceFileList({
   return (
     <div className={cn("relative flex min-h-0 flex-col bg-log-bg/45", dragActive && "bg-hover")}>
       <div className="grid h-8 shrink-0 grid-cols-[minmax(140px,1fr)_64px_72px_116px] items-center border-b border-rule bg-surface px-3 font-data text-[10px] font-medium text-ink3">
-        <span>名称</span>
-        <span>类型</span>
-        <span className="text-right">大小</span>
-        <span className="text-right">修改时间</span>
+        <span>{t.files.deviceFileManager.name}</span>
+        <span>{t.files.deviceFileManager.type}</span>
+        <span className="text-right">{t.files.deviceFileManager.size}</span>
+        <span className="text-right">{t.files.deviceFileManager.modified}</span>
       </div>
       {error && (
         <div className="border-b border-err bg-err-band px-3 py-2 text-xs text-err">
-          {error}
+          {error ? errorText(error, t) : ""}
         </div>
       )}
       <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-auto">
@@ -854,12 +859,12 @@ function DeviceFileList({
                   <DeviceEntryIcon entry={entry} />
                   <span className="truncate font-medium text-ink">{entry.name}</span>
                 </span>
-                <span className="truncate text-ink3">{deviceFileTypeLabel(entry)}</span>
+                <span className="truncate text-ink3">{deviceFileTypeLabel(entry, t)}</span>
                 <span className="text-right font-data text-ink2">
                   {entry.kind === "directory" ? "-" : formatDeviceFileSize(entry.size)}
                 </span>
                 <span className="text-right font-data text-ink3">
-                  {formatDeviceModifiedAt(entry.modified_at)}
+                  {formatDeviceModifiedAt(entry.modified_at, locale)}
                 </span>
               </button>
             );
@@ -867,21 +872,21 @@ function DeviceFileList({
         </div>
 
         {!online && (
-          <CenteredState icon={<FolderOpen className="h-8 w-8" />} text="先选择一台在线设备" />
+          <CenteredState icon={<FolderOpen className="h-8 w-8" />} text={t.files.deviceFileManager.selectAnOnlineDeviceFirst} />
         )}
         {online && loaded && !loading && entries.length === 0 && !error && (
-          <CenteredState icon={<Folder className="h-8 w-8" />} text={hasHiddenEntries ? "没有可显示的文件" : "此目录为空"} />
+          <CenteredState icon={<Folder className="h-8 w-8" />} text={hasHiddenEntries ? t.files.deviceFileManager.noFilesToDisplay : t.files.deviceFileManager.thisDirectoryIsEmpty} />
         )}
         {loading && entries.length === 0 && (
           <CenteredState
             icon={<LoaderCircle className="h-8 w-8 animate-spin" />}
-            text="正在读取设备目录"
+            text={t.files.deviceFileManager.readingDeviceDirectory}
           />
         )}
       </div>
       {dragActive && (
         <div className="pointer-events-none absolute inset-3 z-10 flex items-center justify-center border-2 border-dashed border-note bg-paper/95 text-sm font-medium text-note">
-          释放以上传到当前目录
+          {t.files.deviceFileManager.dropToUploadToThisDirectory}
         </div>
       )}
     </div>
@@ -915,7 +920,7 @@ interface DeviceFileDetailsProps {
   preview: {
     loading: boolean;
     data: { data_url: string } | null;
-    error: string;
+    error: AppErrorPayload | null;
   };
   disabled: boolean;
   onCopyPath: (path: string) => Promise<void>;
@@ -931,13 +936,15 @@ function DeviceFileDetails({
   onDownload,
   onOpenDirectory,
 }: DeviceFileDetailsProps) {
+  const t = useT();
+  const locale = useLocale();
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto p-3">
       {!entry ? (
         <div className="flex min-h-48 flex-1 flex-col items-center justify-center gap-2 text-ink3">
           <File className="h-6 w-6" />
-          <strong className="text-sm font-semibold text-ink">未选择项目</strong>
-          <span className="text-xs">从左侧选择文件或目录.</span>
+          <strong className="text-sm font-semibold text-ink">{t.files.deviceFileManager.noItemSelected}</strong>
+          <span className="text-xs">{t.files.deviceFileManager.selectAFileOrDirectoryOnTheLeft}</span>
         </div>
       ) : (
         <>
@@ -945,7 +952,7 @@ function DeviceFileDetails({
             <DeviceEntryIcon entry={entry} />
             <div className="min-w-0 flex-1">
               <h2 className="break-all text-sm font-semibold text-ink">{entry.name}</h2>
-              <div className="mt-1 font-data text-[10.5px] text-ink3">{deviceFileTypeLabel(entry)}</div>
+              <div className="mt-1 font-data text-[10.5px] text-ink3">{deviceFileTypeLabel(entry, t)}</div>
             </div>
           </div>
 
@@ -962,7 +969,7 @@ function DeviceFileDetails({
               <Folder className="h-14 w-14 text-note" />
             ) : entry.previewable ? (
               <div className="px-4 text-center text-xs text-ink3">
-                {preview.error || "图片预览不可用"}
+                {preview.error ? errorText(preview.error, t) : t.files.deviceFileManager.imagePreviewUnavailable}
               </div>
             ) : (
               <File className="h-14 w-14 text-ink3" />
@@ -970,11 +977,11 @@ function DeviceFileDetails({
           </div>
 
           <dl className="mt-3 grid grid-cols-[64px_minmax(0,1fr)] gap-x-3 gap-y-2 font-data text-[10.5px]">
-            <dt className="text-ink3">大小</dt>
+            <dt className="text-ink3">{t.files.deviceFileManager.size}</dt>
             <dd className="m-0 text-ink">{entry.kind === "directory" ? "-" : formatDeviceFileSize(entry.size)}</dd>
-            <dt className="text-ink3">修改时间</dt>
-            <dd className="m-0 text-ink">{formatDeviceModifiedAt(entry.modified_at)}</dd>
-            <dt className="text-ink3">路径</dt>
+            <dt className="text-ink3">{t.files.deviceFileManager.modified}</dt>
+            <dd className="m-0 text-ink">{formatDeviceModifiedAt(entry.modified_at, locale)}</dd>
+            <dt className="text-ink3">{t.files.deviceFileManager.path}</dt>
             <dd className="m-0 break-all text-ink2">{entry.path}</dd>
           </dl>
 
@@ -985,7 +992,7 @@ function DeviceFileDetails({
               className={commandButtonClass}
             >
               <Copy className="h-4 w-4" />
-              复制路径
+              {t.files.deviceFileManager.copyPath}
             </button>
             {entry.kind === "directory" ? (
               <button
@@ -995,7 +1002,7 @@ function DeviceFileDetails({
                 className={commandButtonClass}
               >
                 <FolderOpen className="h-4 w-4" />
-                打开目录
+                {t.files.deviceFileManager.openDirectory}
               </button>
             ) : entry.kind === "file" ? (
               <button
@@ -1005,7 +1012,7 @@ function DeviceFileDetails({
                 className="inline-flex h-8 items-center gap-2 border border-ink bg-ink px-3 font-data text-[11px] font-medium text-onink hover:bg-ink2 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Download className="h-4 w-4" />
-                下载到电脑
+                {t.files.deviceFileManager.downloadToComputer}
               </button>
             ) : null}
           </div>
@@ -1022,18 +1029,19 @@ function TransferPanel({
   transfer: DeviceTransferBatch | null;
   onReveal: (path: string) => Promise<void>;
 }) {
+  const t = useT();
   return (
     <div className="flex max-h-56 min-h-32 flex-col border-t border-rule">
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-rule bg-surface px-3 text-xs font-medium">
-        <span className="text-ink">最近传输</span>
+        <span className="text-ink">{t.files.deviceFileManager.recentTransfer}</span>
         {transfer && (
-          <span className="font-data text-[10px] text-ink3">{deviceTransferSummary(transfer)}</span>
+          <span className="font-data text-[10px] text-ink3">{deviceTransferSummary(transfer, t)}</span>
         )}
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
         {!transfer ? (
           <div className="flex h-full items-center justify-center text-xs text-ink3">
-            暂无传输记录
+            {t.files.deviceFileManager.noTransferHistory}
           </div>
         ) : (
           transfer.items.map((item, index) => (
@@ -1045,7 +1053,7 @@ function TransferPanel({
                 </div>
                 {item.status === "active" && (
                   <div className="mt-0.5 text-ink3">
-                    {transfer.kind === "upload" ? "正在上传" : "正在下载"}
+                    {transfer.kind === "upload" ? t.files.deviceFileManager.uploading : t.files.deviceFileManager.downloading}
                   </div>
                 )}
                 {item.status === "success" && (
@@ -1058,7 +1066,7 @@ function TransferPanel({
                         type="button"
                         onClick={() => void onReveal(item.targetPath)}
                         className="inline-flex h-6 w-6 shrink-0 items-center justify-center border border-rule text-ink3 hover:bg-hover hover:text-ink"
-                        title="在文件管理器中显示"
+                        title={t.files.deviceFileManager.revealInFileManager}
                       >
                         <FolderOpen className="h-3.5 w-3.5" />
                       </button>
@@ -1066,7 +1074,7 @@ function TransferPanel({
                   </div>
                 )}
                 {item.status === "error" && (
-                  <div className="mt-0.5 break-words text-err">{item.error}</div>
+                  <div className="mt-0.5 break-words text-err">{errorText(item.error, t)}</div>
                 )}
               </div>
             </div>
@@ -1088,10 +1096,6 @@ function TransferStatusIcon({ status }: { status: DeviceTransferBatch["items"][n
     case "error":
       return <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-err" />;
   }
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 const iconButtonClass =

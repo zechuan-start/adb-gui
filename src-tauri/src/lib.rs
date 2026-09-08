@@ -1,6 +1,10 @@
 mod adb;
 mod commands;
 mod device_helper;
+mod error;
+mod error_codes;
+#[cfg(target_os = "macos")]
+mod menu_locale;
 
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
@@ -63,7 +67,7 @@ fn macos_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
         &[
             &PredefinedMenuItem::about(app, None, Some(about_metadata))?,
             &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, OPEN_SETTINGS_MENU_ID, "设置…", true, Some("Cmd+,"))?,
+            &menu_locale::settings_item(app, OPEN_SETTINGS_MENU_ID)?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::services(app, None)?,
             &PredefinedMenuItem::separator(app)?,

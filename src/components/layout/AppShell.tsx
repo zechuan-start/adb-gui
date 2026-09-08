@@ -1,3 +1,4 @@
+import { useT } from "@/i18n";
 import {
   useEffect,
   useRef,
@@ -22,6 +23,7 @@ export function AppShell({
   children,
   logcat,
 }: AppShellProps) {
+  const t = useT();
   const dragRef = useRef<{ pointerId: number; startY: number; startHeight: number } | null>(
     null,
   );
@@ -130,7 +132,7 @@ export function AppShell({
             {!logMaximized && (
               <div
                 role="separator"
-                aria-label="调整日志面板高度"
+                aria-label={t.shell.workspace.resizeLogs}
                 aria-orientation="horizontal"
                 tabIndex={0}
                 onPointerDown={handleResizePointerDown}

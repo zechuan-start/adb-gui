@@ -1,3 +1,4 @@
+import type { AppErrorPayload } from "@/i18n/errors";
 import { describe, expect, it } from "vitest";
 import {
   createLogcatStreamController,
@@ -64,7 +65,7 @@ function createHarness(options: HarnessOptions = {}) {
   const frames = new Map<number, () => void>();
   const started: LogcatSessionInfo[] = [];
   const flushed: LogcatStreamFrame[] = [];
-  const failures: string[] = [];
+  const failures: AppErrorPayload[] = [];
   const asyncErrors: unknown[] = [];
   const stops: Array<[string, number]> = [];
   const canceledFrames: number[] = [];
@@ -176,7 +177,7 @@ describe("createLogcatStreamController", () => {
       serial: "device-a",
       session_id: 7,
       reason: "eof",
-      detail: "",
+      detail: null,
     });
     expect(harness.frames.size).toBe(0);
 
@@ -189,7 +190,7 @@ describe("createLogcatStreamController", () => {
       {
         sessionId: 7,
         lines: [line(1)],
-        disconnectDetail: "eof",
+        disconnectDetail: { code: "logcat_disconnected", detail: "eof" },
       },
     ]);
   });
@@ -231,7 +232,7 @@ describe("createLogcatStreamController", () => {
       serial: "device-a",
       session_id: 1,
       reason: "eof",
-      detail: "old session",
+      detail: { code: "unknown", detail: "old session" },
     });
     secondA.emitBatch({ serial: "device-a", session_id: 3, lines: [line(3)] });
     secondA.runFrame();
@@ -266,13 +267,13 @@ describe("createLogcatStreamController", () => {
 
     harness.emitBatch({ serial: "device-a", session_id: 7, lines: [line(1)] });
     harness.emitBatch({ serial: "device-a", session_id: 7, lines: [line(2)] });
-    harness.emitExit({ serial: "device-a", session_id: 7, reason: "eof", detail: "first" });
-    harness.emitExit({ serial: "device-a", session_id: 7, reason: "error", detail: "last" });
+    harness.emitExit({ serial: "device-a", session_id: 7, reason: "eof", detail: { code: "unknown", detail: "first" } });
+    harness.emitExit({ serial: "device-a", session_id: 7, reason: "error", detail: { code: "unknown", detail: "last" } });
     expect(harness.frames.size).toBe(1);
     harness.runFrame();
 
     expect(harness.flushed).toEqual([
-      { sessionId: 7, lines: [line(1), line(2)], disconnectDetail: "last" },
+      { sessionId: 7, lines: [line(1), line(2)], disconnectDetail: { code: "unknown", detail: "last" } },
     ]);
   });
 
@@ -300,7 +301,7 @@ describe("createLogcatStreamController", () => {
     expect(harness.batchUnlistenCount).toBe(1);
     expect(harness.exitUnlistenCount).toBe(0);
     expect(harness.startCount).toBe(0);
-    expect(harness.failures).toEqual(["Error: listen failed"]);
+    expect(harness.failures).toEqual([{ code: "unknown", detail: "listen failed" }]);
   });
 
   it("stops and reports a session whose returned serial does not match", async () => {
@@ -310,6 +311,6 @@ describe("createLogcatStreamController", () => {
 
     expect(harness.stops).toEqual([["device-b", 9]]);
     expect(harness.started).toHaveLength(0);
-    expect(harness.failures[0]).toContain("expected device-a, got device-b");
+    expect(harness.failures[0].detail).toContain("expected device-a, got device-b");
   });
 });

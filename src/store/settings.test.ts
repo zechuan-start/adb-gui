@@ -50,7 +50,7 @@ describe("settings persistence", () => {
     disk.setItem.mockImplementationOnce(() => { throw new Error("quota"); });
     store.getState().update("codegen", defaultSettings().codegen);
     expect(store.getState().preferences.codegen).toEqual(saved.codegen);
-    expect(store.getState().error).toContain("未保存");
+    expect(store.getState().error).toMatchObject({ code: "settings.save" });
   });
 
   it.each([
@@ -105,7 +105,7 @@ describe("settings persistence", () => {
       const disk = storage(raw);
       const store = createSettingsStore(() => disk);
       expect(store.getState().available).toBe(false);
-      expect(store.getState().error).toContain("无法读取设置");
+      expect(store.getState().error).toMatchObject({ code: "settings.load" });
       store.getState().update("performance", { backgroundEnabled: true });
       expect(disk.getItem()).toBe(raw);
       store.getState().restoreDefaults();
@@ -122,7 +122,7 @@ describe("settings persistence", () => {
     });
     store.getState().update("recording", { openAfterSave: false });
     expect(store.getState().preferences.recording.openAfterSave).toBe(true);
-    expect(store.getState().error).toContain("未保存");
+    expect(store.getState().error).toMatchObject({ code: "settings.save" });
     store.getState().update("recording", { openAfterSave: false });
     expect(store.getState().error).toBeNull();
     expect(decodeSettings(disk.getItem()).recording.openAfterSave).toBe(false);

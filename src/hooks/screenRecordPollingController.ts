@@ -1,4 +1,5 @@
 import type { ScreenRecordStatus } from "@/lib/tauri";
+import { errorIdentity } from "@/i18n/errors";
 
 interface ScreenRecordPollingDependencies {
   loadStatus: () => Promise<ScreenRecordStatus>;
@@ -46,7 +47,7 @@ export function createScreenRecordPollingController(
         dependencies.onStatus(status);
       }
     } catch (error) {
-      const message = String(error);
+      const message = errorIdentity(error);
       if (!disposed && lastError !== message) {
         lastError = message;
         dependencies.onError(error);

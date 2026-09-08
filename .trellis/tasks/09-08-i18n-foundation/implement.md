@@ -31,9 +31,9 @@
 
 13. `src/lib/tauri.ts` 新增 `emitLocaleChanged`, 非 Tauri 环境静默跳过.
 14. `applyLocale` 中调用.
-15. `src-tauri/src/lib.rs`: 菜单标签双语常量, 启动时按系统语言选初始值, 监听 `locale-changed` 更新菜单项.
+15. 在 `src-tauri/Cargo.toml` 的 macOS target dependencies 下添加 `sys-locale = "0.3.2"`, 同步 `Cargo.lock`. `src-tauri/src/lib.rs` 沿用 macOS 条件编译, 通过 `sys_locale::get_locales()` 取首个非空首选语言, 主子标签 `zh` 对应中文, 其余或空列表对应英文. 注册 `locale-changed` 监听后接收前端首个有效语言, 更新设置菜单; 校验载荷并记录发送/更新失败.
 
-验证: `cargo check`; `pnpm tauri dev` 下切换语言, 菜单栏文字即时变化.
+验证: `cargo check --manifest-path src-tauri/Cargo.toml`; 60 秒上限运行 Rust 菜单解析与载荷定向测试. `pnpm tauri dev` 下核对中文/非中文系统首选菜单初值, 已保存偏好与系统不同的冷启动首次同步, 切换语言及改回跟随系统. 浏览器冒烟不替代原生菜单验收.
 
 ## 阶段 5: 收口
 
@@ -50,6 +50,7 @@
 
 回滚点: 阶段 3 结束即为可交付状态 (语言可切, 其余文案仍中文). 阶段 4 失败可单独回滚, 不影响前端双语能力.
 
-## 继续实现前需要确认
+## 已定技术决策与执行状态
 
-- Rust 侧取系统语言是否引入 `sys-locale` 依赖. 若不希望增加依赖, 采用"初始英文 + 前端就绪后覆盖"的退路, 接受启动瞬间的菜单文字闪烁.
+- 2026-09-08 已收敛为 macOS target 引入 `sys-locale = "0.3.2"`, 按系统首选语言初始化, 前端就绪后按生效语言同步. 不再保留依赖选择待确认项.
+- 2026-09-08 已实现并完成自动化检查和 macOS 原生菜单验收, 见 [validation.md](./validation.md). 菜单桥接位于 `src/lib/localeMenu.ts`, 与通用 IPC 模块隔离, 避免词典/store 初始化循环依赖.

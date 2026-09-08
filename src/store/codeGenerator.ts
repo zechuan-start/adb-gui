@@ -1,3 +1,4 @@
+import { toAppError, type AppErrorPayload } from "@/i18n/errors";
 import { create } from "zustand";
 import {
   parseBatchInput,
@@ -10,7 +11,7 @@ interface CodeGeneratorStore {
   input: string;
   inputRevision: number;
   generatedBatch: GeneratedBatch | null;
-  inputError: { message: string; options: GeneratorOptions | null } | null;
+  inputError: { error: AppErrorPayload; options: GeneratorOptions | null } | null;
   setInput: (input: string) => void;
   generate: () => boolean;
   clear: () => void;
@@ -36,13 +37,13 @@ export const useCodeGeneratorStore = create<CodeGeneratorStore>((set, get) => ({
     try {
       options = { ...requireSettings().codegen };
     } catch (error) {
-      set({ inputError: { message: String(error), options: null } });
+      set({ inputError: { error: toAppError(error), options: null } });
       return false;
     }
     const state = get();
     const result = parseBatchInput({ ...options, input: state.input });
     if (!result.ok) {
-      set({ inputError: { message: result.message, options } });
+      set({ inputError: { error: { code: result.code }, options } });
       return false;
     }
 

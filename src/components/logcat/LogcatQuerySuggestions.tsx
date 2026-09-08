@@ -1,3 +1,4 @@
+import { useT } from "@/i18n";
 import { useEffect, useRef } from "react";
 import type { QueryCompletion } from "@/lib/logcatQueryCompletion";
 import { cn } from "@/lib/utils";
@@ -15,6 +16,7 @@ export function LogcatQuerySuggestions({
   currentPackage,
   onSelect,
 }: LogcatQuerySuggestionsProps) {
+  const t = useT();
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
@@ -34,8 +36,8 @@ export function LogcatQuerySuggestions({
       {completions.map((completion, index) => {
         const detail = completion.kind === "package" && completion.label === "mine"
           ? currentPackage
-            ? `当前前台应用: ${currentPackage}`
-            : "当前前台应用"
+            ? t.logcat.foregroundPackage({ name: currentPackage })
+            : t.logcat.foreground
           : completion.detail;
         return (
           <button

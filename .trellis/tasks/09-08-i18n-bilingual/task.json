@@ -3,7 +3,7 @@
   "name": "i18n-bilingual",
   "title": "界面中英双语与语言设置",
   "description": "全应用中英双语: 自研 typed catalog, 语言设置项默认跟随系统, 非中文回落英文, 前端与 Rust 后端文案全部可切换.",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -12,7 +12,7 @@
   "assignee": "qi",
   "createdAt": "2026-09-08",
   "completedAt": null,
-  "branch": null,
+  "branch": "claude/bilingual-project-plan-ng1o7s",
   "base_branch": "claude/bilingual-project-plan-ng1o7s",
   "worktree_path": null,
   "commit": null,
@@ -27,6 +27,6 @@
   ],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "2026-09-08: 按用户要求归档翻译实现并提交推送. 前端458测试, Rust135测试, 双语浏览器矩阵及macOS原生冒烟通过. 未实测设备场景及中文错误组合变化保留于validation.md. 空格mDNS解析缺陷将在main独立修复.",
   "meta": {}
 }

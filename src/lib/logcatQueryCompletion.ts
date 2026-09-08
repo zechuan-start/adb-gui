@@ -1,3 +1,4 @@
+import { messages, type Messages } from "@/i18n";
 import {
   formatQueryValue,
   formatRegexQueryValue,
@@ -196,6 +197,7 @@ function keyCompletions(
   replaceStart: number,
   replaceEnd: number,
   negated: boolean,
+  t: Messages,
 ): QueryCompletion[] {
   const completions: QueryCompletion[] = [];
   if (!negated && prefix.length === 0 && modifier === null) {
@@ -203,7 +205,7 @@ function keyCompletions(
       kind: "operator",
       label: "-",
       insertText: "-",
-      detail: "排除条件",
+      detail: t.logcat.exclude,
       replaceStart,
       replaceEnd,
     });
@@ -278,6 +280,7 @@ function valueCompletions(
   replaceStart: number,
   replaceEnd: number,
   sources: QueryCompletionSources,
+  t: Messages,
 ): QueryCompletion[] {
   switch (key) {
     case "level": {
@@ -320,7 +323,7 @@ function valueCompletions(
             value,
             replaceStart,
             replaceEnd,
-            value === "mine" ? "当前前台应用" : undefined,
+            value === "mine" ? t.logcat.foreground : undefined,
           ),
         );
     case "process":
@@ -341,6 +344,7 @@ export function getQueryCompletions(
   input: string,
   cursor: number,
   sources: QueryCompletionSources = EMPTY_SOURCES,
+  t: Messages = messages(),
 ): QueryCompletion[] {
   const { term, contentStart, negated, colon, modifier, keyEnd, key } =
     queryCompletionContext(input, cursor);
@@ -353,6 +357,7 @@ export function getQueryCompletions(
       contentStart,
       colon === null ? term.end : colon + 1,
       negated,
+      t,
     );
   }
 
@@ -362,7 +367,7 @@ export function getQueryCompletions(
 
   const valueStart = colon + 1;
   const prefix = decodeValuePrefix(input.slice(valueStart, cursor));
-  return valueCompletions(key, modifier, prefix, valueStart, term.end, sources);
+  return valueCompletions(key, modifier, prefix, valueStart, term.end, sources, t);
 }
 
 export function applyQueryCompletion(

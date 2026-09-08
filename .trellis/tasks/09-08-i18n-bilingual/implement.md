@@ -9,7 +9,7 @@
 | 阶段 | 子任务 | 完成后用户能看到什么 | 验证 |
 | --- | --- | --- | --- |
 | 1 | [i18n-foundation](../09-08-i18n-foundation/implement.md) | 设置里出现语言行, 三档可切; 首启按系统语言判定; 主题行等已迁移的少量文案随之切换 | `pnpm test` 新增解析规则用例; 手工清空 localStorage 验证首启 |
-| 2 | [i18n-shell-settings](../09-08-i18n-shell-settings/implement.md) | 外壳与设置面板整体双语 | 英文下遍历七个设置分组无中文残留 |
+| 2 | [i18n-shell-settings](../09-08-i18n-shell-settings/implement.md) | 外壳与设置面板整体双语 | 英文下遍历六个设置分组无中文残留 |
 | 3 | [i18n-tool-pages](../09-08-i18n-tool-pages/implement.md) | 六个工作区双语 | 英文下遍历六个工作区无中文残留 |
 | 4 | [i18n-backend-errors](../09-08-i18n-backend-errors/implement.md) | 失败提示双语 | 英文下触发四条真实失败路径 |
 | 5 | [i18n-docs-release](../09-08-i18n-docs-release/implement.md) | 英文 README 配英文截图 | 重跑截图脚本, 两套图各自正确 |
@@ -27,9 +27,9 @@
 | 一次性大 diff 淹没 review | 810 行文案迁移 | 按子任务与模块命名空间分批, 每批单独跑测试 |
 | 迁移时顺手改措辞 | 全部迁移阶段 | 硬约束: 中文词条逐字不变. review 时用 `git diff` 核对中文串未变化 |
 | 测试大面积失败 | 22 个断言中文的测试文件 | 断言改为引用 `zh-CN` 词典条目, 与迁移同批提交 |
-| 命令签名变更引发编译连锁 | `Result<T, String>` → `Result<T, AppError>` | 逐文件改, 每改一个文件跑一次 `cargo check` |
+| 命令签名变更引发编译连锁 | `Result<T, String>` → `Result<T, AppError>` | 按契约与模块批次检查, 集成后执行完整检查 |
 | 语言切换后排序结果变化 | `appInfo.ts` collator | 已确认 collator 跟随界面语言; 阶段 3 用固定中英混合样本锁定两种语言下的期望顺序 |
-| 原生菜单与前端语言不同步 | `lib.rs` 菜单 + `locale-changed` 事件 | 阶段 1 打通事件通路并手工验证一次切换 |
+| 原生菜单与前端语言不同步 | macOS `sys-locale` + `lib.rs` 菜单 + `locale-changed` 事件 | 按系统首选语言初始化, 前端就绪后以生效语言同步; 阶段 1 验证系统初值, 显式偏好不同的冷启动和语言切换 |
 
 ## 回滚点
 
@@ -37,8 +37,8 @@
 - 每个子任务在自己的 `implement.md` 里标注可独立回滚的提交边界.
 - `AppErrorPayload` 的前端归一化层 (`toAppError`) 兼容裸字符串错误, 因此阶段 4 即使只改了一部分 Rust 命令也不会让界面崩溃, 可以分批合入.
 
-## 继续实现前需要确认
+## 决策与执行状态
 
-产品决策已全部确认, 无阻塞项.
+产品决策已全部确认. 2026-09-08 已实现五个子任务, macOS target 使用 `sys-locale = "0.3.2"`. 已通过集成测试, 双语浏览器矩阵与 macOS 原生冒烟, 具体范围和未覆盖环境见 [validation.md](./validation.md). 2026-09-08 用户已要求归档提交推送, 按已有验证范围交付.
 
-执行方式默认串行 (阶段 1 → 2 → 3 → 4 → 5). 单线程实施时串行更省协调成本, 也彻底避开阶段 2 与 3 共改 `src/i18n/messages/*` 的冲突. 若后续改为多线程并行, 需先按父 design 的模块命名空间分区, 并让阶段 2 的 toast 改造先合入.
+实际执行先串行稳定基建与 toast 契约, 再按用户授权并行迁移独立的工具, 日志/性能和 Rust 模块. 词典拆为 tools, streams, backend 的中英模块, 根词典由主线程集成. 文档与截图在全部界面迁移后生成.

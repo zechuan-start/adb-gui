@@ -16,7 +16,7 @@ Rust (Tauri 2) backend. ADB 调用封装, 命令模块化, Result 错误传播.
 |-------|-------------|--------|
 | [Directory Structure](./directory-structure.md) | Tauri/Rust module layout | ✅ Done |
 | [Database Guidelines](./database-guidelines.md) | N/A (no database) | ✅ Done |
-| [Error Handling](./error-handling.md) | Result<T, String> patterns | ✅ Done |
+| [Error Handling](./error-handling.md) | Structured AppError IPC, causes and stream exit contracts | ✅ Done |
 | [Quality Guidelines](./quality-guidelines.md) | Clippy, forbidden patterns | ✅ Done |
 | [Logging Guidelines](./logging-guidelines.md) | Minimal eprintln approach | ✅ Done |
 | [Clipboard](./clipboard.md) | Shared DEX, stdin protocol and process bounds | Done |

@@ -1,3 +1,4 @@
+import { errorText, useT } from "@/i18n";
 import { useEffect, useState } from "react";
 import {
   Clock,
@@ -33,6 +34,7 @@ import { createScreenRecordPollingController } from "@/hooks/screenRecordPolling
 import { cn } from "@/lib/utils";
 
 export function ScreenRecordTool({ active = true }: { active?: boolean }) {
+  const t = useT();
   const devices = useDeviceStore((state) => state.devices);
   const selectedDevice = useDeviceStore((state) => state.selectedDevice);
   const device = getDeviceBySerial(devices, selectedDevice);
@@ -60,25 +62,26 @@ export function ScreenRecordTool({ active = true }: { active?: boolean }) {
       onError: (message) =>
         useFeedbackStore.getState().showToast("error", message),
       onSaved: (result, behavior) => {
-        const warnings = [
-          result.source_cleanup_error,
-          behavior.openAfterSave && !result.opened ? "自动打开视频失败" : null,
-        ].filter(Boolean);
-        useFeedbackStore
-          .getState()
-          .showToast(
-            warnings.length ? "error" : "success",
-            `录屏已保存: ${result.path}${warnings.length ? `; ${warnings.join("; ")}` : ""}`,
-          );
+        const openFailed = behavior.openAfterSave && !result.opened;
+        useFeedbackStore.getState().showToast(
+          result.source_cleanup_error || openFailed ? "error" : "success",
+          (t) => t.tools.screenRecordTool.recordingSaved({
+            path: result.path,
+            warnings: [
+              result.source_cleanup_error ? errorText(result.source_cleanup_error, t) : null,
+              openFailed ? t.tools.screenRecordTool.couldNotOpenVideoAutomatically : null,
+            ].filter((warning): warning is string => warning !== null),
+          }),
+        );
       },
       onDiscarded: (result) =>
         useFeedbackStore
           .getState()
           .showToast(
             result.source_cleanup_error ? "error" : "success",
-            result.source_cleanup_error
-              ? `已放弃恢复, 设备源文件可能仍保留: ${result.serial} / ${result.remote_path}; ${result.source_cleanup_error}`
-              : "已放弃保存并删除设备源文件",
+            (t) => (result.source_cleanup_error
+              ? t.tools.screenRecordTool.recoveryAbandonedSourceMayRemainOnDevice({ serial: result.serial, path: result.remote_path, detail: errorText(result.source_cleanup_error, t) })
+              : t.tools.screenRecordTool.saveAbandonedAndDeviceSourceDeleted),
           ),
     }),
   );
@@ -101,7 +104,7 @@ export function ScreenRecordTool({ active = true }: { active?: boolean }) {
       onError: (error) =>
         useFeedbackStore
           .getState()
-          .showToast("error", `刷新录屏状态失败: ${String(error)}`),
+          .showToast("error", (t) => (t.tools.screenRecordTool.couldNotRefreshRecordingStatus({ detail: errorText(error, t) }))),
     });
     polling.run();
     return () => polling.dispose();
@@ -129,7 +132,7 @@ export function ScreenRecordTool({ active = true }: { active?: boolean }) {
     } catch (failure) {
       useFeedbackStore
         .getState()
-        .showToast("error", `打开已保存录屏失败: ${String(failure)}`);
+        .showToast("error", (t) => (t.tools.screenRecordTool.couldNotOpenSavedRecording({ detail: errorText(failure, t) })));
     }
   }
 
@@ -156,36 +159,36 @@ export function ScreenRecordTool({ active = true }: { active?: boolean }) {
           <Square className="h-4 w-4" />
         )}
         {busy === "start"
-          ? "启动中..."
+          ? t.tools.screenRecordTool.starting
           : saving
-            ? "处理中..."
+            ? t.tools.screenRecordTool.processing
             : failed
-              ? "等待恢复保存"
+              ? t.tools.screenRecordTool.waitingToRecoverSave
               : idle
-                ? "开始录屏"
-                : "停止并保存"}
+                ? t.tools.screenRecordTool.startRecording
+                : t.tools.screenRecordTool.stopAndSave}
       </button>
       <div className="mt-3 grid grid-cols-2 border-y border-rule text-xs">
         <div className="border-r border-dashed border-rule px-2.5 py-2">
-          <div className="text-[10.5px] text-ink3">状态</div>
+          <div className="text-[10.5px] text-ink3">{t.tools.screenRecordTool.status}</div>
           <div className="mt-1 font-medium">
             {failed
-              ? "保存失败"
+              ? t.tools.screenRecordTool.saveFailed
               : saving
-                ? "处理中"
+                ? t.tools.screenRecordTool.processingLabel
                 : status.phase === "recording"
-                  ? "录制中"
+                  ? t.tools.screenRecordTool.recording
                   : status.phase === "pending_save"
-                    ? "待保存"
+                    ? t.tools.screenRecordTool.pendingSave
                     : online
-                      ? "待开始"
-                      : "设备离线"}
+                      ? t.tools.screenRecordTool.ready
+                      : t.tools.screenRecordTool.deviceOffline}
           </div>
         </div>
         <div className="px-2.5 py-2">
           <div className="flex items-center gap-1 text-[10.5px] text-ink3">
             <Clock className="h-3.5 w-3.5" />
-            时长
+            {t.tools.screenRecordTool.duration}
           </div>
           <div className="mt-1 font-mono font-medium">{elapsed}</div>
         </div>
@@ -195,19 +198,19 @@ export function ScreenRecordTool({ active = true }: { active?: boolean }) {
           role="alert"
           className="mt-3 border-y border-err py-2 text-[11px] text-err"
         >
-          <div className="max-h-28 overflow-y-auto break-all">{error}</div>
+          <div className="max-h-28 overflow-y-auto break-all">{error ? errorText(error, t) : ""}</div>
           {status.attempted_path && (
             <div className="mt-1 break-all">
-              保存目标: {status.attempted_path}
+              {t.tools.recordingSaveDestination({ path: status.attempted_path })}
             </div>
           )}
-          {status.remote_path && (
+          {status.remote_path && status.serial && (
             <div className="mt-1 break-all text-ink2">
-              设备源文件: {status.serial} / {status.remote_path}
+              {t.tools.recordingDeviceSource({ serial: status.serial, path: status.remote_path })}
             </div>
           )}
-          {status.remote_path && (
-            <div className="mt-1 text-ink3">退出后需要手动找回设备源文件.</div>
+          {status.remote_path && status.serial && (
+            <div className="mt-1 text-ink3">{t.tools.screenRecordTool.afterClosingRecoverTheDeviceSourceManually}</div>
           )}
         </div>
       )}
@@ -220,7 +223,7 @@ export function ScreenRecordTool({ active = true }: { active?: boolean }) {
             onClick={() => void controller.save(false)}
           >
             <RefreshCw className="h-3.5 w-3.5" />
-            重试保存
+            {t.tools.screenRecordTool.retrySave}
           </button>
           <button
             type="button"
@@ -233,7 +236,7 @@ export function ScreenRecordTool({ active = true }: { active?: boolean }) {
             }}
           >
             <Save className="h-3.5 w-3.5" />
-            另存为
+            {t.tools.screenRecordTool.saveAs}
           </button>
           <button
             type="button"
@@ -246,16 +249,16 @@ export function ScreenRecordTool({ active = true }: { active?: boolean }) {
             }}
           >
             <Trash2 className="h-3.5 w-3.5" />
-            放弃保存
+            {t.tools.screenRecordTool.discardSave}
           </button>
         </div>
       )}
       <div className="mt-3 min-h-8 break-all border-b border-dashed border-rule2 pb-2 font-data text-[11px] text-ink2">
-        {saved?.path ?? status.local_path ?? "尚无已保存录屏"}
+        {saved?.path ?? status.local_path ?? t.tools.screenRecordTool.noSavedRecordingYet}
       </div>
       {saved?.source_cleanup_error && (
         <p className="mt-2 break-all text-[11px] text-err">
-          {saved.source_cleanup_error}
+          {errorText(saved.source_cleanup_error, t)}
         </p>
       )}
       <div className="mt-auto flex flex-wrap gap-1.5 pt-3">
@@ -266,7 +269,7 @@ export function ScreenRecordTool({ active = true }: { active?: boolean }) {
           onClick={() => void openSaved(true)}
         >
           <FolderOpen className="h-3.5 w-3.5" />
-          在文件管理器中显示
+          {t.tools.screenRecordTool.revealInFileManager}
         </button>
         <button
           type="button"
@@ -275,7 +278,7 @@ export function ScreenRecordTool({ active = true }: { active?: boolean }) {
           onClick={() => void openSaved(false)}
         >
           <Video className="h-3.5 w-3.5" />
-          用默认程序打开
+          {t.tools.screenRecordTool.openWithDefaultApp}
         </button>
       </div>
     </div>

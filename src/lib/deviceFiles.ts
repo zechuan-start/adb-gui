@@ -1,3 +1,6 @@
+import type { Messages, Locale } from "@/i18n";
+import { dateTime } from "@/i18n/format";
+import type { AppErrorPayload } from "@/i18n/errors";
 import type {
   DeviceDirectoryListing,
   DeviceFileEntry,
@@ -46,7 +49,7 @@ export interface DeviceTransferItem {
   status: DeviceTransferItemStatus;
   resultName: string;
   targetPath: string;
-  error: string;
+  error: AppErrorPayload | null;
 }
 
 export interface DeviceTransferBatch {
@@ -59,7 +62,7 @@ interface DevicePreviewState {
   requestId: number;
   loading: boolean;
   data: DeviceImagePreview | null;
-  error: string;
+  error: AppErrorPayload | null;
 }
 
 export interface DeviceFileManagerState {
@@ -71,7 +74,7 @@ export interface DeviceFileManagerState {
   selectedPath: string | null;
   listRequestId: number;
   listLoading: boolean;
-  listError: string;
+  listError: AppErrorPayload | null;
   preview: DevicePreviewState;
   transfer: DeviceTransferBatch | null;
 }
@@ -86,7 +89,7 @@ export type DeviceFileManagerAction =
       requestId: number;
       listing: DeviceDirectoryListing;
     }
-  | { type: "list-error"; serial: string; requestId: number; error: string }
+  | { type: "list-error"; serial: string; requestId: number; error: AppErrorPayload }
   | { type: "select"; path: string | null }
   | { type: "preview-start"; serial: string; requestId: number; path: string }
   | {
@@ -101,7 +104,7 @@ export type DeviceFileManagerAction =
       serial: string;
       requestId: number;
       path: string;
-      error: string;
+      error: AppErrorPayload | null;
     }
   | {
       type: "transfer-start";
@@ -117,7 +120,7 @@ export type DeviceFileManagerAction =
       resultName: string;
       targetPath: string;
     }
-  | { type: "transfer-item-error"; serial: string; index: number; error: string }
+  | { type: "transfer-item-error"; serial: string; index: number; error: AppErrorPayload }
   | { type: "transfer-finish"; serial: string };
 
 export function createDeviceFileManagerState(serial: string | null): DeviceFileManagerState {
@@ -130,7 +133,7 @@ export function createDeviceFileManagerState(serial: string | null): DeviceFileM
     selectedPath: null,
     listRequestId: 0,
     listLoading: false,
-    listError: "",
+    listError: null,
     preview: emptyPreview(),
     transfer: null,
   };
@@ -180,7 +183,7 @@ export function deviceFileManagerReducer(
         ...state,
         listRequestId: action.requestId,
         listLoading: true,
-        listError: "",
+        listError: null,
       };
     case "list-success":
       if (!matchesListRequest(state, action.serial, action.requestId)) {
@@ -194,7 +197,7 @@ export function deviceFileManagerReducer(
         entries: action.listing.entries,
         selectedPath: null,
         listLoading: false,
-        listError: "",
+        listError: null,
         preview: emptyPreview(),
       };
     case "list-error":
@@ -222,7 +225,7 @@ export function deviceFileManagerReducer(
           requestId: action.requestId,
           loading: true,
           data: null,
-          error: "",
+          error: null,
         },
       };
     case "preview-success":
@@ -235,7 +238,7 @@ export function deviceFileManagerReducer(
           requestId: action.requestId,
           loading: false,
           data: action.data,
-          error: "",
+          error: null,
         },
       };
     case "preview-error":
@@ -265,7 +268,7 @@ export function deviceFileManagerReducer(
             status: "pending",
             resultName: "",
             targetPath: "",
-            error: "",
+            error: null,
           })),
         },
       };
@@ -273,7 +276,7 @@ export function deviceFileManagerReducer(
       return updateTransferItem(state, action.serial, action.index, (item) => ({
         ...item,
         status: "active",
-        error: "",
+        error: null,
       }));
     case "transfer-item-success":
       return updateTransferItem(state, action.serial, action.index, (item) => ({
@@ -281,7 +284,7 @@ export function deviceFileManagerReducer(
         status: "success",
         resultName: action.resultName,
         targetPath: action.targetPath,
-        error: "",
+        error: null,
       }));
     case "transfer-item-error":
       return updateTransferItem(state, action.serial, action.index, (item) => ({
@@ -333,35 +336,28 @@ export function formatDeviceFileSize(size: number): string {
   return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${unit}`;
 }
 
-export function formatDeviceModifiedAt(seconds: number): string {
+export function formatDeviceModifiedAt(seconds: number, locale: Locale): string {
   if (!Number.isFinite(seconds) || seconds <= 0) {
     return "-";
   }
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(seconds * 1000));
+  return dateTime(locale).format(new Date(seconds * 1000));
 }
 
-export function deviceFileTypeLabel(entry: DeviceFileEntry): string {
+export function deviceFileTypeLabel(entry: DeviceFileEntry, t: Messages): string {
   switch (entry.kind) {
     case "directory":
-      return "文件夹";
+      return t.files.kinds.directory;
     case "symlink":
-      return "链接";
+      return t.files.kinds.symlink;
     case "other":
-      return "其他";
+      return t.files.kinds.other;
     case "file": {
       const dotIndex = entry.name.lastIndexOf(".");
       if (dotIndex <= 0 || dotIndex === entry.name.length - 1) {
-        return "文件";
+        return t.files.kinds.file;
       }
       const extension = entry.name.slice(dotIndex + 1);
-      return extension.length <= 8 ? extension.toUpperCase() : "文件";
+      return extension.length <= 8 ? extension.toUpperCase() : t.files.kinds.file;
     }
     default:
       return assertNever(entry.kind);
@@ -422,23 +418,23 @@ export function isDeviceDirectoryViewLoading(
   return state.listLoading || (!state.path && !state.listError);
 }
 
-export function deviceTransferSummary(transfer: DeviceTransferBatch): string {
-  const action = transfer.kind === "upload" ? "上传" : "下载";
+export function deviceTransferSummary(transfer: DeviceTransferBatch, t: Messages): string {
+  const kind = transfer.kind;
   if (transfer.status === "running") {
     const activeIndex = transfer.items.findIndex((item) => item.status === "active");
     return activeIndex >= 0
       ? `${activeIndex + 1}/${transfer.items.length}`
-      : `准备${action}`;
+      : t.files.transfer.preparing({ kind });
   }
 
   const successCount = transfer.items.filter((item) => item.status === "success").length;
   const failureCount = transfer.items.filter((item) => item.status === "error").length;
   if (failureCount === 0) {
-    return `${action}完成`;
+    return t.files.transfer.complete({ kind });
   }
   return successCount > 0
-    ? `${action}: ${successCount} 个成功, ${failureCount} 个失败`
-    : `${action}失败: ${failureCount} 个`;
+    ? t.files.transfer.partial({ kind, succeeded: successCount, failed: failureCount })
+    : t.files.transfer.failed({ kind, count: failureCount });
 }
 
 function emptyPreview(): DevicePreviewState {
@@ -446,7 +442,7 @@ function emptyPreview(): DevicePreviewState {
     requestId: 0,
     loading: false,
     data: null,
-    error: "",
+    error: null,
   };
 }
 

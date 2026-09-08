@@ -1,3 +1,6 @@
+import { AppError, errorText } from "@/i18n/errors";
+import { en } from "@/i18n/messages/en";
+import { zhCN } from "@/i18n/messages/zh-CN";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MAX_IMAGE_BATCH_SIZE,
@@ -57,8 +60,8 @@ describe("useCodeDecoderStore", () => {
 
     const images = useCodeDecoderStore.getState().batch?.images;
     expect(images).toHaveLength(2);
-    expect(images?.[0]).toMatchObject({ error: "图片损坏", codes: [] });
-    expect(images?.[1]).toMatchObject({ error: "", codes: [] });
+    expect(images?.[0]).toMatchObject({ error: { code: "unknown", detail: "图片损坏" }, codes: [] });
+    expect(images?.[1]).toMatchObject({ error: null, codes: [] });
     expect(decodeImageDataMock).toHaveBeenCalledTimes(1);
   });
 
@@ -107,8 +110,8 @@ describe("useCodeDecoderStore", () => {
     ]);
 
     expect(useCodeDecoderStore.getState().batch?.images).toEqual([
-      expect.objectContaining({ name: "empty.png", codes: [], error: "" }),
-      expect.objectContaining({ name: "failed.png", codes: [], error: "无法读取" }),
+      expect.objectContaining({ name: "empty.png", codes: [], error: null }),
+      expect.objectContaining({ name: "failed.png", codes: [], error: { code: "unknown", detail: "无法读取" } }),
     ]);
   });
 
@@ -154,3 +157,18 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
+
+
+it("retains a translatable decode failure and clipboard source identity", async () => {
+  await useCodeDecoderStore.getState().decodeSources([{
+    name: "", path: null, sourceKind: "clipboard",
+    loadInput: () => Promise.reject(new AppError("decoder_canvas_unavailable", {})),
+  }]);
+  const image = useCodeDecoderStore.getState().batch?.images[0];
+  expect(image).toMatchObject({ name: "", path: null, sourceKind: "clipboard" });
+  expect(image?.error).toEqual({ code: "decoder_canvas_unavailable", params: {} });
+  expect(errorText(image?.error, zhCN)).toBe(zhCN.errors.decoder_canvas_unavailable());
+  expect(errorText(image?.error, en)).toBe(en.errors.decoder_canvas_unavailable({}));
+  expect(decodeImageDataMock).not.toHaveBeenCalled();
+  expect(useCodeDecoderStore.getState().batch?.images[0]).toBe(image);
+});

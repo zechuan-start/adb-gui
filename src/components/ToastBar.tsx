@@ -1,9 +1,11 @@
+import { useT, translateError } from "@/i18n";
 import { useEffect } from "react";
 import { CheckCircle2, AlertCircle, X } from "lucide-react";
 import { useFeedbackStore } from "@/store/feedback";
 import { cn } from "@/lib/utils";
 
 export function ToastBar() {
+  const t = useT();
   const toast = useFeedbackStore((s) => s.toast);
   const toastId = useFeedbackStore((s) => s.toastId);
   const clearToast = useFeedbackStore((s) => s.clearToast);
@@ -41,13 +43,13 @@ export function ToastBar() {
         ) : (
           <AlertCircle className="h-4 w-4 text-destructive" />
         )}
-        <span className="min-w-0 flex-1 break-words leading-5">{toast.message}</span>
+        <span className="min-w-0 flex-1 break-words leading-5">{typeof toast.message === "function" ? toast.message(t) : translateError(toast.message, t)}</span>
         <button
           type="button"
           onClick={clearToast}
           className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-ink3 hover:bg-hover hover:text-ink"
-          title="关闭"
-          aria-label="关闭通知"
+          title={t.common.close}
+          aria-label={t.common.closeNotification}
         >
           <X className="h-4 w-4" />
         </button>

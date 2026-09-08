@@ -1,3 +1,4 @@
+import { errorText, useT } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link2, RefreshCw, Unplug, Wifi, X } from "lucide-react";
 import { useDeviceStore } from "@/store/device";
@@ -9,6 +10,7 @@ import { cn } from "@/lib/utils";
 type BusyState = "connect" | "wifi" | `disconnect:${string}` | null;
 
 export function WifiConnectButton() {
+  const t = useT();
   const devices = useDeviceStore((s) => s.devices);
   const selectedDevice = useDeviceStore((s) => s.selectedDevice);
   const setDevices = useDeviceStore((s) => s.setDevices);
@@ -58,7 +60,7 @@ export function WifiConnectButton() {
       setDevices(list);
     } catch (error) {
       console.error("Failed to refresh devices:", error);
-      showToast("error", `刷新设备列表失败: ${error}`);
+      showToast("error", (t) => (t.tools.wifiConnect.couldNotRefreshDevices({ detail: errorText(error, t) })));
     }
   }
 
@@ -71,11 +73,11 @@ export function WifiConnectButton() {
     setBusy("connect");
     try {
       const result = await adbConnect(input);
-      showToast("success", result || "设备连接成功");
+      showToast("success", (t) => (result || t.tools.wifiConnect.deviceConnected));
       void refreshDevices();
       setAddress("");
     } catch (error) {
-      showToast("error", `WiFi 连接失败: ${error}`);
+      showToast("error", (t) => (t.tools.wifiConnect.wifiConnectionFailed({ detail: errorText(error, t) })));
     } finally {
       setBusy(null);
     }
@@ -89,10 +91,10 @@ export function WifiConnectButton() {
     setBusy(`disconnect:${serial}`);
     try {
       const result = await adbDisconnect(serial);
-      showToast("success", result || "设备已断开");
+      showToast("success", (t) => (result || t.tools.wifiConnect.deviceDisconnected));
       void refreshDevices();
     } catch (error) {
-      showToast("error", `断开设备失败: ${error}`);
+      showToast("error", (t) => (t.tools.wifiConnect.couldNotDisconnectDevice({ detail: errorText(error, t) })));
     } finally {
       setBusy(null);
     }
@@ -106,10 +108,10 @@ export function WifiConnectButton() {
     setBusy("wifi");
     try {
       const addr = await enableWifiDebugging(device.serial);
-      showToast("success", `已连接 ${addr}, 可以拔掉 USB 线`);
+      showToast("success", (t) => (t.tools.wifiConnect.connectedToYouCanUnplugUSB({ address: addr })));
       void refreshDevices();
     } catch (error) {
-      showToast("error", `一键切换到 WiFi 失败: ${error}`);
+      showToast("error", (t) => (t.tools.wifiConnect.couldNotSwitchToWiFi({ detail: errorText(error, t) })));
     } finally {
       setBusy(null);
     }
@@ -127,7 +129,7 @@ export function WifiConnectButton() {
         aria-expanded={open}
         aria-controls="wifi-connect-panel"
         className="inline-flex h-[34px] w-[34px] items-center justify-center border border-rule bg-transparent text-ink2 hover:border-ink hover:bg-hover hover:text-ink"
-        title="WiFi 连接"
+        title={t.tools.wifiConnect.wifiConnection}
       >
         <Wifi className="h-4 w-4" />
       </button>
@@ -136,17 +138,17 @@ export function WifiConnectButton() {
         <div
           id="wifi-connect-panel"
           role="dialog"
-          aria-label="WiFi 连接"
+          aria-label={t.tools.wifiConnect.wifiConnection}
           className="absolute left-0 top-10 z-50 w-80 max-w-[calc(100vw-2rem)] border border-rule bg-paper text-ink shadow-[3px_3px_0_var(--color-hard-shadow)]"
         >
           <div className="flex h-10 items-center justify-between border-b border-dashed border-rule px-3">
-            <span className="font-data text-xs font-semibold">WiFi 连接</span>
+            <span className="font-data text-xs font-semibold">{t.tools.wifiConnect.wifiConnection}</span>
             <button
               type="button"
               onClick={closePanel}
               className="inline-flex h-7 w-7 items-center justify-center text-ink3 hover:bg-hover hover:text-ink"
-              title="关闭"
-              aria-label="关闭 WiFi 连接"
+              title={t.common.close}
+              aria-label={t.tools.wifiConnect.closeWiFiConnection}
             >
               <X className="h-4 w-4" />
             </button>
@@ -154,7 +156,7 @@ export function WifiConnectButton() {
 
           <div className="space-y-3 p-3">
             <div>
-              <div className="mb-1.5 font-data text-[10px] font-medium text-ink3">手动连接</div>
+              <div className="mb-1.5 font-data text-[10px] font-medium text-ink3">{t.tools.wifiConnect.manualConnection}</div>
               <div className="flex gap-2">
                 <input
                   value={address}
@@ -178,17 +180,17 @@ export function WifiConnectButton() {
                   className="inline-flex h-8 items-center gap-2 border border-ink bg-ink px-3 font-data text-[11px] font-medium text-onink hover:border-ink2 hover:bg-ink2 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {busy === "connect" ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
-                  连接
+                  {t.tools.wifiConnect.connect}
                 </button>
               </div>
             </div>
 
             <div>
-              <div className="mb-1.5 border-t border-dashed border-rule pt-3 font-data text-[10px] font-medium text-ink3">网络设备</div>
+              <div className="mb-1.5 border-t border-dashed border-rule pt-3 font-data text-[10px] font-medium text-ink3">{t.tools.wifiConnect.networkDevices}</div>
               <div className="space-y-1">
                 {networkDevices.length === 0 && (
                   <div className="border border-dashed border-rule bg-surface2 px-2.5 py-2 font-data text-[11px] text-ink3">
-                    暂无 WiFi 设备
+                    {t.tools.wifiConnect.noWiFiDevices}
                   </div>
                 )}
                 {networkDevices.map((item) => {
@@ -216,7 +218,7 @@ export function WifiConnectButton() {
                         className="inline-flex h-7 items-center gap-1 border border-rule px-2 font-data text-[10px] text-ink2 hover:border-ink3 hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {disconnectBusy ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Unplug className="h-3 w-3" />}
-                        断开
+                        {t.tools.wifiConnect.disconnect}
                       </button>
                     </div>
                   );
@@ -235,7 +237,7 @@ export function WifiConnectButton() {
               )}
             >
               {busy === "wifi" ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Wifi className="h-4 w-4" />}
-              一键切换当前 USB 设备到 WiFi
+              {t.tools.wifiConnect.switchCurrentUSBDeviceToWiFi}
             </button>
           </div>
         </div>

@@ -35,21 +35,21 @@ describe("useLogcatStore", () => {
   it("drops batches and exit events from a different session", () => {
     beginSession();
     useLogcatStore.getState().appendBatch([line(1)], 6);
-    useLogcatStore.getState().markDisconnected(6, "old session");
+    useLogcatStore.getState().markDisconnected(6, { code: "unknown", detail: "old session" });
 
     const state = useLogcatStore.getState();
     expect(state.totalCount).toBe(0);
     expect(state.streamState).toBe("live");
-    expect(state.disconnectDetail).toBe("");
+    expect(state.disconnectDetail).toBeNull();
   });
 
   it("records a visible startup failure without inventing a session", () => {
-    useLogcatStore.getState().failStart("device offline");
+    useLogcatStore.getState().failStart({ code: "unknown", detail: "device offline" });
 
     const state = useLogcatStore.getState();
     expect(state.sessionId).toBeNull();
     expect(state.streamState).toBe("disconnected");
-    expect(state.disconnectDetail).toBe("device offline");
+    expect(state.disconnectDetail).toEqual({ code: "unknown", detail: "device offline" });
   });
 
   it("keeps selection and crash expansion separate from the scroll anchor", () => {
@@ -81,13 +81,13 @@ describe("useLogcatStore", () => {
     useLogcatStore.getState().commitQuery("message:Draft");
     useLogcatStore.getState().restart();
 
-    useLogcatStore.getState().markDeviceUnavailable("设备已断开");
+    useLogcatStore.getState().markDeviceUnavailable({ code: "logcat_device_disconnected" });
 
     const state = useLogcatStore.getState();
     expect(state.serial).toBe("device-a");
     expect(state.sessionId).toBeNull();
     expect(state.streamState).toBe("disconnected");
-    expect(state.disconnectDetail).toBe("设备已断开");
+    expect(state.disconnectDetail).toEqual({ code: "logcat_device_disconnected" });
     expect(state.queryInput).toBe("message:Draft");
     expect(state.activeQuery).toBe("message:Draft");
     expect(state.queryError).toBeNull();
@@ -111,14 +111,14 @@ describe("useLogcatStore", () => {
       updates += 1;
     });
 
-    useLogcatStore.getState().flushFrame([line(1)], 7, "device offline");
+    useLogcatStore.getState().flushFrame([line(1)], 7, { code: "unknown", detail: "device offline" });
     unsubscribe();
 
     const state = useLogcatStore.getState();
     expect(updates).toBe(1);
     expect(state.totalCount).toBe(1);
     expect(state.streamState).toBe("disconnected");
-    expect(state.disconnectDetail).toBe("device offline");
+    expect(state.disconnectDetail).toEqual({ code: "unknown", detail: "device offline" });
   });
 
   it("skips evicted seq values and compacts the index head", () => {
@@ -390,12 +390,12 @@ describe("useLogcatStore", () => {
 
     const previousMap = useLogcatStore.getState().processMap;
     useLogcatStore.getState().beginProcessMapRefresh("process-a");
-    useLogcatStore.getState().failProcessMapRefresh("process-a", "device offline");
+    useLogcatStore.getState().failProcessMapRefresh("process-a", { code: "unknown", detail: "device offline" });
     useLogcatStore.getState().appendBatch([line(0, "I", { pid: "100" })], 7);
 
     const state = useLogcatStore.getState();
     expect(state.processMapLoading).toBe(false);
-    expect(state.processMapError).toBe("device offline");
+    expect(state.processMapError).toEqual({ code: "unknown", detail: "device offline" });
     expect(state.processMap).toBe(previousMap);
     expect(state.processMapUpdatedAt).toBe(expiredAt);
     expect(state.buffer.at(0)?.processName).toBeNull();
@@ -682,13 +682,13 @@ describe("useLogcatStore", () => {
     const previousNonce = useLogcatStore.getState().restartNonce;
 
     useLogcatStore.getState().restart();
-    useLogcatStore.getState().flushFrame([line(2)], 7, "old session");
+    useLogcatStore.getState().flushFrame([line(2)], 7, { code: "unknown", detail: "old session" });
 
     const state = useLogcatStore.getState();
     expect(state.serial).toBe("device-a");
     expect(state.sessionId).toBeNull();
     expect(state.streamState).toBe("starting");
-    expect(state.disconnectDetail).toBe("");
+    expect(state.disconnectDetail).toBeNull();
     expect(state.streamMode).toBe("live");
     expect(state.followMode).toBe("follow");
     expect(state.detachedNewCount).toBe(0);

@@ -1,3 +1,4 @@
+import { useT } from "@/i18n";
 import {
   useEffect,
   useMemo,
@@ -61,6 +62,7 @@ export function useLogcatQueryCompletions({
   setQueryInput,
   packageResolution,
 }: UseLogcatQueryCompletionsOptions): LogcatQueryCompletionController {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [cursor, setCursor] = useState(queryInput.length);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -81,9 +83,10 @@ export function useLogcatQueryCompletions({
           tags: tagOptions,
           packages: packageResolution.packageOptions,
           processes: packageResolution.processOptions,
-        })
+        }, t)
       : [],
     [
+      t,
       cursor,
       open,
       packageResolution.packageOptions,

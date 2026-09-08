@@ -15,7 +15,7 @@
 
 ```
 pnpm screenshots            # 两套都出
-pnpm screenshots -- --locale en
+pnpm screenshots --locale en
 ```
 
 `OUTPUT_DIR` 从常量改为按语言拼接. 循环两次语言, 复用同一个浏览器实例与 dev server, 避免重复启动.
@@ -27,14 +27,14 @@ pnpm screenshots -- --locale en
 - **设备数据** (应用名, 日志正文, 文件名): 保持中文不变. 真实产品里这些就是设备返回值, 不翻译. 两套截图里它们应当一致 —— 这恰好也是双语正确性的直观证据.
 - **脚本自身的注释与说明**: 与产品无关, 保持不变.
 
-因此 `mock-tauri.js` 预期改动很小, 主要是确认没有把界面文案混在模拟数据里返回.
+实现中同时修正模拟 IPC 的录屏空闲状态与电池稳定码, 固定遥测快照, 补齐必要命令. 未识别的模拟命令明确拒绝, 避免伪成功.
 
 ## README 改动
 
 - `README.md` 的七处图片路径改为 `docs/images/en/...`; `README.zh-CN.md` 改为 `docs/images/zh-CN/...`.
 - 两份 README 第 178 行附近的截图脚本说明更新为新命令.
 - 各自新增一段语言设置说明: 位置 (设置 → 通用 → 语言), 三个档位, 默认按系统语言且非中文用英文, 显式选择后不再跟随系统.
-- 英文 README 里语言档位写 `Follow system / 简体中文 / English`, 与界面一致.
+- 英文 README 里语言档位写 `System / 简体中文 / English`, 与界面一致.
 
 ## `index.html`
 

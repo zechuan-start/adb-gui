@@ -7,7 +7,7 @@
 3. 复用同一 dev server 与浏览器实例循环两种语言.
 4. 检查 `mock-tauri.js`, 确认返回的都是设备数据而非界面文案.
 
-验证: `pnpm screenshots -- --locale en` 单独跑通; 输出目录正确.
+验证: `pnpm screenshots --locale en` 单独跑通; 输出目录正确.
 
 ## 阶段 2: 出图
 

@@ -1,3 +1,4 @@
+use crate::{error::AppError, error_codes as codes};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
@@ -35,11 +36,11 @@ impl Drop for BugreportBusyGuard {
 pub fn collect_quick_bug_report(
     app: AppHandle,
     serial: String,
-) -> Result<QuickReportResult, String> {
+) -> Result<QuickReportResult, AppError> {
     let timestamp = timestamp();
     let report_dir = reports_dir().join(format!("{}-{timestamp}", safe_serial(&serial)));
     std::fs::create_dir_all(&report_dir)
-        .map_err(|e| format!("Failed to create report dir: {e}"))?;
+        .map_err(|e| AppError::new(codes::REPORT_DIRECTORY_FAILED).detail(e.to_string()))?;
 
     let mut warnings = Vec::new();
     write_screenshot(&app, &serial, &report_dir.join("screenshot.png"))?;
@@ -55,11 +56,11 @@ pub fn collect_quick_bug_report(
             }
         };
     std::fs::write(report_dir.join("logcat.txt"), logcat)
-        .map_err(|e| format!("Failed to write logcat.txt: {e}"))?;
+        .map_err(|e| AppError::new(codes::REPORT_WRITE_LOGCAT_FAILED).detail(e.to_string()))?;
 
     let info = render_info(&timestamp, &serial, &activity, &device_info, &warnings);
     std::fs::write(report_dir.join("info.txt"), info)
-        .map_err(|e| format!("Failed to write info.txt: {e}"))?;
+        .map_err(|e| AppError::new(codes::REPORT_WRITE_INFO_FAILED).detail(e.to_string()))?;
 
     let dir = report_dir.to_string_lossy().to_string();
     let revealed = reveal_item(&app, &dir, "bug report dir");
@@ -71,19 +72,20 @@ pub fn collect_quick_bug_report(
 pub async fn collect_full_bugreport(
     app: AppHandle,
     serial: String,
-) -> Result<BugreportResult, String> {
+) -> Result<BugreportResult, AppError> {
     tauri::async_runtime::spawn_blocking(move || collect_full_bugreport_blocking(app, serial))
         .await
-        .map_err(|e| format!("Failed to run bugreport worker: {e}"))?
+        .map_err(|e| AppError::new(codes::REPORT_WORKER_FAILED).detail(e.to_string()))?
 }
 
 fn collect_full_bugreport_blocking(
     app: AppHandle,
     serial: String,
-) -> Result<BugreportResult, String> {
+) -> Result<BugreportResult, AppError> {
     let _busy = acquire_bugreport_slot()?;
     let save_dir = reports_dir();
-    std::fs::create_dir_all(&save_dir).map_err(|e| format!("Failed to create report dir: {e}"))?;
+    std::fs::create_dir_all(&save_dir)
+        .map_err(|e| AppError::new(codes::REPORT_DIRECTORY_FAILED).detail(e.to_string()))?;
 
     let file_path = save_dir.join(format!(
         "{}-{}-bugreport.zip",
@@ -93,33 +95,33 @@ fn collect_full_bugreport_blocking(
     let path = file_path.to_string_lossy().to_string();
 
     run_adb_with_serial(&app, &serial, &["bugreport", &path])
-        .map_err(|e| format!("Failed to collect bugreport: {e}"))?;
+        .map_err(|e| AppError::new(codes::REPORT_COLLECT_FAILED).cause(e))?;
 
     let size = std::fs::metadata(&file_path)
-        .map_err(|e| format!("Failed to read bugreport file: {e}"))?
+        .map_err(|e| AppError::new(codes::REPORT_READ_FAILED).detail(e.to_string()))?
         .len();
     if size == 0 {
         let _ = std::fs::remove_file(&file_path);
-        return Err("Bugreport 文件为空，请重试。".to_string());
+        return Err(AppError::new(codes::REPORT_EMPTY_BUGREPORT));
     }
 
     let revealed = reveal_item(&app, &path, "bugreport zip");
     Ok(BugreportResult { path, revealed })
 }
 
-fn acquire_bugreport_slot() -> Result<BugreportBusyGuard, String> {
+fn acquire_bugreport_slot() -> Result<BugreportBusyGuard, AppError> {
     let mut busy = BUGREPORT_BUSY
         .lock()
-        .map_err(|e| format!("Failed to lock bugreport state: {e}"))?;
+        .map_err(|e| AppError::new(codes::REPORT_LOCK_FAILED).detail(e.to_string()))?;
     if *busy {
-        return Err("完整 Bugreport 正在生成，请等待当前任务完成。".to_string());
+        return Err(AppError::new(codes::REPORT_BUSY));
     }
 
     *busy = true;
     Ok(BugreportBusyGuard)
 }
 
-fn write_screenshot(app: &AppHandle, serial: &str, path: &PathBuf) -> Result<(), String> {
+fn write_screenshot(app: &AppHandle, serial: &str, path: &PathBuf) -> Result<(), AppError> {
     let adb_path = adb::resolve_adb_path(app)?;
     let output = adb::prepare_command(app, &adb_path)
         .arg("-s")
@@ -128,16 +130,17 @@ fn write_screenshot(app: &AppHandle, serial: &str, path: &PathBuf) -> Result<(),
         .arg("screencap")
         .arg("-p")
         .output()
-        .map_err(|e| format!("Failed to take screenshot: {e}"))?;
+        .map_err(|e| AppError::new(codes::REPORT_SCREENSHOT_FAILED).detail(e.to_string()))?;
 
     if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        return Err(super::device::adb_output_error(&output));
     }
     if output.stdout.is_empty() {
-        return Err("截图结果为空，请确认设备屏幕可用。".to_string());
+        return Err(AppError::new(codes::REPORT_EMPTY_SCREENSHOT));
     }
 
-    std::fs::write(path, &output.stdout).map_err(|e| format!("Failed to write screenshot.png: {e}"))
+    std::fs::write(path, &output.stdout)
+        .map_err(|e| AppError::new(codes::REPORT_WRITE_SCREENSHOT_FAILED).detail(e.to_string()))
 }
 
 fn collect_current_activity(app: &AppHandle, serial: &str, warnings: &mut Vec<String>) -> String {

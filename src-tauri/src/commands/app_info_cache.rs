@@ -1,3 +1,4 @@
+use crate::{error::AppError, error_codes as codes};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -41,7 +42,7 @@ struct CacheIndex {
 }
 
 #[tauri::command(async)]
-pub fn read_app_info_cache(app: AppHandle, device_key: String) -> Result<Vec<AppInfo>, String> {
+pub fn read_app_info_cache(app: AppHandle, device_key: String) -> Result<Vec<AppInfo>, AppError> {
     let Ok(root) = cache_root(&app) else {
         return Ok(Vec::new());
     };
@@ -55,7 +56,7 @@ pub fn write_app_info_cache(
     device_key: String,
     apps: Vec<AppInfo>,
     new_icons: Vec<AppIconEntry>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let root = cache_root(&app)?;
     let sanitized_key = sanitize_device_key(&device_key);
     write_cache_locked(&root, &sanitized_key, &apps, &new_icons)
@@ -66,7 +67,7 @@ fn write_cache_locked(
     device_key: &str,
     apps: &[AppInfo],
     new_icons: &[AppIconEntry],
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     with_device_cache_lock(device_key, || {
         write_cache(root, device_key, apps, new_icons)
     })
@@ -84,11 +85,13 @@ fn with_device_cache_lock<T>(device_key: &str, operation: impl FnOnce() -> T) ->
     operation()
 }
 
-fn cache_root(app: &AppHandle) -> Result<PathBuf, String> {
+fn cache_root(app: &AppHandle) -> Result<PathBuf, AppError> {
     app.path()
         .app_cache_dir()
         .map(|path| path.join("app-info"))
-        .map_err(|error| format!("Failed to locate application cache directory: {error}"))
+        .map_err(|error| {
+            AppError::new(codes::CACHE_DIRECTORY_UNAVAILABLE).detail(error.to_string())
+        })
 }
 
 fn device_cache_lock(device_key: &str) -> Arc<Mutex<()>> {
@@ -209,14 +212,13 @@ fn write_cache(
     device_key: &str,
     apps: &[AppInfo],
     new_icons: &[AppIconEntry],
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let device_dir = root.join(device_key);
     let icons_dir = device_dir.join("icons");
     fs::create_dir_all(&icons_dir).map_err(|error| {
-        format!(
-            "Failed to create app-info cache directory at {}: {error}",
-            icons_dir.display()
-        )
+        AppError::new(codes::CACHE_CREATE_FAILED)
+            .param("path", icons_dir.display().to_string())
+            .detail(error.to_string())
     })?;
 
     let previous = load_valid_index(&device_dir, device_key);
@@ -251,10 +253,9 @@ fn write_cache(
     };
     write_index(&device_dir, &index)?;
     prune_icons(&icons_dir, &index).map_err(|error| {
-        format!(
-            "Failed to prune app-info cache icons at {}: {error}",
-            icons_dir.display()
-        )
+        AppError::new(codes::CACHE_PRUNE_FAILED)
+            .param("path", icons_dir.display().to_string())
+            .detail(error.to_string())
     })
 }
 
@@ -292,7 +293,7 @@ fn choose_icon_file(
     new_icon: Option<&Vec<u8>>,
     previous_icons: &HashMap<(String, i64), String>,
     icons_dir: &Path,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let expected = icon_file_name(&app.package_name, app.last_update_time);
     if !is_safe_icon_file(&expected, &app.package_name, app.last_update_time) {
         return Ok(String::new());
@@ -301,10 +302,9 @@ fn choose_icon_file(
     if let Some(bytes) = new_icon {
         let path = icons_dir.join(&expected);
         fs::write(&path, bytes).map_err(|error| {
-            format!(
-                "Failed to write app-info cache icon at {}: {error}",
-                path.display()
-            )
+            AppError::new(codes::CACHE_WRITE_ICON_FAILED)
+                .param("path", path.display().to_string())
+                .detail(error.to_string())
         })?;
         return Ok(expected);
     }
@@ -323,23 +323,21 @@ fn choose_icon_file(
     })
 }
 
-fn write_index(device_dir: &Path, index: &CacheIndex) -> Result<(), String> {
+fn write_index(device_dir: &Path, index: &CacheIndex) -> Result<(), AppError> {
     let index_path = device_dir.join("index.json");
     let temp_path = device_dir.join(format!(".index.{}.{}.tmp", std::process::id(), now_nanos()));
     let json = serde_json::to_vec(index)
-        .map_err(|error| format!("Failed to serialize app-info cache index: {error}"))?;
+        .map_err(|error| AppError::new(codes::CACHE_SERIALIZE_FAILED).detail(error.to_string()))?;
     if let Err(error) = fs::write(&temp_path, json) {
         let _ = fs::remove_file(&temp_path);
-        return Err(format!(
-            "Failed to write app-info cache index at {}: {error}",
-            temp_path.display()
-        ));
+        return Err(AppError::new(codes::CACHE_WRITE_INDEX_FAILED)
+            .param("path", temp_path.display().to_string())
+            .detail(error.to_string()));
     }
     replace_cache_index(&temp_path, &index_path).map_err(|error| {
-        format!(
-            "Failed to replace app-info cache index at {}: {error}",
-            index_path.display()
-        )
+        AppError::new(codes::CACHE_REPLACE_INDEX_FAILED)
+            .param("path", index_path.display().to_string())
+            .detail(error.to_string())
     })
 }
 

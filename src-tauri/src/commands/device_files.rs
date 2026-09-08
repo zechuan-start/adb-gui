@@ -1,3 +1,4 @@
+use crate::{error::AppError, error_codes as codes};
 use std::fs::{self, OpenOptions};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -14,14 +15,18 @@ const MAX_IMAGE_PREVIEW_BYTES: u64 = 20 * 1024 * 1024;
 const MAX_IMAGE_PREVIEW_READ_BYTES: u64 = MAX_IMAGE_PREVIEW_BYTES + 1;
 const MAX_AUTORENAME_ATTEMPTS: usize = 10_000;
 
-const LIST_DIRECTORY_SCRIPT: &str = r#"target=$1
+const NOT_DIRECTORY_EXIT: i32 = 41;
+const DIRECTORY_PERMISSION_EXIT: i32 = 42;
+const NOT_FILE_EXIT: i32 = 43;
+
+fn list_directory_script() -> String {
+    format!(
+        r#"target=$1
 if [ ! -d "$target" ]; then
-  echo "路径不是可访问目录: $target" >&2
-  exit 2
+  exit {NOT_DIRECTORY_EXIT}
 fi
 if [ ! -r "$target" ] || [ ! -x "$target" ]; then
-  echo "没有权限读取设备目录: $target" >&2
-  exit 2
+  exit {DIRECTORY_PERMISSION_EXIT}
 fi
 prefix=$target
 if [ "$prefix" = "/" ]; then
@@ -43,7 +48,9 @@ for item in "$prefix"/* "$prefix"/.[!.]* "$prefix"/..?*; do
   size=$(stat -c %s "$item") || exit 3
   modified=$(stat -c %Y "$item") || exit 3
   printf '%s\000%s\000%s\000%s\000' "$kind" "$size" "$modified" "$item"
-done"#;
+done"#
+    )
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -90,11 +97,11 @@ pub async fn list_device_directory(
     app: AppHandle,
     serial: String,
     path: Option<String>,
-) -> Result<DeviceDirectoryListing, String> {
+) -> Result<DeviceDirectoryListing, AppError> {
     let path = normalize_device_path(path.as_deref().unwrap_or(DEFAULT_DEVICE_DIRECTORY))?;
     tauri::async_runtime::spawn_blocking(move || list_directory(&app, &serial, &path))
         .await
-        .map_err(|error| format!("读取设备目录任务失败: {error}"))?
+        .map_err(|error| AppError::new(codes::FILES_LIST_WORKER_FAILED).detail(error.to_string()))?
 }
 
 #[tauri::command]
@@ -103,7 +110,7 @@ pub async fn create_device_directory(
     serial: String,
     parent_path: String,
     name: String,
-) -> Result<DeviceFileEntry, String> {
+) -> Result<DeviceFileEntry, AppError> {
     let parent_path = normalize_device_path(&parent_path)?;
     validate_device_name(&name)?;
 
@@ -111,16 +118,16 @@ pub async fn create_device_directory(
         let path = join_device_path(&parent_path, &name);
         let command = format!("mkdir {}", shell_quote(&path));
         run_adb_with_serial(&app, &serial, &["shell", &command])
-            .map_err(|error| format!("新建设备目录失败: {error}"))?;
+            .map_err(|error| AppError::new(codes::FILES_CREATE_FAILED).cause(error))?;
 
         list_directory(&app, &serial, &parent_path)?
             .entries
             .into_iter()
             .find(|entry| entry.path == path)
-            .ok_or_else(|| "目录已创建, 但无法从设备目录中读取".to_string())
+            .ok_or_else(|| AppError::new(codes::FILES_CREATED_DIRECTORY_MISSING))
     })
     .await
-    .map_err(|error| format!("新建设备目录任务失败: {error}"))?
+    .map_err(|error| AppError::new(codes::FILES_CREATE_WORKER_FAILED).detail(error.to_string()))?
 }
 
 #[tauri::command]
@@ -129,38 +136,54 @@ pub async fn upload_device_file(
     serial: String,
     local_path: String,
     remote_dir: String,
-) -> Result<DeviceTransferResult, String> {
+) -> Result<DeviceTransferResult, AppError> {
     let remote_dir = normalize_device_path(&remote_dir)?;
 
     tauri::async_runtime::spawn_blocking(move || {
         let local = Path::new(&local_path);
-        let metadata = fs::metadata(local).map_err(|error| format!("读取本地文件失败: {error}"))?;
+        let metadata = fs::metadata(local).map_err(|error| {
+            AppError::new(codes::FILES_READ_LOCAL_FAILED).detail(error.to_string())
+        })?;
         if !metadata.is_file() {
-            return Err("只支持上传普通文件, 不支持目录".to_string());
+            return Err(AppError::new(codes::FILES_UPLOAD_REGULAR_ONLY));
         }
 
         let original_name = local
             .file_name()
             .and_then(|name| name.to_str())
             .filter(|name| !name.is_empty())
-            .ok_or_else(|| "无法读取本地文件名".to_string())?;
+            .ok_or_else(|| AppError::new(codes::FILES_LOCAL_NAME_UNAVAILABLE))?;
         validate_device_name(original_name)?;
 
         validate_remote_upload_directory(&app, &serial, &remote_dir)?;
         let (name, remote_path) =
             find_available_remote_path(&app, &serial, &remote_dir, original_name)?;
 
-        run_adb_with_serial(&app, &serial, &["push", &local_path, &remote_path])
-            .map_err(|error| format!("上传文件到设备失败: {error}"))?;
-
-        Ok(DeviceTransferResult {
-            name,
-            remote_path,
-            local_path: Some(local_path),
+        push_device_file_with(name, remote_path, local_path, |args| {
+            run_adb_with_serial(&app, &serial, args)
         })
     })
     .await
-    .map_err(|error| format!("上传文件任务失败: {error}"))?
+    .map_err(|error| AppError::new(codes::FILES_UPLOAD_WORKER_FAILED).detail(error.to_string()))?
+}
+
+fn push_device_file_with<F>(
+    name: String,
+    remote_path: String,
+    local_path: String,
+    execute: F,
+) -> Result<DeviceTransferResult, AppError>
+where
+    F: FnOnce(&[&str]) -> Result<String, AppError>,
+{
+    execute(&["push", &local_path, &remote_path])
+        .map_err(|error| AppError::new(codes::FILES_UPLOAD_FAILED).cause(error))?;
+
+    Ok(DeviceTransferResult {
+        name,
+        remote_path,
+        local_path: Some(local_path),
+    })
 }
 
 #[tauri::command]
@@ -169,7 +192,7 @@ pub async fn download_device_file(
     serial: String,
     remote_path: String,
     local_path: String,
-) -> Result<DeviceTransferResult, String> {
+) -> Result<DeviceTransferResult, AppError> {
     let remote_path = normalize_device_path(&remote_path)?;
 
     tauri::async_runtime::spawn_blocking(move || {
@@ -181,15 +204,17 @@ pub async fn download_device_file(
         let result = (|| {
             let temp_path_string = temp_path.to_string_lossy().to_string();
             run_adb_with_serial(&app, &serial, &["pull", &remote_path, &temp_path_string])
-                .map_err(|error| format!("从设备下载文件失败: {error}"))?;
+                .map_err(|error| AppError::new(codes::FILES_DOWNLOAD_FAILED).cause(error))?;
 
             let local_size = fs::metadata(&temp_path)
-                .map_err(|error| format!("读取下载临时文件失败: {error}"))?
+                .map_err(|error| {
+                    AppError::new(codes::FILES_READ_TEMP_FAILED).detail(error.to_string())
+                })?
                 .len();
             if local_size != remote_size {
-                return Err(format!(
-                    "下载文件大小不一致: 设备端 {remote_size} 字节, 本地 {local_size} 字节"
-                ));
+                return Err(AppError::new(codes::FILES_DOWNLOAD_SIZE_MISMATCH)
+                    .param("remote", remote_size)
+                    .param("local", local_size));
             }
 
             replace_download_target(&temp_path, &target)
@@ -203,7 +228,7 @@ pub async fn download_device_file(
         let name = target
             .file_name()
             .and_then(|name| name.to_str())
-            .ok_or_else(|| "无法读取本地保存文件名".to_string())?
+            .ok_or_else(|| AppError::new(codes::FILES_SAVE_NAME_UNAVAILABLE))?
             .to_string();
 
         Ok(DeviceTransferResult {
@@ -213,7 +238,7 @@ pub async fn download_device_file(
         })
     })
     .await
-    .map_err(|error| format!("下载文件任务失败: {error}"))?
+    .map_err(|error| AppError::new(codes::FILES_DOWNLOAD_WORKER_FAILED).detail(error.to_string()))?
 }
 
 #[tauri::command]
@@ -221,54 +246,70 @@ pub async fn preview_device_image(
     app: AppHandle,
     serial: String,
     remote_path: String,
-) -> Result<DeviceImagePreview, String> {
+) -> Result<DeviceImagePreview, AppError> {
     let remote_path = normalize_device_path(&remote_path)?;
 
     tauri::async_runtime::spawn_blocking(move || {
         let expected_size = remote_file_size(&app, &serial, &remote_path)?;
-        if expected_size > MAX_IMAGE_PREVIEW_BYTES {
-            return Err(format!("图片超过 20 MiB 预览上限: {expected_size} 字节"));
-        }
-
-        let command = preview_read_command(&remote_path);
-        let bytes = run_adb_bytes_with_serial(&app, &serial, &["exec-out", &command])
-            .map_err(|error| format!("读取设备图片失败: {error}"))?;
-        let actual_size = bytes.len() as u64;
-        if actual_size > MAX_IMAGE_PREVIEW_BYTES {
-            return Err(format!(
-                "图片读取结果超过 20 MiB 预览上限: {actual_size} 字节"
-            ));
-        }
-        if actual_size != expected_size {
-            return Err(format!(
-                "图片读取不完整: 设备端 {expected_size} 字节, 实际读取 {actual_size} 字节"
-            ));
-        }
-
-        let mime_type = detect_image_mime(&bytes)
-            .ok_or_else(|| "仅支持预览 PNG、JPEG、WEBP 和 GIF 图片".to_string())?;
-        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
-
-        Ok(DeviceImagePreview {
-            data_url: format!("data:{mime_type};base64,{encoded}"),
-            mime_type: mime_type.to_string(),
-            size: actual_size,
+        read_image_preview_with(&remote_path, expected_size, |args| {
+            run_adb_bytes_with_serial(&app, &serial, args)
         })
     })
     .await
-    .map_err(|error| format!("读取图片预览任务失败: {error}"))?
+    .map_err(|error| AppError::new(codes::FILES_PREVIEW_WORKER_FAILED).detail(error.to_string()))?
+}
+
+fn read_image_preview_with<F>(
+    remote_path: &str,
+    expected_size: u64,
+    read: F,
+) -> Result<DeviceImagePreview, AppError>
+where
+    F: FnOnce(&[&str]) -> Result<Vec<u8>, AppError>,
+{
+    if expected_size > MAX_IMAGE_PREVIEW_BYTES {
+        return Err(AppError::new(codes::FILES_PREVIEW_TOO_LARGE).param("bytes", expected_size));
+    }
+
+    let command = preview_read_command(remote_path);
+    let bytes = read(&["exec-out", &command])
+        .map_err(|error| AppError::new(codes::FILES_READ_IMAGE_FAILED).cause(error))?;
+    let actual_size = bytes.len() as u64;
+    if actual_size > MAX_IMAGE_PREVIEW_BYTES {
+        return Err(AppError::new(codes::FILES_PREVIEW_READ_TOO_LARGE).param("bytes", actual_size));
+    }
+    if actual_size != expected_size {
+        return Err(AppError::new(codes::FILES_IMAGE_INCOMPLETE)
+            .param("expected", expected_size)
+            .param("actual", actual_size));
+    }
+
+    let mime_type =
+        detect_image_mime(&bytes).ok_or_else(|| AppError::new(codes::FILES_PREVIEW_FORMAT))?;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+
+    Ok(DeviceImagePreview {
+        data_url: format!("data:{mime_type};base64,{encoded}"),
+        mime_type: mime_type.to_string(),
+        size: actual_size,
+    })
 }
 
 fn list_directory(
     app: &AppHandle,
     serial: &str,
     path: &str,
-) -> Result<DeviceDirectoryListing, String> {
-    let command = shell_script_command(LIST_DIRECTORY_SCRIPT, path);
+) -> Result<DeviceDirectoryListing, AppError> {
+    let command = shell_script_command(&list_directory_script(), path);
     // Shell v2 without a PTY preserves NUL records and reports remote failures separately.
-    let output = run_adb_bytes_with_serial(app, serial, &["shell", "-T", &command])
-        .map_err(|error| format!("读取设备目录失败 ({path}): {error}"))?;
-    let entries = parse_directory_records(&output, path)?;
+    let output =
+        run_adb_output_with_serial(app, serial, &["shell", "-T", &command]).map_err(|error| {
+            AppError::new(codes::FILES_LIST_FAILED)
+                .param("path", path)
+                .cause(error)
+        })?;
+    check_file_output(&output, path)?;
+    let entries = parse_directory_records(&output.stdout, path)?;
 
     Ok(DeviceDirectoryListing {
         path: path.to_string(),
@@ -277,42 +318,47 @@ fn list_directory(
     })
 }
 
-fn parse_directory_records(output: &[u8], directory: &str) -> Result<Vec<DeviceFileEntry>, String> {
+fn parse_directory_records(
+    output: &[u8],
+    directory: &str,
+) -> Result<Vec<DeviceFileEntry>, AppError> {
     let output = trim_protocol_line_endings(output);
     if output.is_empty() {
         return Ok(Vec::new());
     }
     if output.last() != Some(&0) {
-        return Err("设备目录记录缺少结束分隔符".to_string());
+        return Err(AppError::new(codes::FILES_MISSING_DELIMITER));
     }
 
     let mut fields: Vec<&[u8]> = output.split(|byte| *byte == 0).collect();
     fields.pop();
     if !fields.len().is_multiple_of(4) {
-        return Err(format!("设备目录记录字段数量无效: {}", fields.len()));
+        return Err(AppError::new(codes::FILES_INVALID_FIELD_COUNT).param("count", fields.len()));
     }
 
     let mut entries = Vec::with_capacity(fields.len() / 4);
     let (records, remainder) = fields.as_chunks::<4>();
     debug_assert!(remainder.is_empty());
     for record in records {
-        let kind = match utf8_field(record[0], "类型")? {
+        let kind = match utf8_field(record[0], codes::FILES_KIND_NOT_UTF8)? {
             "directory" => DeviceFileKind::Directory,
             "file" => DeviceFileKind::File,
             "symlink" => DeviceFileKind::Symlink,
             "other" => DeviceFileKind::Other,
-            value => return Err(format!("未知设备文件类型: {value}")),
+            value => return Err(AppError::new(codes::FILES_UNKNOWN_KIND).param("value", value)),
         };
-        let size = utf8_field(record[1], "大小")?
+        let size = utf8_field(record[1], codes::FILES_SIZE_NOT_UTF8)?
             .parse::<u64>()
-            .map_err(|error| format!("设备文件大小无效: {error}"))?;
-        let modified_at = utf8_field(record[2], "修改时间")?
+            .map_err(|error| AppError::new(codes::FILES_INVALID_SIZE).detail(error.to_string()))?;
+        let modified_at = utf8_field(record[2], codes::FILES_MODIFIED_NOT_UTF8)?
             .parse::<i64>()
-            .map_err(|error| format!("设备文件修改时间无效: {error}"))?;
-        let path = normalize_device_path(utf8_field(record[3], "路径")?)?;
+            .map_err(|error| {
+                AppError::new(codes::FILES_INVALID_MODIFIED_AT).detail(error.to_string())
+            })?;
+        let path = normalize_device_path(utf8_field(record[3], codes::FILES_PATH_NOT_UTF8)?)?;
 
         if device_parent_path(&path).as_deref() != Some(directory) {
-            return Err(format!("设备返回了目录范围外的路径: {path}"));
+            return Err(AppError::new(codes::FILES_OUT_OF_SCOPE).param("path", path));
         }
         let name = device_file_name(&path)?;
         let previewable = matches!(kind, DeviceFileKind::File) && is_previewable_name(&name);
@@ -339,16 +385,16 @@ fn trim_protocol_line_endings(mut output: &[u8]) -> &[u8] {
     output
 }
 
-fn utf8_field<'a>(value: &'a [u8], label: &str) -> Result<&'a str, String> {
-    std::str::from_utf8(value).map_err(|error| format!("设备文件{label}不是 UTF-8: {error}"))
+fn utf8_field<'a>(value: &'a [u8], code: &'static str) -> Result<&'a str, AppError> {
+    std::str::from_utf8(value).map_err(|error| AppError::new(code).detail(error.to_string()))
 }
 
-fn normalize_device_path(path: &str) -> Result<String, String> {
+fn normalize_device_path(path: &str) -> Result<String, AppError> {
     if path.is_empty() || !path.starts_with('/') {
-        return Err("设备路径必须是以 / 开头的绝对路径".to_string());
+        return Err(AppError::new(codes::FILES_ABSOLUTE_DEVICE_PATH));
     }
     if path.contains('\0') {
-        return Err("设备路径不能包含 NUL".to_string());
+        return Err(AppError::new(codes::FILES_PATH_CONTAINS_NUL));
     }
 
     let mut segments = Vec::new();
@@ -357,7 +403,7 @@ fn normalize_device_path(path: &str) -> Result<String, String> {
             "" | "." => {}
             ".." => {
                 if segments.pop().is_none() {
-                    return Err("设备路径不能越过根目录".to_string());
+                    return Err(AppError::new(codes::FILES_PATH_ABOVE_ROOT));
                 }
             }
             value => segments.push(value),
@@ -371,12 +417,12 @@ fn normalize_device_path(path: &str) -> Result<String, String> {
     }
 }
 
-fn validate_device_name(name: &str) -> Result<(), String> {
+fn validate_device_name(name: &str) -> Result<(), AppError> {
     if name.trim().is_empty() {
-        return Err("名称不能为空".to_string());
+        return Err(AppError::new(codes::FILES_EMPTY_NAME));
     }
     if name == "." || name == ".." || name.contains('/') || name.contains('\0') {
-        return Err("名称必须是单个有效路径段".to_string());
+        return Err(AppError::new(codes::FILES_INVALID_NAME));
     }
     Ok(())
 }
@@ -392,12 +438,12 @@ fn device_parent_path(path: &str) -> Option<String> {
     Some(if parent.is_empty() { "/" } else { parent }.to_string())
 }
 
-fn device_file_name(path: &str) -> Result<String, String> {
+fn device_file_name(path: &str) -> Result<String, AppError> {
     path.rsplit('/')
         .next()
         .filter(|name| !name.is_empty())
         .map(ToString::to_string)
-        .ok_or_else(|| format!("无法读取设备文件名: {path}"))
+        .ok_or_else(|| AppError::new(codes::FILES_DEVICE_NAME_UNAVAILABLE).param("path", path))
 }
 
 fn join_device_path(parent: &str, name: &str) -> String {
@@ -421,7 +467,7 @@ fn find_available_remote_path(
     serial: &str,
     remote_dir: &str,
     original_name: &str,
-) -> Result<(String, String), String> {
+) -> Result<(String, String), AppError> {
     for index in 0..MAX_AUTORENAME_ATTEMPTS {
         let name = numbered_file_name(original_name, index);
         let path = join_device_path(remote_dir, &name);
@@ -430,22 +476,22 @@ fn find_available_remote_path(
         }
     }
 
-    Err(format!("无法为 {original_name} 生成不冲突的设备文件名"))
+    Err(AppError::new(codes::FILES_UNIQUE_REMOTE_NAME_FAILED).param("name", original_name))
 }
 
 fn validate_remote_upload_directory(
     app: &AppHandle,
     serial: &str,
     remote_dir: &str,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let quoted = shell_quote(remote_dir);
     let command = format!(
-        "if [ ! -d {quoted} ]; then echo '上传目标不是设备目录' >&2; exit 2; fi; \
-         if [ ! -x {quoted} ]; then echo '没有权限访问上传目标目录' >&2; exit 2; fi"
+        "if [ ! -d {quoted} ]; then exit {NOT_DIRECTORY_EXIT}; fi; \
+         if [ ! -x {quoted} ]; then exit {DIRECTORY_PERMISSION_EXIT}; fi"
     );
-    run_adb_with_serial(app, serial, &["shell", &command])
-        .map(|_| ())
-        .map_err(|error| format!("检查设备上传目录失败: {error}"))
+    let output = run_adb_output_with_serial(app, serial, &["shell", &command])
+        .map_err(|error| AppError::new(codes::FILES_CHECK_UPLOAD_DIRECTORY).cause(error))?;
+    check_file_output(&output, remote_dir)
 }
 
 fn numbered_file_name(original_name: &str, index: usize) -> String {
@@ -462,7 +508,7 @@ fn numbered_file_name(original_name: &str, index: usize) -> String {
     format!("{original_name} ({index})")
 }
 
-fn remote_path_exists(app: &AppHandle, serial: &str, path: &str) -> Result<bool, String> {
+fn remote_path_exists(app: &AppHandle, serial: &str, path: &str) -> Result<bool, AppError> {
     let quoted = shell_quote(path);
     let command = format!("[ -e {quoted} ] || [ -L {quoted} ]");
     let output = run_adb_output_with_serial(app, serial, &["shell", &command])?;
@@ -474,23 +520,38 @@ fn remote_path_exists(app: &AppHandle, serial: &str, path: &str) -> Result<bool,
     if output.status.code() == Some(1) && stderr.is_empty() {
         Ok(false)
     } else if stderr.is_empty() {
-        Err(format!("检查设备文件是否存在失败: {}", output.status))
+        Err(AppError::new(codes::FILES_EXISTS_FAILED).detail(output.status.to_string()))
     } else {
-        Err(format!("检查设备文件是否存在失败: {stderr}"))
+        Err(AppError::new(codes::FILES_EXISTS_FAILED).detail(stderr))
     }
 }
 
-pub(super) fn remote_file_size(app: &AppHandle, serial: &str, path: &str) -> Result<u64, String> {
+pub(super) fn remote_file_size(app: &AppHandle, serial: &str, path: &str) -> Result<u64, AppError> {
     let quoted = shell_quote(path);
-    let command = format!(
-        "if [ ! -f {quoted} ]; then echo '设备路径不是文件' >&2; exit 2; fi; stat -c %s {quoted}"
-    );
-    let output = run_adb_with_serial(app, serial, &["shell", &command])
-        .map_err(|error| format!("读取设备文件大小失败: {error}"))?;
-    output
+    let command =
+        format!("if [ ! -f {quoted} ]; then exit {NOT_FILE_EXIT}; fi; stat -c %s {quoted}");
+    let output = run_adb_output_with_serial(app, serial, &["shell", &command])
+        .map_err(|error| AppError::new(codes::FILES_REMOTE_SIZE_FAILED).cause(error))?;
+    check_file_output(&output, path)?;
+    String::from_utf8_lossy(&output.stdout)
         .trim()
         .parse::<u64>()
-        .map_err(|error| format!("设备文件大小无效: {error}"))
+        .map_err(|error| AppError::new(codes::FILES_INVALID_SIZE).detail(error.to_string()))
+}
+
+fn check_file_output(output: &std::process::Output, path: &str) -> Result<(), AppError> {
+    if output.status.success() {
+        return Ok(());
+    }
+    let code = match output.status.code() {
+        Some(NOT_DIRECTORY_EXIT) => codes::FILES_NOT_DIRECTORY,
+        Some(DIRECTORY_PERMISSION_EXIT) => codes::FILES_DIRECTORY_PERMISSION,
+        Some(NOT_FILE_EXIT) => codes::FILES_NOT_FILE,
+        _ => return Err(super::device::adb_output_error(output)),
+    };
+    Err(AppError::new(code)
+        .param("path", path)
+        .detail(String::from_utf8_lossy(&output.stderr).trim().to_string()))
 }
 
 fn preview_read_command(path: &str) -> String {
@@ -500,35 +561,35 @@ fn preview_read_command(path: &str) -> String {
     )
 }
 
-pub(super) fn validate_download_target(target: &Path) -> Result<(), String> {
+pub(super) fn validate_download_target(target: &Path) -> Result<(), AppError> {
     if !target.is_absolute() {
-        return Err("本地保存路径必须是绝对路径".to_string());
+        return Err(AppError::new(codes::FILES_ABSOLUTE_SAVE_PATH));
     }
     if target.file_name().is_none() {
-        return Err("本地保存路径缺少文件名".to_string());
+        return Err(AppError::new(codes::FILES_MISSING_SAVE_NAME));
     }
     let parent = target
         .parent()
-        .ok_or_else(|| "本地保存路径缺少父目录".to_string())?;
+        .ok_or_else(|| AppError::new(codes::FILES_MISSING_SAVE_PARENT))?;
     if !parent.is_dir() {
-        return Err("本地保存目录不存在".to_string());
+        return Err(AppError::new(codes::FILES_SAVE_PARENT_MISSING));
     }
     if fs::symlink_metadata(target)
         .map(|metadata| metadata.file_type().is_dir())
         .unwrap_or(false)
     {
-        return Err("本地保存路径是目录".to_string());
+        return Err(AppError::new(codes::FILES_SAVE_PATH_DIRECTORY));
     }
     Ok(())
 }
 
-fn reserve_sibling_file(target: &Path, label: &str) -> Result<PathBuf, String> {
+fn reserve_sibling_file(target: &Path, label: &str) -> Result<PathBuf, AppError> {
     let parent = target
         .parent()
-        .ok_or_else(|| "本地保存路径缺少父目录".to_string())?;
+        .ok_or_else(|| AppError::new(codes::FILES_MISSING_SAVE_PARENT))?;
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|error| format!("读取系统时间失败: {error}"))?
+        .map_err(|error| AppError::new(codes::FILES_CLOCK_FAILED).detail(error.to_string()))?
         .as_nanos();
 
     for attempt in 0..1000 {
@@ -543,20 +604,22 @@ fn reserve_sibling_file(target: &Path, label: &str) -> Result<PathBuf, String> {
         {
             Ok(_) => return Ok(candidate),
             Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(format!("创建本地临时文件失败: {error}")),
+            Err(error) => {
+                return Err(AppError::new(codes::FILES_CREATE_TEMP_FAILED).detail(error.to_string()))
+            }
         }
     }
 
-    Err("无法创建唯一的本地临时文件".to_string())
+    Err(AppError::new(codes::FILES_UNIQUE_TEMP_FAILED))
 }
 
-fn unused_sibling_path(target: &Path, label: &str) -> Result<PathBuf, String> {
+fn unused_sibling_path(target: &Path, label: &str) -> Result<PathBuf, AppError> {
     let parent = target
         .parent()
-        .ok_or_else(|| "本地保存路径缺少父目录".to_string())?;
+        .ok_or_else(|| AppError::new(codes::FILES_MISSING_SAVE_PARENT))?;
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|error| format!("读取系统时间失败: {error}"))?
+        .map_err(|error| AppError::new(codes::FILES_CLOCK_FAILED).detail(error.to_string()))?
         .as_nanos();
 
     for attempt in 0..1000 {
@@ -567,34 +630,41 @@ fn unused_sibling_path(target: &Path, label: &str) -> Result<PathBuf, String> {
         match fs::symlink_metadata(&candidate) {
             Ok(_) => continue,
             Err(error) if error.kind() == ErrorKind::NotFound => return Ok(candidate),
-            Err(error) => return Err(format!("检查本地备份路径失败: {error}")),
+            Err(error) => {
+                return Err(
+                    AppError::new(codes::FILES_INSPECT_BACKUP_FAILED).detail(error.to_string())
+                )
+            }
         }
     }
 
-    Err("无法创建唯一的本地备份路径".to_string())
+    Err(AppError::new(codes::FILES_UNIQUE_BACKUP_FAILED))
 }
 
-fn replace_download_target(temp_path: &Path, target: &Path) -> Result<(), String> {
+fn replace_download_target(temp_path: &Path, target: &Path) -> Result<(), AppError> {
     let target_exists = match fs::symlink_metadata(target) {
         Ok(_) => true,
         Err(error) if error.kind() == ErrorKind::NotFound => false,
-        Err(error) => return Err(format!("检查本地目标文件失败: {error}")),
+        Err(error) => {
+            return Err(AppError::new(codes::FILES_INSPECT_TARGET_FAILED).detail(error.to_string()))
+        }
     };
 
     if !target_exists {
-        return fs::rename(temp_path, target).map_err(|error| format!("保存下载文件失败: {error}"));
+        return fs::rename(temp_path, target)
+            .map_err(|error| AppError::new(codes::FILES_SAVE_FAILED).detail(error.to_string()));
     }
 
     let backup_path = unused_sibling_path(target, "backup")?;
-    fs::rename(target, &backup_path).map_err(|error| format!("备份已有本地文件失败: {error}"))?;
+    fs::rename(target, &backup_path)
+        .map_err(|error| AppError::new(codes::FILES_BACKUP_FAILED).detail(error.to_string()))?;
 
     if let Err(error) = fs::rename(temp_path, target) {
         return match fs::rename(&backup_path, target) {
-            Ok(_) => Err(format!("保存下载文件失败, 已恢复原文件: {error}")),
-            Err(restore_error) => Err(format!(
-                "保存下载文件失败且无法恢复原文件: {error}; 备份位于 {}; 恢复错误: {restore_error}",
-                backup_path.to_string_lossy()
-            )),
+            Ok(_) => Err(AppError::new(codes::FILES_SAVE_RESTORED).detail(error.to_string())),
+            Err(restore_error) => Err(AppError::new(codes::FILES_RESTORE_FAILED)
+                .param("path", backup_path.to_string_lossy().into_owned())
+                .detail(format!("{error}; {restore_error}"))),
         };
     }
 
@@ -645,6 +715,134 @@ fn is_previewable_name(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    #[test]
+    fn upload_preserves_offline_transport_failure_as_a_structured_cause() {
+        use std::os::unix::process::ExitStatusExt;
+
+        let Err(error) = super::push_device_file_with(
+            "photo.png".to_string(),
+            "/sdcard/Download/photo.png".to_string(),
+            "/tmp/photo.png".to_string(),
+            |args| {
+                assert_eq!(
+                    args,
+                    ["push", "/tmp/photo.png", "/sdcard/Download/photo.png"]
+                );
+                let output = std::process::Output {
+                    status: std::process::ExitStatus::from_raw(1 << 8),
+                    stdout: Vec::new(),
+                    stderr: b"error: device offline\n".to_vec(),
+                };
+                Err(crate::commands::device::adb_output_error(&output))
+            },
+        ) else {
+            panic!("an offline push must not report a completed transfer");
+        };
+
+        assert_eq!(
+            serde_json::to_value(error).unwrap(),
+            serde_json::json!({
+                "code": "files.uploadFailed",
+                "causes": [{
+                    "code": "adb.commandFailed",
+                    "params": { "status": "exit status: 1" },
+                    "detail": "error: device offline"
+                }]
+            })
+        );
+    }
+
+    #[test]
+    fn preview_rejects_oversized_metadata_before_reading() {
+        let expected_size = MAX_IMAGE_PREVIEW_BYTES + 1;
+        let Err(error) = super::read_image_preview_with("/sdcard/photo.png", expected_size, |_| {
+            panic!("oversized metadata must prevent reading image data")
+        }) else {
+            panic!("an oversized image must not return a preview");
+        };
+
+        assert_eq!(
+            serde_json::to_value(error).unwrap(),
+            serde_json::json!({
+                "code": "files.previewTooLarge",
+                "params": { "bytes": expected_size }
+            })
+        );
+    }
+
+    #[test]
+    fn preview_rejects_actual_bytes_above_limit_when_metadata_was_within_limit() {
+        let actual_size = MAX_IMAGE_PREVIEW_BYTES + 1;
+        let Err(error) =
+            super::read_image_preview_with("/sdcard/photo.png", MAX_IMAGE_PREVIEW_BYTES, |args| {
+                assert_eq!(args, ["exec-out", "head -c 20971521 '/sdcard/photo.png'"]);
+                Ok(vec![0; actual_size as usize])
+            })
+        else {
+            panic!("an image that grows past the limit must not return a preview");
+        };
+
+        assert_eq!(
+            serde_json::to_value(error).unwrap(),
+            serde_json::json!({
+                "code": "files.previewReadTooLarge",
+                "params": { "bytes": actual_size }
+            })
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn maps_private_shell_statuses_without_parsing_user_paths_or_tool_text() {
+        use super::{
+            check_file_output, DIRECTORY_PERMISSION_EXIT, NOT_DIRECTORY_EXIT, NOT_FILE_EXIT,
+        };
+        use crate::error_codes as codes;
+        use std::os::unix::process::ExitStatusExt;
+
+        let path = "/sdcard/a file\npermission denied";
+        for (status, code) in [
+            (NOT_DIRECTORY_EXIT, codes::FILES_NOT_DIRECTORY),
+            (DIRECTORY_PERMISSION_EXIT, codes::FILES_DIRECTORY_PERMISSION),
+            (NOT_FILE_EXIT, codes::FILES_NOT_FILE),
+        ] {
+            let output = std::process::Output {
+                status: std::process::ExitStatus::from_raw(status << 8),
+                stdout: Vec::new(),
+                stderr: b"raw device diagnostic".to_vec(),
+            };
+            let error = check_file_output(&output, path).unwrap_err();
+            assert_eq!(error.code, code);
+            assert_eq!(error.params["path"], path.into());
+            assert_eq!(error.detail.as_deref(), Some("raw device diagnostic"));
+        }
+        let transport = std::process::Output {
+            status: std::process::ExitStatus::from_raw(1 << 8),
+            stdout: Vec::new(),
+            stderr: b"error: device offline".to_vec(),
+        };
+        let error = check_file_output(&transport, path).unwrap_err();
+        assert_eq!(error.code, codes::ADB_COMMAND_FAILED);
+        assert_eq!(error.detail.as_deref(), Some("error: device offline"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_script_reports_missing_paths_with_its_private_status() {
+        use super::{list_directory_script, NOT_DIRECTORY_EXIT};
+        let root = tempfile::tempdir().unwrap();
+        let missing = root.path().join("missing ' folder");
+        let output = std::process::Command::new("/bin/sh")
+            .args(["-c", &list_directory_script(), "sh"])
+            .arg(&missing)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(NOT_DIRECTORY_EXIT));
+        assert!(output.stdout.is_empty());
+        assert!(output.stderr.is_empty());
+    }
+
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 

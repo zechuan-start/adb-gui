@@ -118,6 +118,7 @@ export function messages(): Messages      // useLocaleStore.getState().messages
 | `src/components/settings/sections/GeneralSection.tsx` | 主题行之上新增语言 `SegmentedControl` |
 | `src/components/settings/SettingRow.tsx` | 读取注册表 label/description 的方式随之调整 |
 | `src-tauri/src/lib.rs` | 菜单标签按系统语言初始化; 监听前端 `locale-changed` 更新菜单项文本 |
+| `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock` | 仅在 macOS target 下添加 `sys-locale = "0.3.2"`, 实现阶段生成 lockfile |
 | `src/lib/tauri.ts` | 新增 `emitLocaleChanged(locale)` |
 
 ### 注册表的文案取值方式
@@ -145,8 +146,12 @@ export interface SettingsRowMeta {
 
 ## 原生菜单同步
 
-- Rust 启动时用 `sys-locale` 或 tauri 已有的系统语言接口取系统语言, 按同一规则 (首段是否 `zh`) 选初始标签. 若引入依赖不划算, 退路是初始一律英文, 前端就绪后立即被 `locale-changed` 覆盖 —— 代价是启动瞬间菜单可能闪一次.
-- 前端在 `applyLocale` 里 emit, 覆盖首启与每次切换.
+- 2026-09-08 技术决策: 引入 `sys-locale = "0.3.2"`, 放入 `[target.'cfg(target_os = "macos")'.dependencies]`. 原生设置菜单及其语言同步沿用现有 macOS 条件编译边界. 依据见 [父任务调研](../09-08-i18n-bilingual/research.md).
+- Rust 在 `macos_menu` 创建设置项时调用 `sys_locale::get_locales()`, 按偏好顺序取首个非空 BCP 47 标签. 忽略大小写比较主子标签, `zh` 使用 `设置…`, 其他标签使用 `Settings…`; 不继续向后寻找中文. 空列表或读取不到语言时使用英文, 遵循父 PRD 已有默认规则.
+- 不采用固定英文启动, 不通过 shell 环境变量或新增 Tauri OS 插件读取语言. `sys-locale` 在 macOS 使用 `CFLocaleCopyPreferredLanguages`, 不需要本项目维护 CoreFoundation FFI.
+- 前端语言 store 是 WebView 就绪后的唯一生效语言来源. Rust 不保存另一份用户偏好, 不轮询系统语言; 前端在 `applyLocale` 里 emit, 覆盖首启, 显式切换以及跟随系统时的 `languagechange`.
+- 已保存的显式偏好可能不同于系统语言: WebView 就绪前菜单按系统初始化, 首次同步后改为已保存偏好. 本阶段不承诺此前菜单完全没有标签变化; 界面首屏仍须按已保存偏好渲染.
+- 确保 Rust 监听注册早于前端首次发送. 事件载荷仅接受 `zh-CN` / `en`; 无效载荷不改菜单并记录诊断. 发送或 `set_text` 失败须可诊断, 不以静默忽略或无限重试掩盖同步失败.
 - 非 Tauri 环境 (浏览器预览, 截图脚本) 下 emit 要静默跳过, 复用 `isTauri()` 判断.
 
 ## 测试
@@ -157,3 +162,5 @@ export interface SettingsRowMeta {
 | `src/store/locale.test.ts` | 存储非法值回落并覆写; 偏好为 system 时 `languagechange` 触发更新; 显式偏好时不受影响; 存储不可用时内存态仍生效 |
 | `src/i18n/messages/catalog.test.ts` | `en` 词典不含 CJK 字符; 两份词典叶子路径集合相同 (类型已保证, 这里防结构漂移) |
 | `src/components/settings/sections/ownership.test.tsx` | 补语言行在通用分组首位的断言 |
+| macOS Rust 菜单测试 | 纯解析覆盖 `zh-CN` / `zh-TW` / `zh-Hant`, 大小写, 非中文首选后含中文, 空列表; 无效事件载荷不更新菜单 |
+| macOS 原生冒烟 | 系统首选为中文和非中文时的菜单初值; 显式偏好与系统不同的冷启动; 切换及改回跟随系统后的菜单同步 |

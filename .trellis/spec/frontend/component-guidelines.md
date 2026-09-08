@@ -21,6 +21,7 @@ import { useDeviceStore } from "@/store/device";
 import { someFunction } from "@/lib/tauri";
 import { useFeedbackStore } from "@/store/feedback";
 import { cn } from "@/lib/utils";
+import { toAppError } from "@/i18n/errors";
 
 export function ToolName() {
   // 1. Store hooks
@@ -36,9 +37,9 @@ export function ToolName() {
     setBusy(true);
     try {
       await someFunction(selectedDevice);
-      showToast("success", "完成");
+      showToast("success", (t) => t.common.copied);
     } catch (error) {
-      showToast("error", `失败: ${error}`);
+      showToast("error", toAppError(error));
     } finally {
       setBusy(false);
     }
@@ -54,6 +55,8 @@ export function ToolName() {
 ```
 
 ---
+
+Use [Bilingual UI and Error Presentation](./i18n.md) when adding component text or feedback. Subscribe with `useT()`, and pass toast product text as a callback rather than a previously translated string.
 
 ## Props Conventions
 

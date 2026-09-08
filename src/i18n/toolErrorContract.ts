@@ -1,0 +1,15 @@
+export const TOOL_ERROR_PARAMS = {
+  clipboard_empty: {},
+  clipboard_too_large: {},
+  clipboard_device_empty: {},
+  recording_session_changed: {},
+  recording_path_missing: {},
+  recording_refresh_failed: {},
+  decoder_canvas_unavailable: {},
+  generator_empty_input: {},
+  generator_empty_separator: {},
+  generator_no_values: {},
+  generator_unsupported_code128: {},
+  generator_render_failed: { format: "string" },
+  port_invalid: {},
+} as const;

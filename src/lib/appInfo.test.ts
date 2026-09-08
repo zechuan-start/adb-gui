@@ -1,3 +1,4 @@
+import { appNameCollator } from "@/i18n/format";
 import { describe, expect, it } from "vitest";
 import {
   appDisplayName,
@@ -47,7 +48,7 @@ describe("appInfo", () => {
       app({ packageName: "com.example.b", appName: "Alpha" }),
     ];
 
-    expect(sortAppInfo(apps, defaultSettings().apps).map((item) => appDisplayName(item))).toEqual([
+    expect(sortAppInfo(apps, defaultSettings().apps, appNameCollator("zh-CN")).map((item) => appDisplayName(item))).toEqual([
       "Alpha",
       "com.example.a",
       "Zulu",
@@ -57,17 +58,17 @@ describe("appInfo", () => {
 
   it.each(["firstInstallTime", "lastUpdateTime", "apkSize"] as const)("sorts %s in either direction with unknown values last and stable ties", (sortBy) => {
     const rows = [app({ packageName: "unknown", [sortBy]: 0 }), app({ packageName: "large", [sortBy]: 20 }), app({ packageName: "b", [sortBy]: 10 }), app({ packageName: "a", [sortBy]: 10 })];
-    expect(sortAppInfo(rows, { sortBy, sortDirection: "asc" }).map((item) => item.packageName)).toEqual(["a", "b", "large", "unknown"]);
-    expect(sortAppInfo(rows, { sortBy, sortDirection: "desc" }).map((item) => item.packageName)).toEqual(["large", "a", "b", "unknown"]);
+    expect(sortAppInfo(rows, { sortBy, sortDirection: "asc" }, appNameCollator("zh-CN")).map((item) => item.packageName)).toEqual(["a", "b", "large", "unknown"]);
+    expect(sortAppInfo(rows, { sortBy, sortDirection: "desc" }, appNameCollator("zh-CN")).map((item) => item.packageName)).toEqual(["large", "a", "b", "unknown"]);
     expect(rows[0].packageName).toBe("unknown");
   });
 
   it("uses package sorting independently of names and preserves natural name sorting", () => {
     const rows = [app({ packageName: "z", appName: "应用2" }), app({ packageName: "a", appName: "应用10" })];
-    expect(sortAppInfo(rows, { sortBy: "name", sortDirection: "asc" })).toEqual(rows);
-    expect(sortAppInfo(rows, { sortBy: "name", sortDirection: "desc" })).toEqual([rows[1], rows[0]]);
-    expect(sortAppInfo(rows, { sortBy: "packageName", sortDirection: "asc" })).toEqual([rows[1], rows[0]]);
-    expect(sortAppInfo(rows, { sortBy: "packageName", sortDirection: "desc" })).toEqual(rows);
+    expect(sortAppInfo(rows, { sortBy: "name", sortDirection: "asc" }, appNameCollator("zh-CN"))).toEqual(rows);
+    expect(sortAppInfo(rows, { sortBy: "name", sortDirection: "desc" }, appNameCollator("zh-CN"))).toEqual([rows[1], rows[0]]);
+    expect(sortAppInfo(rows, { sortBy: "packageName", sortDirection: "asc" }, appNameCollator("zh-CN"))).toEqual([rows[1], rows[0]]);
+    expect(sortAppInfo(rows, { sortBy: "packageName", sortDirection: "desc" }, appNameCollator("zh-CN"))).toEqual(rows);
   });
 
   it("filters by localized app name or package name", () => {
@@ -200,4 +201,15 @@ describe("appInfo", () => {
       "com.example.empty",
     ]);
   });
+});
+
+it("uses the requested language for mixed app names without changing device names", () => {
+  const names = ["相机", "阿里", "八", "Zebra", "Apple", "应用2", "应用10"];
+  const apps = names.map((appName, index) => app({ packageName: `pkg.${index}`, appName }));
+  const preferences = { sortBy: "name", sortDirection: "asc" } as const;
+  expect(sortAppInfo(apps, preferences, appNameCollator("zh-CN")).map((item) => item.appName))
+    .toEqual(["阿里", "八", "相机", "应用2", "应用10", "Apple", "Zebra"]);
+  expect(sortAppInfo(apps, preferences, appNameCollator("en")).map((item) => item.appName))
+    .toEqual(["Apple", "Zebra", "八", "应用2", "应用10", "相机", "阿里"]);
+  expect(apps.map((item) => item.appName)).toEqual(names);
 });

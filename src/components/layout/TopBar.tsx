@@ -1,3 +1,5 @@
+import { AppError, toAppError } from "@/i18n/errors";
+import { useT } from "@/i18n";
 import { Copy, Minus, RefreshCw, Square, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -6,7 +8,7 @@ import { WifiConnectButton } from "@/components/WifiConnect";
 import { getAdbInfo, isTauriRuntime, listDevices } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { useDeviceStore } from "@/store/device";
-import { useFeedbackStore, type ToastKind } from "@/store/feedback";
+import { useFeedbackStore, type ToastKind, type ToastMessage } from "@/store/feedback";
 
 function isWindowsTauriRuntime(): boolean {
   return isTauriRuntime() && /Windows/i.test(globalThis.navigator?.userAgent ?? "");
@@ -42,10 +44,11 @@ function WindowControlButton({
 }
 
 interface WindowControlsProps {
-  showToast: (kind: ToastKind, message: string) => void;
+  showToast: (kind: ToastKind, message: ToastMessage) => void;
 }
 
 function WindowControls({ showToast }: WindowControlsProps) {
+  const t = useT();
   const [maximized, setMaximized] = useState(false);
   const appWindow = useMemo(() => getCurrentWindow(), []);
 
@@ -86,9 +89,9 @@ function WindowControls({ showToast }: WindowControlsProps) {
     };
   }, [appWindow]);
 
-  function runWindowAction(action: () => Promise<void>, label: string): void {
+  function runWindowAction(action: () => Promise<void>, code: "shell.minimize" | "shell.resize" | "shell.closeWindow"): void {
     void action().catch((error: unknown) => {
-      showToast("error", `${label}失败: ${String(error)}`);
+      showToast("error", new AppError(code, {}, { causes: [toAppError(error)] }).payload);
     });
   }
 
@@ -98,14 +101,14 @@ function WindowControls({ showToast }: WindowControlsProps) {
       data-tauri-drag-region="false"
     >
       <WindowControlButton
-        label="最小化窗口"
-        onClick={() => runWindowAction(() => appWindow.minimize(), "最小化窗口")}
+        label={t.shell.topBar.minimize}
+        onClick={() => runWindowAction(() => appWindow.minimize(), "shell.minimize")}
       >
         <Minus className="h-4 w-4" aria-hidden="true" />
       </WindowControlButton>
       <WindowControlButton
-        label={maximized ? "还原窗口" : "最大化窗口"}
-        onClick={() => runWindowAction(() => appWindow.toggleMaximize(), "切换窗口大小")}
+        label={maximized ? t.shell.topBar.restore : t.shell.topBar.maximize}
+        onClick={() => runWindowAction(() => appWindow.toggleMaximize(), "shell.resize")}
       >
         {maximized ? (
           <Copy className="h-3.5 w-3.5" aria-hidden="true" />
@@ -114,8 +117,8 @@ function WindowControls({ showToast }: WindowControlsProps) {
         )}
       </WindowControlButton>
       <WindowControlButton
-        label="关闭窗口"
-        onClick={() => runWindowAction(() => appWindow.close(), "关闭窗口")}
+        label={t.shell.topBar.closeWindow}
+        onClick={() => runWindowAction(() => appWindow.close(), "shell.closeWindow")}
         danger
       >
         <X className="h-4 w-4" aria-hidden="true" />
@@ -125,13 +128,14 @@ function WindowControls({ showToast }: WindowControlsProps) {
 }
 
 export function TopBar() {
+  const t = useT();
   const adbInfo = useDeviceStore((state) => state.adbInfo);
   const setAdbInfo = useDeviceStore((state) => state.setAdbInfo);
   const setDevices = useDeviceStore((state) => state.setDevices);
   const showToast = useFeedbackStore((state) => state.showToast);
   const [refreshing, setRefreshing] = useState(false);
   const windowsRuntime = isWindowsTauriRuntime();
-  const adbLabel = adbInfo ? `adb ${adbInfo.version} · ${adbInfo.source}` : "adb 未就绪";
+  const adbLabel = adbInfo ? `adb ${adbInfo.version} · ${adbInfo.source}` : t.shell.topBar.adbUnavailable;
 
   async function refreshDevices() {
     if (refreshing) {
@@ -143,7 +147,7 @@ export function TopBar() {
       setAdbInfo(info);
       setDevices(nextDevices);
     } catch (error) {
-      showToast("error", `刷新设备失败: ${String(error)}`);
+      showToast("error", new AppError("shell.refresh", {}, { causes: [toAppError(error)] }).payload);
     } finally {
       setRefreshing(false);
     }
@@ -165,8 +169,8 @@ export function TopBar() {
         onClick={() => void refreshDevices()}
         disabled={refreshing}
         className="flex h-[34px] w-[34px] shrink-0 items-center justify-center border border-rule text-ink2 hover:border-ink hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
-        title="刷新设备"
-        aria-label="刷新设备"
+        title={t.shell.topBar.refreshDevice}
+        aria-label={t.shell.topBar.refreshDevice}
       >
         <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
       </button>

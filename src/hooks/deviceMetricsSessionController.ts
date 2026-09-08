@@ -1,3 +1,4 @@
+import { toAppError, type AppErrorPayload } from "@/i18n/errors";
 import type {
   DeviceMetricsExit,
   DeviceMetricsFrame,
@@ -20,7 +21,7 @@ export interface DeviceMetricsSessionControllerDependencies {
   onFrame: (frame: DeviceMetricsFrame) => void;
   onExit: (exit: DeviceMetricsExit) => void;
   onStopped: (session: DeviceMetricsSessionInfo) => void;
-  onStartFailure: (detail: string) => void;
+  onStartFailure: (detail: AppErrorPayload) => void;
   onAsyncError: (error: unknown) => void;
 }
 
@@ -126,7 +127,7 @@ export function createDeviceMetricsSessionController(
       }
       disposeListeners();
       earlyEvents.length = 0;
-      dependencies.onStartFailure(String(error));
+      dependencies.onStartFailure(toAppError(error));
     }
   }
 

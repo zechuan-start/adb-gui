@@ -1,3 +1,4 @@
+import { messages } from "@/i18n";
 export type ViewFormat = "standard" | "compact";
 
 export type LogcatColumn =
@@ -49,13 +50,13 @@ export const LOGCAT_COLUMNS: ReadonlyArray<{
   column: LogcatColumn;
   label: string;
 }> = [
-  { column: "date", label: "日期" },
-  { column: "time", label: "时间" },
-  { column: "pid", label: "PID" },
-  { column: "tid", label: "TID" },
-  { column: "packageName", label: "包名" },
-  { column: "tag", label: "Tag" },
-  { column: "level", label: "等级" },
+  { column: "date", get label() { return messages().logcat.columns.date; } },
+  { column: "time", get label() { return messages().logcat.columns.time; } },
+  { column: "pid", get label() { return messages().logcat.columns.pid; } },
+  { column: "tid", get label() { return messages().logcat.columns.tid; } },
+  { column: "packageName", get label() { return messages().logcat.columns.packageName; } },
+  { column: "tag", get label() { return messages().logcat.columns.tag; } },
+  { column: "level", get label() { return messages().logcat.columns.level; } },
 ];
 
 export function splitTimestamp(time: string): { date: string; clock: string } {

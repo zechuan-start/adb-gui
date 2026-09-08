@@ -24,7 +24,7 @@ export function useLogcatStream(): void {
     const store = useLogcatStore.getState();
     if (!onlineSerial) {
       if (store.serial !== null) {
-        store.markDeviceUnavailable(selectedDevice ? "设备不可用" : "设备已断开");
+        store.markDeviceUnavailable({ code: selectedDevice ? "logcat_device_unavailable" : "logcat_device_disconnected" });
       } else {
         store.reset();
       }
@@ -88,7 +88,7 @@ export function useLogcatStream(): void {
           return;
         }
         useLogcatStore.getState().failStart(detail);
-        showToast("error", `启动 Logcat 失败: ${detail}`);
+        showToast("error", { code: "logcat_start", causes: [detail] });
       },
       onAsyncError: console.error,
     });

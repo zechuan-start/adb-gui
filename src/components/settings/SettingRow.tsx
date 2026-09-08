@@ -1,3 +1,4 @@
+import { useT } from "@/i18n";
 import { createContext, useContext, useId, type ReactNode } from "react";
 import { Switch } from "@/components/settings/controls/Switch";
 import { findSettingsRow } from "@/lib/settingsSections";
@@ -38,6 +39,7 @@ export function SettingRowLabel({
   labelId?: string;
   className?: string;
 }) {
+  const t = useT();
   const row = findSettingsRow(id);
   const modified = useSettingsView().modified(id);
   return (
@@ -46,19 +48,18 @@ export function SettingRowLabel({
       className={cn("flex min-w-0 flex-col gap-0.5", className)}
     >
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
-        <span>{row.label}</span>
+        <span>{row.label(t)}</span>
         {modified && (
           <span
-            title="当前值与默认不同"
+            title={t.settings.dialog.modifiedTitle}
             className="font-data text-[10px] text-note uppercase"
           >
-            已修改
-          </span>
+            {t.settings.dialog.modified}</span>
         )}
       </div>
       {row.description && (
         <span className="text-[11px] leading-snug text-ink2">
-          {row.description}
+          {row.description(t)}
         </span>
       )}
     </div>

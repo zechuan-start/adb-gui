@@ -41,7 +41,7 @@ describe("useCodeGeneratorStore", () => {
     expect(useCodeGeneratorStore.getState().generate()).toBe(false);
 
     const invalidState = useCodeGeneratorStore.getState();
-    expect(invalidState.inputError?.message).toBe("请输入自定义分隔符");
+    expect(invalidState.inputError?.error).toEqual({ code: "generator_empty_separator" });
     expect(invalidState.generatedBatch).toBe(generatedBatch);
   });
 
@@ -82,9 +82,9 @@ describe("useCodeGeneratorStore", () => {
     useCodeGeneratorStore.getState().setInput("kept");
     useCodeGeneratorStore.getState().generate();
     const batch = useCodeGeneratorStore.getState().generatedBatch;
-    useSettingsStore.setState({ available: false, error: "unreadable settings" });
+    useSettingsStore.setState({ available: false, error: { code: "unknown", detail: "unreadable settings" } });
     expect(useCodeGeneratorStore.getState().generate()).toBe(false);
     expect(useCodeGeneratorStore.getState().generatedBatch).toBe(batch);
-    expect(useCodeGeneratorStore.getState().inputError?.message).toContain("unreadable settings");
+    expect(useCodeGeneratorStore.getState().inputError?.error).toEqual({ code: "unknown", detail: "unreadable settings" });
   });
 });

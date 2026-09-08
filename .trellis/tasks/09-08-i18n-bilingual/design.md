@@ -110,10 +110,15 @@ export interface AppErrorPayload {
   code: string;                                  // 词典 errors 下的稳定键
   params?: Record<string, string | number>;      // 用于插值的结构化参数
   detail?: string;                               // adb/OS 原始输出, 不翻译, 原样展示
+  causes?: AppErrorPayload[];                     // 多阶段失败的结构化原因, 渲染时递归翻译
 }
 ```
 
 Rust 侧命令签名从 `Result<T, String>` 改为 `Result<T, AppError>`, `AppError` 用 serde 序列化成上面的形状. `detail` 承载 adb stderr, `io::Error` 文本这类必须保留的诊断信息, 前端拼在译文之后, 不试图翻译.
+
+2026-09-08 实施核对: 错误契约增加可选 `causes`, 用于保存失败后刷新失败, 清理多个源失败等已有复合语义. 已结构化错误不可转成字符串放入 detail. 外部归一化限制深度为 8, 每层原因最多 16 条, 非法载荷显示可诊断错误. 词典错误参数类型与运行时校验由 `errorContract.ts` 的同一份 schema 派生.
+
+前端 `zhCN` 使用普通对象推导以拓宽字符串值, 不使用会把英文也约束成中文字面量的 `as const`. 语言 store 仅负责偏好和 DOM; 原生事件由启动入口订阅 locale 变化后发送, 避免 store → bridge → 词典消费者的初始化循环.
 
 前端 `lib/tauri.ts` 加一层归一化 `toAppError(unknown): AppErrorPayload`: 拿到符合形状的对象直接用; 拿到裸字符串或未知异常, 归到 `errors.unknown` 并把原文放进 `detail`. 这一层保证即使某个命令漏改, 界面也不会崩, 只是提示退化.
 
@@ -147,7 +152,9 @@ export function appNameCollator(locale: Locale): Intl.Collator
 | store | 存结构化状态与错误码 | 不存译文 |
 | 组件 | 渲染时翻译, 拼接 detail | 不硬编码任何字面文案 |
 
-原生菜单例外: `src-tauri/src/lib.rs:66` 的 `"设置…"` 在 app 启动时建菜单, 早于 WebView 可用, Rust 也读不到 localStorage 里的用户偏好. 处理方式: Rust 启动时按系统语言用同一条规则选一个初始标签; 前端解析出生效语言后 (以及每次切换后) 发一个 `locale-changed` 事件, Rust 收到后更新菜单项文本. Rust 侧只需保存两条字符串, 不引入 Rust i18n 库.
+原生菜单例外: `src-tauri/src/lib.rs` 的 `设置…` 在 macOS 原生菜单创建时初始化, Rust 此时读不到 localStorage 中的用户偏好. 2026-09-08 技术决策: 在 macOS target dependencies 中引入 `sys-locale = "0.3.2"`, 使用 `sys_locale::get_locales()` 按顺序取首个非空标签, 主子标签为 `zh` 时使用中文, 其他或无可用标签时使用英文. 不采用固定英文启动方案. 依赖与系统接口依据见 [research.md](./research.md).
+
+前端解析出生效语言后 (以及每次切换后) 发出 `locale-changed` 事件, Rust 校验为 `zh-CN` / `en` 后更新设置菜单项. 原生监听必须早于首次发送, 同步失败须记录诊断. WebView 就绪后以前端生效语言为准, Rust 不复制偏好存储或轮询系统语言. 已保存偏好与系统不同的冷启动允许菜单在首次同步时改变标签, 不承诺 WebView 就绪前已采用前端偏好. 具体边界与验收见 [基建设计](../09-08-i18n-foundation/design.md). 原生设置菜单和同步保持 macOS 范围, 不新增其他平台菜单.
 
 ## 设置面板中的语言行
 
@@ -156,7 +163,7 @@ export function appNameCollator(locale: Locale): Intl.Collator
 - 控件: 与主题一致的 `SegmentedControl`, 三档 `跟随系统 / 简体中文 / English`.
 - 中文与英文两档的标签始终用各自语言书写 (`简体中文`, `English`), 不随界面语言翻译 —— 这是语言选择器的通行做法, 避免用户在看不懂的语言里找不到自己的语言.
 - "跟随系统"这一档随界面语言翻译.
-- 描述文案: 说明当前系统解析结果, 例如"跟随系统时使用英文".
+- 描述文案: 说明系统中文使用简体中文, 其他系统语言使用英文的规则.
 - `modified` 判定: `preference !== "system"`.
 - 不进入任何分组的 `SectionResetPlan`. "恢复默认设置"不改语言, 与 theme 的处理保持一致 —— 注意 theme 目前在 `general` 的 reset 计划里 `resetTheme: true`, 语言不跟随这条, 需要在 PRD 验收里单独确认.
 
@@ -181,6 +188,6 @@ export function appNameCollator(locale: Locale): Intl.Collator
 
 ## 防回归守卫
 
-新增测试扫描 `src/**` 非测试文件, 除 `src/i18n/messages/zh-CN.ts` 外出现 CJK 字符即失败; 同时校验 `en.ts` 不含 CJK 字符. 这条守卫是本任务能长期成立的关键: 没有它, 下一个功能就会重新写死中文.
+新增测试扫描 `src/**` 非测试文件, 除 `src/i18n/messages/*zh-CN.ts` 词典外, 字符串, JSX 文本与模板片段出现 CJK 字符即失败; 同时扫描英文词典. 这条守卫是本任务能长期成立的关键: 没有它, 下一个功能就会重新写死中文.
 
-例外清单显式列出, 目前预期为空 (代码注释里的中文不在扫描范围, 只扫字符串字面量与 JSX 文本).
+例外仅允许英文词典语言行 `chinese` 属性的 `简体中文`, 以便用户在英文界面识别自己的语言. 注释不在扫描范围. Rust Bugreport 的历史电池标签属于非 UI 导出格式, 原样保留.

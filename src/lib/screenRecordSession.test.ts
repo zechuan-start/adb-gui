@@ -1,3 +1,7 @@
+import { errorText } from "@/i18n/errors";
+import { en } from "@/i18n/messages/en";
+import { zhCN } from "@/i18n/messages/zh-CN";
+import type { AppErrorPayload } from "@/i18n/errors";
 import { describe, expect, it, vi } from "vitest";
 import {
   createRecordingController,
@@ -51,7 +55,7 @@ function setup() {
     discard: vi.fn(async () => ({
       serial: "device-a",
       remote_path: "/sdcard/one.mp4",
-      source_cleanup_error: null as string | null,
+      source_cleanup_error: null as AppErrorPayload | null,
     })),
     behavior: vi.fn(() => ({ openAfterSave: false })),
     choosePath: vi.fn(async (): Promise<string | null> => "/chosen/video.mp4"),
@@ -87,7 +91,7 @@ describe("recording session actions", () => {
     await flush();
     expect(deps.behavior).toHaveBeenCalledTimes(1);
     expect(deps.save).not.toHaveBeenCalled();
-    expect(view().error).toContain("settings unavailable");
+    expect(view().error).toEqual({ code: "unknown", detail: "settings unavailable" });
     deps.behavior.mockReturnValue({ openAfterSave: true });
     await controller.save(false);
     expect(deps.save).toHaveBeenCalledWith({
@@ -118,7 +122,7 @@ describe("recording session actions", () => {
     deps.save.mockRejectedValueOnce(new Error("pull failed"));
     deps.getStatus.mockResolvedValue({
       ...session("save_failed"),
-      error: "pull failed",
+      error: { code: "unknown", detail: "pull failed" },
     });
     controller.acceptStatus(session("pending_save"));
     await flush();
@@ -160,7 +164,7 @@ describe("recording session actions", () => {
     expect(deps.save).not.toHaveBeenCalled();
     expect(view().status.session_id).toBe("new");
     expect(deps.onError).toHaveBeenCalledWith(
-      expect.stringContaining("会话已变化"),
+      expect.objectContaining({ code: "recording_session_changed" }),
     );
   });
 
@@ -210,13 +214,31 @@ describe("recording session actions", () => {
     deps.discard.mockResolvedValue({
       serial: "device-a",
       remote_path: "/sdcard/one.mp4",
-      source_cleanup_error: "offline",
+      source_cleanup_error: { code: "unknown", detail: "offline" },
     });
     await controller.discard();
     expect(deps.discard).toHaveBeenCalledWith("one");
     expect(deps.onDiscarded).toHaveBeenCalledWith(
-      expect.objectContaining({ source_cleanup_error: "offline" }),
+      expect.objectContaining({ source_cleanup_error: { code: "unknown", detail: "offline" } }),
     );
     expect(view().status.phase).toBe("idle");
   });
+});
+
+
+it("retains both operation and refresh failures for translation without retrying", async () => {
+  const { controller, deps, view } = setup();
+  controller.acceptStatus(session());
+  deps.save.mockRejectedValue(new Error("disk full"));
+  deps.getStatus.mockRejectedValue(new Error("device disconnected"));
+  await controller.save(false);
+  const error = view().error;
+  expect(error).toMatchObject({
+    code: "recording_refresh_failed",
+    causes: [{ code: "unknown", detail: "disk full" }, { code: "unknown", detail: "device disconnected" }],
+  });
+  expect(errorText(error, zhCN)).toContain(zhCN.errors.recording_refresh_failed());
+  expect(errorText(error, en)).toContain(en.errors.recording_refresh_failed({}));
+  expect(deps.save).toHaveBeenCalledTimes(1);
+  expect(view().error).toBe(error);
 });

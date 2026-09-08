@@ -1,3 +1,4 @@
+use crate::{error::AppError, error_codes as codes};
 use serde::Deserialize;
 use std::fs;
 use std::io::Write;
@@ -16,7 +17,7 @@ pub enum CaptureDestination {
 }
 
 #[tauri::command]
-pub fn resolve_capture_directory(destination: CaptureDestination) -> Result<String, String> {
+pub fn resolve_capture_directory(destination: CaptureDestination) -> Result<String, AppError> {
     directory_path(&destination, dirs::picture_dir())
         .map(|path| path.to_string_lossy().into_owned())
 }
@@ -24,20 +25,24 @@ pub fn resolve_capture_directory(destination: CaptureDestination) -> Result<Stri
 fn directory_path(
     destination: &CaptureDestination,
     pictures: Option<PathBuf>,
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf, AppError> {
     match destination {
         CaptureDestination::Default => pictures
             .map(|path| path.join("ADB GUI"))
-            .ok_or_else(|| "无法解析系统图片目录, 请在设置中选择保存目录".to_string()),
+            .ok_or_else(|| AppError::new(codes::CAPTURE_PICTURES_UNAVAILABLE)),
         CaptureDestination::Directory { path } => {
             let path = PathBuf::from(path);
             if !path.is_absolute() {
-                return Err("本机保存目录必须是绝对路径".to_string());
+                return Err(AppError::new(codes::CAPTURE_ABSOLUTE_DIRECTORY));
             }
-            let metadata = fs::metadata(&path)
-                .map_err(|error| format!("保存目录不可用 ({}): {error}", path.display()))?;
+            let metadata = fs::metadata(&path).map_err(|error| {
+                AppError::new(codes::CAPTURE_DIRECTORY_UNAVAILABLE)
+                    .param("path", path.display().to_string())
+                    .detail(error.to_string())
+            })?;
             if !metadata.is_dir() {
-                return Err(format!("保存位置不是目录: {}", path.display()));
+                return Err(AppError::new(codes::CAPTURE_NOT_DIRECTORY)
+                    .param("path", path.display().to_string()));
             }
             Ok(path)
         }
@@ -49,26 +54,29 @@ pub(super) fn capture_target(
     serial: &str,
     id: &str,
     extension: &str,
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf, AppError> {
     let directory = directory_path(destination, dirs::picture_dir())?;
     if matches!(destination, CaptureDestination::Default) {
-        fs::create_dir_all(&directory)
-            .map_err(|error| format!("创建默认保存目录失败 ({}): {error}", directory.display()))?;
+        fs::create_dir_all(&directory).map_err(|error| {
+            AppError::new(codes::CAPTURE_CREATE_DEFAULT_FAILED)
+                .param("path", directory.display().to_string())
+                .detail(error.to_string())
+        })?;
     }
     let target = directory.join(format!("capture-{}-{id}.{extension}", safe_serial(serial)));
     let probe = CaptureOutput::new(&target)?;
     probe
         .file
         .close()
-        .map_err(|error| format!("清理录制准备文件失败: {error}"))?;
+        .map_err(|error| AppError::new(codes::CAPTURE_PROBE_CLEANUP).detail(error.to_string()))?;
     Ok(target)
 }
 
-pub(super) fn capture_id() -> Result<String, String> {
+pub(super) fn capture_id() -> Result<String, AppError> {
     static SEQUENCE: AtomicU64 = AtomicU64::new(1);
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|error| format!("读取系统时间失败: {error}"))?
+        .map_err(|error| AppError::new(codes::CAPTURE_CLOCK_FAILED).detail(error.to_string()))?
         .as_nanos();
     Ok(format!(
         "{}-{nanos}-{}",
@@ -96,16 +104,23 @@ pub(super) struct CaptureOutput {
 }
 
 impl CaptureOutput {
-    pub fn new(target: &Path) -> Result<Self, String> {
-        validate_download_target(target)
-            .map_err(|error| format!("准备保存失败 ({}): {error}", target.display()))?;
+    pub fn new(target: &Path) -> Result<Self, AppError> {
+        validate_download_target(target).map_err(|error| {
+            AppError::new(codes::CAPTURE_PREPARE_FAILED)
+                .param("path", target.display().to_string())
+                .cause(error)
+        })?;
         let parent = target
             .parent()
-            .ok_or_else(|| "保存路径缺少父目录".to_string())?;
+            .ok_or_else(|| AppError::new(codes::CAPTURE_MISSING_PARENT))?;
         let file = tempfile::Builder::new()
             .prefix(".adb-gui-capture-")
             .tempfile_in(parent)
-            .map_err(|error| format!("创建暂存文件失败 ({}): {error}", target.display()))?;
+            .map_err(|error| {
+                AppError::new(codes::CAPTURE_TEMP_FAILED)
+                    .param("path", target.display().to_string())
+                    .detail(error.to_string())
+            })?;
         Ok(Self {
             file,
             target: target.to_owned(),
@@ -116,41 +131,46 @@ impl CaptureOutput {
         self.file.path()
     }
 
-    pub fn write(&mut self, bytes: &[u8]) -> Result<(), String> {
-        self.file
-            .write_all(bytes)
-            .map_err(|error| format!("写入截图失败 ({}): {error}", self.target.display()))
+    pub fn write(&mut self, bytes: &[u8]) -> Result<(), AppError> {
+        self.file.write_all(bytes).map_err(|error| {
+            AppError::new(codes::CAPTURE_WRITE_FAILED)
+                .param("path", self.target.display().to_string())
+                .detail(error.to_string())
+        })
     }
 
-    pub fn verify_size(&self, expected: u64) -> Result<(), String> {
+    pub fn verify_size(&self, expected: u64) -> Result<(), AppError> {
         let size = fs::metadata(self.path())
-            .map_err(|error| format!("校验本机文件失败 ({}): {error}", self.target.display()))?
+            .map_err(|error| {
+                AppError::new(codes::CAPTURE_VERIFY_FAILED)
+                    .param("path", self.target.display().to_string())
+                    .detail(error.to_string())
+            })?
             .len();
         if expected == 0 || size != expected {
-            return Err(format!(
-                "校验文件完整性失败 ({}): 设备 {expected} 字节, 本机 {size} 字节",
-                self.target.display()
-            ));
+            return Err(AppError::new(codes::CAPTURE_SIZE_MISMATCH)
+                .param("path", self.target.display().to_string())
+                .param("expected", expected)
+                .param("size", size));
         }
         Ok(())
     }
 
-    pub fn publish(self, overwrite: bool) -> Result<(), String> {
-        self.file
-            .as_file()
-            .sync_all()
-            .map_err(|error| format!("同步本机文件失败 ({}): {error}", self.target.display()))?;
+    pub fn publish(self, overwrite: bool) -> Result<(), AppError> {
+        self.file.as_file().sync_all().map_err(|error| {
+            AppError::new(codes::CAPTURE_SYNC_FAILED)
+                .param("path", self.target.display().to_string())
+                .detail(error.to_string())
+        })?;
         let result = if overwrite {
             self.file.persist(&self.target)
         } else {
             self.file.persist_noclobber(&self.target)
         };
         result.map(|_| ()).map_err(|error| {
-            format!(
-                "发布本机文件失败 ({}): {}",
-                self.target.display(),
-                error.error
-            )
+            AppError::new(codes::CAPTURE_PUBLISH_FAILED)
+                .param("path", self.target.display().to_string())
+                .detail(error.error.to_string())
         })
     }
 }
@@ -161,9 +181,12 @@ mod tests {
 
     #[test]
     fn resolves_default_without_creating_it_and_never_falls_back() {
-        assert!(directory_path(&CaptureDestination::Default, None)
-            .unwrap_err()
-            .contains("选择保存目录"));
+        assert_eq!(
+            directory_path(&CaptureDestination::Default, None)
+                .unwrap_err()
+                .code,
+            codes::CAPTURE_PICTURES_UNAVAILABLE
+        );
         let root = tempfile::tempdir().unwrap();
         let default =
             directory_path(&CaptureDestination::Default, Some(root.path().into())).unwrap();

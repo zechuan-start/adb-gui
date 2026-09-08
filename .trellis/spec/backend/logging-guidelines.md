@@ -13,7 +13,7 @@
 ## 当前模式
 
 - **错误但不致命**: `eprintln!("failed to ...: {err}")` — 如截图后打开文件失败.
-- **致命错误**: 通过 `Result<T, String>` 向上层传播, 最终由前端 toast 展示.
+- Propagate fatal failures through `Result<T, AppError>` for frontend rendering. Use [Error Handling](./error-handling.md) for structured IPC; reserve `Display` for diagnostic logs.
 - **调试**: 开发时直接 `println!` 或 `dbg!`, 提交前移除.
 
 ---

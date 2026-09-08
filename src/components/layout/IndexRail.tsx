@@ -1,3 +1,4 @@
+import { useT, errorText } from "@/i18n";
 import { useEffect } from "react";
 import {
   AppWindow,
@@ -23,19 +24,19 @@ import {
 const PANES: readonly {
   id: PaneId;
   index: string;
-  label: string;
   icon: typeof Wrench;
 }[] = [
-  { id: "tools", index: "01", label: "工具", icon: Wrench },
-  { id: "apps", index: "02", label: "应用", icon: AppWindow },
-  { id: "files", index: "03", label: "文件", icon: Files },
-  { id: "codegen", index: "04", label: "生码", icon: QrCode },
-  { id: "decoder", index: "05", label: "解码", icon: ScanLine },
-  { id: "perf", index: "06", label: "性能", icon: Activity },
+  { id: "tools", index: "01", icon: Wrench },
+  { id: "apps", index: "02", icon: AppWindow },
+  { id: "files", index: "03", icon: Files },
+  { id: "codegen", index: "04", icon: QrCode },
+  { id: "decoder", index: "05", icon: ScanLine },
+  { id: "perf", index: "06", icon: Activity },
 ];
 
 
 function LogcatWorkspaceToggle() {
+  const t = useT();
   const activePane = useUiStore((state) => state.activePane);
   const logOpen = useUiStore((state) => state.logOpenByPane[activePane]);
   const readThroughSeq = useUiStore((state) => state.logReadThroughSeq);
@@ -70,14 +71,14 @@ function LogcatWorkspaceToggle() {
         "flex h-[34px] w-full items-center gap-2 border border-rule px-2.5 text-left font-data text-[11.5px] text-ink hover:border-ink3 hover:bg-hover",
         logOpen && "border-ink bg-ink text-onink hover:border-ink hover:bg-ink",
       )}
-      title={logOpen ? "隐藏日志" : "显示日志"}
+      title={logOpen ? t.shell.workspace.hideLogs : t.shell.workspace.showLogs}
     >
       {logOpen ? (
         <PanelBottomClose className="h-4 w-4" aria-hidden="true" />
       ) : (
         <PanelBottomOpen className="h-4 w-4" aria-hidden="true" />
       )}
-      <span>{logOpen ? "隐藏日志" : "显示日志"}</span>
+      <span>{logOpen ? t.shell.workspace.hideLogs : t.shell.workspace.showLogs}</span>
       {unreadCount > 0 ? (
         <span className="ml-auto min-w-5 border border-current px-1 text-center text-[10px]">
           {unreadCount > 999 ? "999+" : unreadCount}
@@ -90,6 +91,7 @@ function LogcatWorkspaceToggle() {
 }
 
 export function IndexRail() {
+  const t = useT();
   const activePane = useUiStore((state) => state.activePane);
   const setActivePane = useUiStore((state) => state.setActivePane);
   const openSettings = useUiStore((state) => state.openSettings);
@@ -102,7 +104,7 @@ export function IndexRail() {
         <span className="font-data text-[10.5px] text-ink3">BP-ADB / REV 01</span>
       </div>
 
-      <nav aria-label="工作区索引" className="flex flex-col">
+      <nav aria-label={t.shell.workspace.index} className="flex flex-col">
         {PANES.map((pane) => {
           const active = activePane === pane.id;
           const Icon = pane.icon;
@@ -120,7 +122,7 @@ export function IndexRail() {
               )}
             >
               <Icon className="h-4 w-4" aria-hidden="true" />
-              <span>{pane.label}</span>
+              <span>{t.shell.workspace[pane.id]}</span>
               <span className="ml-auto text-[10.5px] text-ink3">{pane.index}</span>
             </button>
           );
@@ -131,8 +133,8 @@ export function IndexRail() {
         <LogcatWorkspaceToggle />
 
         <button type="button" onClick={() => openSettings("general")} aria-haspopup="dialog" aria-controls="settings-dialog"
-          title={error ?? "设置"} className={cn("flex h-[34px] items-center gap-2 border border-rule px-2.5 text-xs hover:bg-hover", error && "border-err text-err")}>
-          <Settings className="h-4 w-4" /><span>{error ? "设置异常" : "设置"}</span>
+          title={error ? errorText(error, t) : t.settings.dialog.title} className={cn("flex h-[34px] items-center gap-2 border border-rule px-2.5 text-xs hover:bg-hover", error && "border-err text-err")}>
+          <Settings className="h-4 w-4" /><span>{error ? t.settings.dialog.failed : t.settings.dialog.title}</span>
         </button>
       </div>
     </aside>

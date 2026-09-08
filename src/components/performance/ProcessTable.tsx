@@ -1,3 +1,4 @@
+import { useT } from "@/i18n";
 import { useMemo, useState } from "react";
 import { ArrowDown, ArrowDownUp } from "lucide-react";
 import { formatMemory, formatPercent } from "@/lib/deviceMetrics";
@@ -8,10 +9,10 @@ import { useLogcatStore } from "@/store/logcat";
 
 type SortMode = "cpu" | "memory";
 
-const CPU_COLUMN_HINT = "占整机总算力 · 每 5 秒重算";
 const BAR_MIN_VISIBLE_PERCENT = 6;
 
 export function ProcessTable() {
+  const t = useT();
   const [sortMode, setSortMode] = useState<SortMode>("cpu");
   const processes = useDeviceMetricsStore((state) => state.processes);
   const processMap = useLogcatStore((state) => state.processMap);
@@ -52,13 +53,13 @@ export function ProcessTable() {
     <section className="flex min-h-[220px] flex-1 flex-col border border-rule bg-surface">
       <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-2 border-b border-dashed border-rule px-3 py-1.5">
         <div>
-          <h3 className="text-xs font-semibold text-ink">进程占用</h3>
-          <p className="font-data text-[10px] text-ink3">TOP CPU + TOP RSS · 每 5 秒</p>
+          <h3 className="text-xs font-semibold text-ink">{t.performance.processes}</h3>
+          <p className="font-data text-[10px] text-ink3">{t.performance.processSubtitle}</p>
         </div>
         <span className="ml-auto font-data text-[10px] text-ink3">
-          {table === null ? "--" : `${table.rows.length} 项`}
+          {table === null ? "--" : t.performance.count({ count: table.rows.length })}
         </span>
-        <div className="flex border border-rule" role="group" aria-label="进程排序">
+        <div className="flex border border-rule" role="group" aria-label={t.performance.sortProcesses}>
           {(["cpu", "memory"] as const).map((mode) => {
             const selected = sortMode === mode;
             const Icon = selected ? ArrowDown : ArrowDownUp;
@@ -74,7 +75,7 @@ export function ProcessTable() {
                 )}
               >
                 <Icon className="h-3 w-3" aria-hidden="true" />
-                {mode === "cpu" ? "CPU" : "内存"}
+                {mode === "cpu" ? "CPU" : t.performance.memory}
               </button>
             );
           })}
@@ -83,21 +84,21 @@ export function ProcessTable() {
       <div className="min-h-0 flex-1 overflow-auto">
         {table === null ? (
           <div className="flex min-h-40 items-center justify-center font-data text-xs text-ink3">
-            等待进程快照
+            {t.performance.waitingProcesses}
           </div>
         ) : table.rows.length === 0 ? (
           <div className="flex min-h-40 items-center justify-center font-data text-xs text-ink3">
-            当前设备未提供进程统计
+            {t.performance.noProcesses}
           </div>
         ) : (
           <table className="w-full table-fixed border-collapse text-left">
             <thead className="sticky top-0 z-10 bg-paper font-data text-[10px] uppercase text-ink3">
               <tr className="border-b border-rule">
                 <th className="w-[60px] px-3 py-2 font-medium">PID</th>
-                <th className="px-2 py-2 font-medium">进程</th>
+                <th className="px-2 py-2 font-medium">{t.performance.process}</th>
                 <th
                   className="w-[92px] px-2 py-2 text-right font-medium"
-                  title={CPU_COLUMN_HINT}
+                  title={t.performance.cpuHint}
                 >
                   CPU
                 </th>
@@ -123,9 +124,9 @@ export function ProcessTable() {
                     <td className="px-3 py-1.5 text-ink3">{process.pid}</td>
                     <td className="truncate px-2 py-1.5" title={name}>
                       {name}
-                      {process.is_new ? <span className="ml-2 text-[9px] text-note">NEW</span> : null}
+                      {process.is_new ? <span className="ml-2 text-[9px] text-note">{t.performance.new}</span> : null}
                     </td>
-                    <td className="relative px-2 py-1.5 text-right text-ink" title={CPU_COLUMN_HINT}>
+                    <td className="relative px-2 py-1.5 text-right text-ink" title={t.performance.cpuHint}>
                       <span
                         className="absolute inset-y-[3px] right-0 bg-note/25"
                         style={{ width: barWidth(process.cpu_percent, table.maxCpu) }}

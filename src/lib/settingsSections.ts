@@ -1,3 +1,5 @@
+import type { Messages } from "@/i18n/types";
+import type { LocalePreference } from "@/i18n/locale";
 import { LOGCAT_COLUMNS } from "@/lib/logcatView";
 import { DEFAULT_LOG_OPEN_BY_PANE, type PaneId } from "@/lib/panes";
 import { defaultSettings, type SettingsPreferences } from "@/lib/settings";
@@ -11,24 +13,25 @@ export type SettingsSection =
   | "apps"
   | "codegen";
 
-// The three stores a settings row can read, so one marker covers all of them.
+// All preference owners participate in modified markers without sharing storage.
 export interface SettingsSnapshot {
   preferences: SettingsPreferences;
   theme: Theme;
+  localePreference: LocalePreference;
   logOpenByPane: Record<PaneId, boolean>;
 }
 
 export interface SettingsRowMeta {
   id: string;
-  label: string;
-  description?: string;
+  label: (messages: Messages) => string;
+  description?: (messages: Messages) => string;
   // Absent when the row only presents a value another row owns.
   modified?: (state: SettingsSnapshot, defaults: SettingsSnapshot) => boolean;
 }
 
 export interface SettingsSectionMeta {
   id: SettingsSection;
-  label: string;
+  label: (messages: Messages) => string;
   rows: readonly SettingsRowMeta[];
 }
 
@@ -37,34 +40,40 @@ export interface SettingsSectionMeta {
 export const SETTINGS_SECTIONS: ReadonlyArray<SettingsSectionMeta> = [
   {
     id: "general",
-    label: "通用",
+    label: (m) => m.settings.sections.general,
     rows: [
       {
+        id: "language",
+        label: (m) => m.settings.general.language.label,
+        description: (m) => m.settings.general.language.description,
+        modified: (state, defaults) => state.localePreference !== defaults.localePreference,
+      },
+      {
         id: "theme",
-        label: "主题",
-        description: "跟随系统时随桌面外观自动切换",
+        label: (m) => m.settings.rows.theme.label,
+        description: (m) => m.settings.rows.theme.description,
         modified: (state, defaults) => state.theme !== defaults.theme,
       },
       {
         id: "startupPane",
-        label: "启动页面",
-        description: "下次启动应用时生效",
+        label: (m) => m.settings.rows.startupPane.label,
+        description: (m) => m.settings.rows.startupPane.description,
         modified: (state, defaults) =>
           state.preferences.general.startupPane !==
           defaults.preferences.general.startupPane,
       },
       {
         id: "checkUpdates",
-        label: "启动时检查更新",
-        description: "只在启动时检查一次",
+        label: (m) => m.settings.rows.checkUpdates.label,
+        description: (m) => m.settings.rows.checkUpdates.description,
         modified: (state, defaults) =>
           state.preferences.general.checkUpdatesOnStartup !==
           defaults.preferences.general.checkUpdatesOnStartup,
       },
       {
         id: "background",
-        label: "离开性能页后继续采集",
-        description: "离开性能页后仍按秒采样, 会持续占用 adb 并增加设备耗电",
+        label: (m) => m.settings.rows.background.label,
+        description: (m) => m.settings.rows.background.description,
         modified: (state, defaults) =>
           state.preferences.performance.backgroundEnabled !==
           defaults.preferences.performance.backgroundEnabled,
@@ -73,16 +82,16 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SettingsSectionMeta> = [
   },
   {
     id: "logcat",
-    label: "日志",
+    label: (m) => m.settings.sections.logcat,
     rows: [
       {
         id: "logcatFormat",
-        label: "显示格式",
-        description: "紧凑只保留时间与等级两列",
+        label: (m) => m.settings.rows.logcatFormat.label,
+        description: (m) => m.settings.rows.logcatFormat.description,
       },
       {
         id: "logcatColumns",
-        label: "显示列",
+        label: (m) => m.settings.rows.logcatColumns.label,
         modified: (state, defaults) =>
           LOGCAT_COLUMNS.some(
             ({ column }) =>
@@ -92,31 +101,31 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SettingsSectionMeta> = [
       },
       {
         id: "softWrap",
-        label: "自动换行",
-        description: "长行折行显示, 不再横向滚动",
+        label: (m) => m.settings.rows.softWrap.label,
+        description: (m) => m.settings.rows.softWrap.description,
         modified: (state, defaults) =>
           state.preferences.logcat.softWrap !==
           defaults.preferences.logcat.softWrap,
       },
       {
         id: "autoFold",
-        label: "自动折叠崩溃堆栈",
-        description: "一次崩溃先收成一行, 展开后仍是完整堆栈",
+        label: (m) => m.settings.rows.autoFold.label,
+        description: (m) => m.settings.rows.autoFold.description,
         modified: (state, defaults) =>
           state.preferences.logcat.autoFold !==
           defaults.preferences.logcat.autoFold,
       },
       {
         id: "cozyRows",
-        label: "宽行距",
-        description: "每行留更多纵向空隙, 长时间读日志更省眼",
+        label: (m) => m.settings.rows.cozyRows.label,
+        description: (m) => m.settings.rows.cozyRows.description,
         modified: (state, defaults) =>
           state.preferences.logcat.cozyRows !==
           defaults.preferences.logcat.cozyRows,
       },
       {
         id: "logPanes",
-        label: "显示日志的工作区",
+        label: (m) => m.settings.rows.logPanes.label,
         modified: (state, defaults) =>
           Object.entries(defaults.logOpenByPane).some(
             ([pane, open]) => state.logOpenByPane[pane as PaneId] !== open,
@@ -126,34 +135,34 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SettingsSectionMeta> = [
   },
   {
     id: "capture",
-    label: "截图与录屏",
+    label: (m) => m.settings.sections.capture,
     rows: [
       {
         id: "captureDirectory",
-        label: "本机保存目录",
-        description: "截图与录屏共用. 恢复默认后回到系统图片目录下的 ADB GUI",
+        label: (m) => m.settings.rows.captureDirectory.label,
+        description: (m) => m.settings.rows.captureDirectory.description,
         modified: (state, defaults) =>
           state.preferences.capture.directory !==
           defaults.preferences.capture.directory,
       },
       {
         id: "screenshotOpen",
-        label: "保存截图后打开图片",
+        label: (m) => m.settings.rows.screenshotOpen.label,
         modified: (state, defaults) =>
           state.preferences.screenshot.openAfterSave !==
           defaults.preferences.screenshot.openAfterSave,
       },
       {
         id: "screenshotReveal",
-        label: "保存截图后定位所在目录",
+        label: (m) => m.settings.rows.screenshotReveal.label,
         modified: (state, defaults) =>
           state.preferences.screenshot.revealAfterSave !==
           defaults.preferences.screenshot.revealAfterSave,
       },
       {
         id: "recordingOpen",
-        label: "保存录屏后打开视频",
-        description: "保存失败时手机上的源文件会保留, 可重试保存或另存为",
+        label: (m) => m.settings.rows.recordingOpen.label,
+        description: (m) => m.settings.rows.recordingOpen.description,
         modified: (state, defaults) =>
           state.preferences.recording.openAfterSave !==
           defaults.preferences.recording.openAfterSave,
@@ -162,11 +171,11 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SettingsSectionMeta> = [
   },
   {
     id: "files",
-    label: "文件",
+    label: (m) => m.settings.sections.files,
     rows: [
       {
         id: "fileSort",
-        label: "排序",
+        label: (m) => m.settings.rows.fileSort.label,
         modified: (state, defaults) =>
           state.preferences.files.sortBy !==
             defaults.preferences.files.sortBy ||
@@ -175,23 +184,23 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SettingsSectionMeta> = [
       },
       {
         id: "directoriesFirst",
-        label: "文件夹优先",
+        label: (m) => m.settings.rows.directoriesFirst.label,
         modified: (state, defaults) =>
           state.preferences.files.directoriesFirst !==
           defaults.preferences.files.directoriesFirst,
       },
       {
         id: "showHidden",
-        label: "显示隐藏文件",
-        description: "以点开头的条目; 隐藏后会同时清空对它的选择",
+        label: (m) => m.settings.rows.showHidden.label,
+        description: (m) => m.settings.rows.showHidden.description,
         modified: (state, defaults) =>
           state.preferences.files.showHidden !==
           defaults.preferences.files.showHidden,
       },
       {
         id: "startDirectory",
-        label: "设备起始目录",
-        description: "下次进入文件页或点主页时生效, 不打断当前浏览",
+        label: (m) => m.settings.rows.startDirectory.label,
+        description: (m) => m.settings.rows.startDirectory.description,
         modified: (state, defaults) =>
           state.preferences.files.startDirectory !==
           defaults.preferences.files.startDirectory,
@@ -200,11 +209,11 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SettingsSectionMeta> = [
   },
   {
     id: "apps",
-    label: "应用",
+    label: (m) => m.settings.sections.apps,
     rows: [
       {
         id: "appSort",
-        label: "排序",
+        label: (m) => m.settings.rows.appSort.label,
         modified: (state, defaults) =>
           state.preferences.apps.sortBy !== defaults.preferences.apps.sortBy ||
           state.preferences.apps.sortDirection !==
@@ -214,19 +223,19 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SettingsSectionMeta> = [
   },
   {
     id: "codegen",
-    label: "生码",
+    label: (m) => m.settings.sections.codegen,
     rows: [
       {
         id: "codeType",
-        label: "码类型",
+        label: (m) => m.settings.rows.codeType.label,
         modified: (state, defaults) =>
           state.preferences.codegen.codeType !==
           defaults.preferences.codegen.codeType,
       },
       {
         id: "separator",
-        label: "分隔符",
-        description: "批量生成时用它切分输入",
+        label: (m) => m.settings.rows.separator.label,
+        description: (m) => m.settings.rows.separator.description,
         modified: (state, defaults) =>
           state.preferences.codegen.separatorMode !==
             defaults.preferences.codegen.separatorMode ||
@@ -240,7 +249,7 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SettingsSectionMeta> = [
 export function findSettingsSection(id: SettingsSection): SettingsSectionMeta {
   const section = SETTINGS_SECTIONS.find((item) => item.id === id);
   if (!section) {
-    throw new Error(`未知设置分组: ${id}`);
+    throw new Error(`Unknown settings section: ${id}`);
   }
   return section;
 }
@@ -252,7 +261,7 @@ function everyRow(): SettingsRowMeta[] {
 export function findSettingsRow(id: string): SettingsRowMeta {
   const found = everyRow().find((row) => row.id === id);
   if (!found) {
-    throw new Error(`未知设置项: ${id}`);
+    throw new Error(`Unknown settings row: ${id}`);
   }
   return found;
 }
@@ -265,6 +274,7 @@ export function defaultSettingsSnapshot(): SettingsSnapshot {
   return {
     preferences: defaultSettings(),
     theme: "system",
+    localePreference: "system",
     logOpenByPane: { ...DEFAULT_LOG_OPEN_BY_PANE },
   };
 }
@@ -313,6 +323,17 @@ const RESET_PLANS: Readonly<Record<SettingsSection, SectionResetPlan>> = {
 
 export function sectionResetPlan(section: SettingsSection): SectionResetPlan {
   return RESET_PLANS[section];
+}
+
+export function hasSectionResetChanges(section: SettingsSection, state: SettingsSnapshot): boolean {
+  const plan = sectionResetPlan(section);
+  const reset: SettingsSnapshot = {
+    ...state,
+    preferences: resetSettingsSection(state.preferences, section),
+    theme: plan.resetTheme ? "system" : state.theme,
+    logOpenByPane: plan.resetLogPanes ? DEFAULT_LOG_OPEN_BY_PANE : state.logOpenByPane,
+  };
+  return findSettingsSection(section).rows.some((row) => row.modified?.(state, reset));
 }
 
 export function resetSettingsSection(
