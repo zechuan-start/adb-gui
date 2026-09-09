@@ -1,5 +1,7 @@
 # ADB GUI
 
+<img src="docs/images/app-icon.png" width="96" alt="ADB GUI icon">
+
 **English** | [简体中文](README.zh-CN.md)
 
 A cross-platform desktop workbench for everyday `adb` work: one device context, six focused workspaces, and a Logcat panel that stays with you wherever you are in the app.

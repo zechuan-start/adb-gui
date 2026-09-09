@@ -1,5 +1,7 @@
 # ADB GUI
 
+<img src="docs/images/app-icon.png" width="96" alt="ADB GUI 图标">
+
 [English](README.md) | **简体中文**
 
 面向日常 `adb` 工作的跨平台桌面工作台: 统一的设备上下文, 六个各司其职的工作区, 以及一个跟着你走的 Logcat 面板.

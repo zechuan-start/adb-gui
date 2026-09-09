@@ -1,0 +1,40 @@
+{
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "glass" : false,
+          "hidden" : false,
+          "image-name-specializations" : [
+            {
+              "value" : "icon-light.png"
+            },
+            {
+              "appearance" : "dark",
+              "value" : "icon-dark.png"
+            },
+            {
+              "appearance" : "tinted",
+              "value" : "icon-dark.png"
+            }
+          ],
+          "name" : "AppIcon"
+        }
+      ],
+      "shadow" : {
+        "kind" : "none",
+        "opacity" : 0.5
+      },
+      "specular" : false,
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : [
+      "macOS"
+    ]
+  }
+}

@@ -11,6 +11,8 @@ import {
   Settings,
   Wrench,
 } from "lucide-react";
+import appIconDark from "@/assets/app-icon-dark.png";
+import appIconLight from "@/assets/app-icon-light.png";
 import { cn } from "@/lib/utils";
 import { useLogcatStore } from "@/store/logcat";
 import { useSettingsStore } from "@/store/settings";
@@ -100,8 +102,16 @@ export function IndexRail() {
   return (
     <aside className="flex w-[168px] shrink-0 flex-col border-r border-rule bg-surface pt-3.5">
       <div className="mb-2.5 border-b border-dashed border-rule px-3.5 pb-3">
-        <strong className="block text-sm font-semibold text-ink">ADB GUI</strong>
-        <span className="font-data text-[10.5px] text-ink3">BP-ADB / REV 01</span>
+        <div className="flex items-center gap-2">
+          <span className="relative size-8 shrink-0 overflow-hidden rounded-md border border-rule">
+            <img src={appIconLight} alt="" className="size-full dark:hidden" />
+            <img src={appIconDark} alt="" className="hidden size-full dark:block" />
+          </span>
+          <div className="min-w-0">
+            <strong className="block text-sm font-semibold text-ink">ADB GUI</strong>
+            <span className="font-data text-[10.5px] text-ink3">BP-ADB / REV 01</span>
+          </div>
+        </div>
       </div>
 
       <nav aria-label={t.shell.workspace.index} className="flex flex-col">
