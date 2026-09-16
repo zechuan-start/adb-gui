@@ -13,6 +13,7 @@ import {
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  ArrowDown,
   ArrowRight,
   ArrowUp,
   Check,
@@ -69,8 +70,15 @@ import { useDeviceStore } from "@/store/device";
 import { useFeedbackStore } from "@/store/feedback";
 import { cn } from "@/lib/utils";
 import { requireSettings, useSettingsStore } from "@/store/settings";
-import { SortPreferences } from "@/components/settings/SortPreferences";
+import type { FilePreferences, SortDirection } from "@/lib/settings";
+import {
+  SortPreferences,
+  setSortBy,
+  setSortDirection,
+} from "@/components/settings/SortPreferences";
 import { useUiStore } from "@/store/ui";
+
+type FileSortBy = FilePreferences["sortBy"];
 
 interface DeviceFileManagerProps {
   active?: boolean;
@@ -121,6 +129,16 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
     [contextMatches, visibleEntries, state.selectedPath],
   );
   const breadcrumbs = useMemo(() => buildDeviceBreadcrumbs(visiblePath), [visiblePath]);
+  const handleSortColumn = useCallback(
+    (column: FileSortBy) => {
+      if (preferences.sortBy === column) {
+        setSortDirection("files", preferences.sortDirection === "asc" ? "desc" : "asc");
+        return;
+      }
+      setSortBy("files", column);
+    },
+    [preferences.sortBy, preferences.sortDirection],
+  );
   const transferBusy = isDeviceTransferBusy(visibleTransfer);
   const contextReady = Boolean(onlineSerial && contextMatches && visiblePath);
   const directoryLoaded = hasLoadedDeviceDirectory(state, onlineSerial);
@@ -682,6 +700,10 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
           entries={visibleEntries}
           hasHiddenEntries={contextMatches && state.entries.length > 0 && visibleEntries.length === 0}
           sortKey={`${preferences.sortBy}:${preferences.sortDirection}:${preferences.directoriesFirst}:${preferences.showHidden}`}
+          sortBy={preferences.sortBy}
+          sortDirection={preferences.sortDirection}
+          sortDisabled={!settingsAvailable}
+          onSortColumn={handleSortColumn}
           selectedPath={contextMatches ? state.selectedPath : null}
           loading={directoryLoading}
           loaded={directoryLoaded}
@@ -779,6 +801,10 @@ interface DeviceFileListProps {
   entries: DeviceFileEntry[];
   hasHiddenEntries: boolean;
   sortKey: string;
+  sortBy: FileSortBy;
+  sortDirection: SortDirection;
+  sortDisabled: boolean;
+  onSortColumn: (column: FileSortBy) => void;
   selectedPath: string | null;
   loading: boolean;
   loaded: boolean;
@@ -795,6 +821,10 @@ function DeviceFileList({
   entries,
   hasHiddenEntries,
   sortKey,
+  sortBy,
+  sortDirection,
+  sortDisabled,
+  onSortColumn,
   selectedPath,
   loading,
   loaded,
@@ -825,10 +855,33 @@ function DeviceFileList({
   return (
     <div className={cn("relative flex min-h-0 flex-col bg-log-bg/45", dragActive && "bg-hover")}>
       <div className="grid h-8 shrink-0 grid-cols-[minmax(140px,1fr)_64px_72px_116px] items-center border-b border-rule bg-surface px-3 font-data text-[10px] font-medium text-ink3">
-        <span>{t.files.deviceFileManager.name}</span>
+        <DeviceFileSortHeader
+          column="name"
+          label={t.files.deviceFileManager.name}
+          sortBy={sortBy}
+          sortDirection={sortDirection}
+          disabled={sortDisabled}
+          onSort={onSortColumn}
+        />
         <span>{t.files.deviceFileManager.type}</span>
-        <span className="text-right">{t.files.deviceFileManager.size}</span>
-        <span className="text-right">{t.files.deviceFileManager.modified}</span>
+        <DeviceFileSortHeader
+          column="size"
+          label={t.files.deviceFileManager.size}
+          align="right"
+          sortBy={sortBy}
+          sortDirection={sortDirection}
+          disabled={sortDisabled}
+          onSort={onSortColumn}
+        />
+        <DeviceFileSortHeader
+          column="modifiedAt"
+          label={t.files.deviceFileManager.modified}
+          align="right"
+          sortBy={sortBy}
+          sortDirection={sortDirection}
+          disabled={sortDisabled}
+          onSort={onSortColumn}
+        />
       </div>
       {error && (
         <div className="border-b border-err bg-err-band px-3 py-2 text-xs text-err">
@@ -890,6 +943,59 @@ function DeviceFileList({
         </div>
       )}
     </div>
+  );
+}
+
+function DeviceFileSortHeader({
+  column,
+  label,
+  align = "left",
+  sortBy,
+  sortDirection,
+  disabled,
+  onSort,
+}: {
+  column: FileSortBy;
+  label: string;
+  align?: "left" | "right";
+  sortBy: FileSortBy;
+  sortDirection: SortDirection;
+  disabled: boolean;
+  onSort: (column: FileSortBy) => void;
+}) {
+  const t = useT();
+  const active = sortBy === column;
+  const ascending = sortDirection === "asc";
+  const actionLabel = active
+    ? t.settings.sort.action({
+        label,
+        action: ascending
+          ? t.settings.sort.ascendingAction
+          : t.settings.sort.descendingAction,
+      })
+    : t.settings.sort.by({ label });
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => onSort(column)}
+      title={actionLabel}
+      aria-label={actionLabel}
+      className={cn(
+        "flex h-full min-w-0 items-center gap-1 hover:text-ink disabled:cursor-not-allowed disabled:hover:text-ink3",
+        align === "right" ? "justify-end" : "justify-start",
+        active && "text-ink",
+      )}
+    >
+      <span className="truncate">{label}</span>
+      {active &&
+        (ascending ? (
+          <ArrowUp className="h-3 w-3 shrink-0" />
+        ) : (
+          <ArrowDown className="h-3 w-3 shrink-0" />
+        ))}
+    </button>
   );
 }
 
