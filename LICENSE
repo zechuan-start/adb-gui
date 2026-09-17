@@ -15,7 +15,7 @@ to take away your freedom to share and change the works.  By contrast,
 the GNU General Public License is intended to guarantee your freedom to
 share and change all versions of a program--to make sure it remains free
 software for all its users.  We, the Free Software Foundation, use the
-GNU GPL for most of our software; it applies also to
+GNU General Public License for most of our software; it applies also to
 any other work released this way by its authors.  You can apply it to
 your programs, too.
 
@@ -366,24 +366,24 @@ that material) supplement the terms of this License with terms:
     terms of sections 15 and 16 of this License; or
 
     b) Requiring preservation of specified reasonable legal notices or
-author attributions in that material or in the Appropriate Legal
-Notices displayed by works containing it; or
+    author attributions in that material or in the Appropriate Legal
+    Notices displayed by works containing it; or
 
     c) Prohibiting misrepresentation of the origin of that material, or
-requiring that modified versions of such material be marked in
-reasonable ways as different from the original version; or
+    requiring that modified versions of such material be marked in
+    reasonable ways as different from the original version; or
 
     d) Limiting the use for publicity purposes of names of licensors or
-authors of the material; or
+    authors of the material; or
 
     e) Declining to grant rights under trademark law for use of some
-trade names, trademarks, or service marks; or
+    trade names, trademarks, or service marks; or
 
     f) Requiring indemnification of licensors and authors of that
-material by anyone who conveys the material (or modified versions of
-it) with contractual assumptions of liability to the recipient, for
-any liability that these contractual assumptions directly impose on
-those licensors and authors.
+    material by anyone who conveys the material (or modified versions of
+    it) with contractual assumptions of liability to the recipient, for
+    any liability that these contractual assumptions directly impose on
+    those licensors and authors.
 
   All other non-permissive additional terms are considered "further
 restrictions" within the meaning of section 10.  If the Program as you
@@ -506,8 +506,8 @@ patent license for this particular work, or (3) arrange, in a manner
 consistent with the requirements of this License, to extend the patent
 license to downstream recipients.  "Knowingly relying" means you have
 actual knowledge that, but for the patent license, your conveying the
-work in a country, or your recipient's use of the covered work in a
-country, would infringe one or more identifiable patents in that
+covered work in a country, or your recipient's use of the covered work
+in a country, would infringe one or more identifiable patents in that
 country that you have reason to believe are valid.
 
   If, pursuant to or in connection with a single transaction or
