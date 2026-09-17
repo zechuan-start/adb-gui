@@ -831,3 +831,36 @@ Created the feature branch and committed unified preferences, manual clipboard t
 ### Next Steps
 
 - None - task complete
+
+
+## Session 24: 工具页拖拽防闪动, 过渡动画与设置页恢复入口
+
+**Date**: 2026-09-17
+**Task**: 工具页拖拽防闪动, 过渡动画与设置页恢复入口
+**Branch**: `claude/upbeat-dijkstra-nphphg`
+
+### Summary
+
+修复拖拽时文字被选中; 换位改为指针进入模块才触发并在绘制前确认, 消除宽模块边界来回翻转; 用 WAAPI FLIP 加入让位与落位动画 (emilkowalski/skills), 键盘排序与减少动态效果不加动画; 工具页顶部恢复行移除, 恢复入口只保留在设置页通用分组的工具页布局一行 (侧栏图标对比后去掉).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1533158` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

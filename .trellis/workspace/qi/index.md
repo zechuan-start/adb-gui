@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 23
-- **Last Active**: 2026-09-08
+- **Total Sessions**: 24
+- **Last Active**: 2026-09-17
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~833 | Active |
+| `journal-1.md` | ~866 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 24 | 2026-09-17 | 工具页拖拽防闪动, 过渡动画与设置页恢复入口 | `1533158` | `claude/upbeat-dijkstra-nphphg` |
 | 23 | 2026-09-08 | 中英双语实现与归档 | `4dd1bad` | `claude/bilingual-project-plan-ng1o7s` |
 | 22 | 2026-09-08 | 归档已交付的设置与剪贴板任务 | `495f097` | `claude/bilingual-project-plan-ng1o7s` |
 | 21 | 2026-09-08 | 设置重构与原生交互收口 | `e7380d7` | `main` |
