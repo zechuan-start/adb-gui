@@ -199,4 +199,4 @@ pnpm test:browser
 
 ## 许可证
 
-[MIT](LICENSE)
+[GNU Affero General Public License v3.0](LICENSE)
