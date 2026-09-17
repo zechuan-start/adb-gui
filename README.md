@@ -198,4 +198,4 @@ Recommended editor setup: [VS Code](https://code.visualstudio.com/) with the [Ta
 
 ## License
 
-[GNU General Public License v3.0](LICENSE)
+[GNU Affero General Public License v3.0](LICENSE)
