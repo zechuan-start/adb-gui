@@ -5,6 +5,7 @@ import {
   logcatPreset,
   type SettingsPreferences,
 } from "@/lib/settings";
+import { DEFAULT_TOOL_ORDER } from "@/lib/toolLayout";
 import {
   defaultSettingsSnapshot,
   findSettingsRow,
@@ -39,6 +40,14 @@ describe("settings sections", () => {
     expect(modifiedRowIds(state).has("language")).toBe(true);
     expect(hasSectionResetChanges("general", state)).toBe(false);
     expect(hasSectionResetChanges("general", { ...state, theme: "dark" })).toBe(true);
+  });
+  it("offers only the general reset for a changed tool layout", () => {
+    const state = {
+      ...defaultSettingsSnapshot(),
+      toolOrder: [...DEFAULT_TOOL_ORDER].reverse(),
+    };
+    expect(hasSectionResetChanges("general", state)).toBe(true);
+    expect(hasSectionResetChanges("logcat", state)).toBe(false);
   });
   it("lists six sections in navigation order without a performance group", () => {
     expect(SETTINGS_SECTIONS.map((section) => section.id)).toEqual([
@@ -82,11 +91,13 @@ describe("settings sections", () => {
       settingsKeys: ["general", "performance"],
       resetTheme: true,
       resetLogPanes: false,
+      resetToolOrder: true,
     });
     expect(sectionResetPlan("logcat")).toEqual({
       settingsKeys: ["logcat"],
       resetTheme: false,
       resetLogPanes: true,
+      resetToolOrder: false,
     });
     expect(sectionResetPlan("capture").settingsKeys).toEqual([
       "capture",
@@ -98,6 +109,7 @@ describe("settings sections", () => {
         settingsKeys: [section],
         resetTheme: false,
         resetLogPanes: false,
+        resetToolOrder: false,
       });
     }
   });
@@ -161,6 +173,11 @@ describe("settings rows", () => {
         logOpenByPane: { ...base.logOpenByPane, codegen: true },
       }),
     ).toEqual(new Set(["logPanes"]));
+    expect(
+      modifiedRowIds({ ...base, toolOrder: [...DEFAULT_TOOL_ORDER].reverse() }),
+    ).toEqual(new Set(["toolLayout"]));
+    // The same order in a new array is still the default.
+    expect(modifiedRowIds({ ...base, toolOrder: [...DEFAULT_TOOL_ORDER] }).size).toBe(0);
     expect(
       modifiedRowIds({
         ...base,

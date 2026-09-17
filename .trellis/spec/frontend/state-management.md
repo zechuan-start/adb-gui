@@ -21,6 +21,7 @@
 | `useThemeStore` | `store/theme.ts` | 明/暗主题切换 |
 | `useCodeGeneratorStore` | `store/codeGenerator.ts` | 生码正文、正文修订版本和最近一次生成快照 (无持久化); 长期参数由 useSettingsStore.codegen 唯一持有 |
 | `useLogcatStore` | `store/logcat.ts` | Logcat session identity, ring buffer, incremental filter index, and stream state |
+| `useUiStore` | `store/ui.ts` | Active pane, per-pane Logcat visibility and height, tool module order; persisted under `adb-gui-ui` |
 
 ---
 
@@ -98,6 +99,27 @@ const unread = open || latestSeq === null
 ```
 
 Do not clamp the seq difference to ring-buffer capacity: rows that arrived while hidden remain unread even after FIFO eviction. Tests must cover an empty cleared buffer, first-read state, open state, and a hidden interval larger than 10,000 rows.
+
+### Persisted Layout Order
+
+`useUiStore.toolOrder` persists a list of module ids beside `logHeight` and `activePane` under the existing `adb-gui-ui` key. A layout preference belongs here rather than in `lib/settings.ts`, even when the settings dialog shows a row for it. Such a row reads the value through `SettingsSnapshot`, and the section's `SectionResetPlan` names the store it resets (`resetToolOrder`, like `resetLogPanes`), so the modified marker, the section reset and "restore all defaults" stay in step without a `SETTINGS_VERSION` bump.
+
+`reconcileToolOrder(persisted: unknown, defaults) -> Id[]` is the only entry point on the persistence boundary, and it must return a complete, duplicate-free order for any input:
+
+| Input | Result |
+| --- | --- |
+| Not an array, or any element not a string | Fall back to `defaults` whole |
+| Contains an id that no longer exists | Drop that id |
+| Missing a current id | Reinsert at its index in `defaults` |
+| Contains a duplicate | Keep the first occurrence |
+
+Reinserting at the default index rather than appending is the version-compatibility rule: a user who stored today's ids would otherwise never see a module added by a later release. This mirrors `restoreLogOpenByPane`, which refills per pane instead of trusting the stored object.
+
+Identity lives in `lib/toolLayout.ts`, not in the registry module that imports the components, so the store never pulls a component tree in through its persistence layer — the same split as `PaneId` in `lib/panes.ts`. The registry is keyed by that id union (`Record<ToolModuleId, ToolModuleDefinition>`) so adding a member to the union fails the build until it is registered.
+
+Setters short-circuit an unchanged order (`sameToolOrder`): a header click commits the order it started with, a reset may run on the default order, and every accepted write notifies the layout-animation subscriber and rewrites `localStorage`.
+
+Tests must cover the initial default, a round trip through storage, each dirty-data row above, the reset action, and that an equal write keeps the same array reference.
 
 ---
 

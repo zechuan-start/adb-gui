@@ -43,6 +43,12 @@ export const en: Messages = {
       bugReport: "Bug report",
     },
 
+    toolLayout: {
+      dragHandle: ({ title, position, total }) =>
+        `Reorder ${title}, ${position} of ${total}`,
+      moved: ({ title, position, total }) => `${title}, ${position} of ${total}`,
+    },
+
     status: {
       noDevice: "No device detected",
       unauthorized:
@@ -149,6 +155,11 @@ export const en: Messages = {
         label: "Keep collecting outside Performance",
         description:
           "Continue sampling every second, using adb and device battery",
+      },
+      toolLayout: {
+        label: "Tools layout",
+        description: "Drag a module header on the Tools page to reorder it",
+        reset: "Restore default layout",
       },
       logcatFormat: {
         label: "Display format",

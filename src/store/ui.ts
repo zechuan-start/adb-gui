@@ -1,6 +1,12 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { DEFAULT_LOG_OPEN_BY_PANE, PANE_IDS, type PaneId } from "@/lib/panes";
+import {
+  DEFAULT_TOOL_ORDER,
+  reconcileToolOrder,
+  sameToolOrder,
+  type ToolModuleId,
+} from "@/lib/toolLayout";
 import type { SettingsSection } from "@/lib/settingsSections";
 
 // Re-exported so existing consumers keep importing pane identity from the store.
@@ -16,6 +22,7 @@ interface PersistedUiPreferences {
   activePane: PaneId;
   logOpenByPane: Record<PaneId, boolean>;
   logHeight: number;
+  toolOrder: ToolModuleId[];
 }
 
 export interface UiState extends PersistedUiPreferences {
@@ -32,6 +39,8 @@ export interface UiState extends PersistedUiPreferences {
   setLogMaximized: (maximized: boolean) => void;
   setLogReadThroughSeq: (seq: number | null) => void;
   requestLogQueryFocus: () => void;
+  setToolOrder: (order: readonly ToolModuleId[]) => void;
+  resetToolOrder: () => void;
 }
 
 export function clampLogHeight(height: number, viewportHeight: number): number {
@@ -72,6 +81,7 @@ export const useUiStore = create<UiState>()(
       logMaximized: false,
       logReadThroughSeq: null,
       logQueryFocusNonce: 0,
+      toolOrder: [...DEFAULT_TOOL_ORDER],
       setActivePane: (activePane) => {
         set({ activePane, logMaximized: false });
       },
@@ -102,6 +112,18 @@ export const useUiStore = create<UiState>()(
       requestLogQueryFocus: () => {
         set((state) => ({ logQueryFocusNonce: state.logQueryFocusNonce + 1 }));
       },
+      setToolOrder: (order) => {
+        // A drag emits a new array on every pointer move; skipping equal orders
+        // keeps the tool grid from re-rendering on moves that changed nothing.
+        set((state) => (sameToolOrder(state.toolOrder, order)
+          ? {}
+          : { toolOrder: [...order] }));
+      },
+      resetToolOrder: () => {
+        set((state) => (sameToolOrder(state.toolOrder, DEFAULT_TOOL_ORDER)
+          ? {}
+          : { toolOrder: [...DEFAULT_TOOL_ORDER] }));
+      },
     }),
     {
       name: UI_STORAGE_KEY,
@@ -110,6 +132,7 @@ export const useUiStore = create<UiState>()(
         activePane: state.activePane,
         logOpenByPane: state.logOpenByPane,
         logHeight: state.logHeight,
+        toolOrder: state.toolOrder,
       }),
       merge: mergePersistedPreferences,
     },
@@ -133,6 +156,7 @@ function mergePersistedPreferences(persistedState: unknown, currentState: UiStat
     logMaximized: false,
     logReadThroughSeq: null,
     logQueryFocusNonce: 0,
+    toolOrder: reconcileToolOrder(persistedState.toolOrder, DEFAULT_TOOL_ORDER),
   };
 }
 

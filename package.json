@@ -9,7 +9,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "screenshots": "node scripts/screenshots/capture.mjs",
-    "test:browser": "node scripts/screenshots/smoke.mjs",
+    "test:browser": "node scripts/screenshots/smoke.mjs && node scripts/screenshots/toolDragSmoke.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

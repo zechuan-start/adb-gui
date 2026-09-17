@@ -1,17 +1,19 @@
 import { useLocaleStore } from "@/store/locale";
 import type { LocalePreference } from "@/i18n/locale";
 import { useT } from "@/i18n";
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Monitor, Moon, RotateCcw, Sun } from "lucide-react";
 import { BlueprintSelect } from "@/components/BlueprintSelect";
 import {
   SettingRow,
   SettingsFieldset,
   SettingSwitchRow,
+  useSettingsView,
 } from "@/components/settings/SettingRow";
 import { SegmentedControl } from "@/components/settings/controls/SegmentedControl";
 import { STARTUP_OPTIONS } from "@/lib/settings";
 import { useSettingsStore } from "@/store/settings";
 import { useThemeStore, type Theme } from "@/store/theme";
+import { useUiStore } from "@/store/ui";
 
 export function GeneralSection() {
   const t = useT();
@@ -36,6 +38,8 @@ export function GeneralSection() {
   const update = useSettingsStore((s) => s.update);
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
+  const resetToolOrder = useUiStore((s) => s.resetToolOrder);
+  const toolLayoutChanged = useSettingsView().modified("toolLayout");
 
   return (
     <>
@@ -55,6 +59,18 @@ export function GeneralSection() {
           onChange={setTheme}
           ariaLabel={t.settings.rows.theme.label}
         />
+      </SettingRow>
+      {/* The tool order lives in the UI store, not in adb-gui-settings. */}
+      <SettingRow id="toolLayout">
+        <button
+          type="button"
+          onClick={resetToolOrder}
+          disabled={!toolLayoutChanged}
+          className="inline-flex h-8 items-center gap-1.5 border border-rule px-2.5 text-[11px] text-ink2 hover:border-ink3 hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-rule disabled:hover:bg-transparent disabled:hover:text-ink2"
+        >
+          <RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
+          {t.settings.rows.toolLayout.reset}
+        </button>
       </SettingRow>
       <SettingsFieldset available={available}>
         <SettingRow id="startupPane">
