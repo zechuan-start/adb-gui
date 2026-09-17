@@ -113,6 +113,8 @@ export function SettingsDialog() {
   const openSettings = useUiStore((state) => state.openSettings);
   const closeSettings = useUiStore((state) => state.closeSettings);
   const logOpenByPane = useUiStore((state) => state.logOpenByPane);
+  const toolOrder = useUiStore((state) => state.toolOrder);
+  const resetToolOrder = useUiStore((state) => state.resetToolOrder);
   const theme = useThemeStore((state) => state.theme);
   const preferences = useSettingsStore((state) => state.preferences);
   const error = useSettingsStore((state) => state.error);
@@ -128,8 +130,8 @@ export function SettingsDialog() {
 
   const modified = useMemo(
     () =>
-      modifiedRowIds({ preferences, theme, logOpenByPane, localePreference }),
-    [preferences, theme, logOpenByPane, localePreference],
+      modifiedRowIds({ preferences, theme, logOpenByPane, localePreference, toolOrder }),
+    [preferences, theme, logOpenByPane, localePreference, toolOrder],
   );
   const view = useMemo(
     () => ({ modified: (rowId: string) => modified.has(rowId) }),
@@ -292,6 +294,7 @@ export function SettingsDialog() {
     }
     if (plan.resetTheme) useThemeStore.getState().setTheme("system");
     if (plan.resetLogPanes) resetPanes();
+    if (plan.resetToolOrder) resetToolOrder();
   }
 
   async function restoreEverything(): Promise<void> {
@@ -311,6 +314,7 @@ export function SettingsDialog() {
     restoreDefaults();
     useThemeStore.getState().setTheme("system");
     resetPanes();
+    resetToolOrder();
   }
 
   return (
@@ -438,6 +442,7 @@ export function SettingsDialog() {
                       theme,
                       logOpenByPane,
                       localePreference,
+                      toolOrder,
                     })}
                     onReset={() => resetSection(meta.id)}
                     sectionRef={(element) => {

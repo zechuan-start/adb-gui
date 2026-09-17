@@ -102,7 +102,7 @@ Do not clamp the seq difference to ring-buffer capacity: rows that arrived while
 
 ### Persisted Layout Order
 
-`useUiStore.toolOrder` persists a list of module ids beside `logHeight` and `activePane` under the existing `adb-gui-ui` key. A layout preference that has no settings-dialog row belongs here rather than in `lib/settings.ts`, which would also require a `SETTINGS_VERSION` bump and a `RESET_PLANS` entry.
+`useUiStore.toolOrder` persists a list of module ids beside `logHeight` and `activePane` under the existing `adb-gui-ui` key. A layout preference belongs here rather than in `lib/settings.ts`, even when the settings dialog shows a row for it. Such a row reads the value through `SettingsSnapshot`, and the section's `SectionResetPlan` names the store it resets (`resetToolOrder`, like `resetLogPanes`), so the modified marker, the section reset and "restore all defaults" stay in step without a `SETTINGS_VERSION` bump.
 
 `reconcileToolOrder(persisted: unknown, defaults) -> Id[]` is the only entry point on the persistence boundary, and it must return a complete, duplicate-free order for any input:
 
@@ -117,7 +117,7 @@ Reinserting at the default index rather than appending is the version-compatibil
 
 Identity lives in `lib/toolLayout.ts`, not in the registry module that imports the components, so the store never pulls a component tree in through its persistence layer — the same split as `PaneId` in `lib/panes.ts`. The registry is keyed by that id union (`Record<ToolModuleId, ToolModuleDefinition>`) so adding a member to the union fails the build until it is registered.
 
-Setters short-circuit an unchanged order (`sameToolOrder`), because a drag emits a candidate order on every pointer move and every accepted write also rewrites `localStorage`.
+Setters short-circuit an unchanged order (`sameToolOrder`): a header click commits the order it started with, a reset may run on the default order, and every accepted write notifies the layout-animation subscriber and rewrites `localStorage`.
 
 Tests must cover the initial default, a round trip through storage, each dirty-data row above, the reset action, and that an equal write keeps the same array reference.
 

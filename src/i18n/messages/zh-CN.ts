@@ -62,7 +62,6 @@ export const zhCN = {
         position: number;
         total: number;
       }) => `${title}, 第 ${position} 项, 共 ${total} 项`,
-      reset: "恢复默认布局",
     },
 
     status: {
@@ -169,6 +168,11 @@ export const zhCN = {
       background: {
         label: "离开性能页后继续采集",
         description: "离开性能页后仍按秒采样, 会持续占用 adb 并增加设备耗电",
+      },
+      toolLayout: {
+        label: "工具页布局",
+        description: "在工具页拖动模块标题栏可调整顺序",
+        reset: "恢复默认布局",
       },
       logcatFormat: {
         label: "显示格式",

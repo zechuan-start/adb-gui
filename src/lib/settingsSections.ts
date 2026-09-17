@@ -3,6 +3,7 @@ import type { LocalePreference } from "@/i18n/locale";
 import { LOGCAT_COLUMNS } from "@/lib/logcatView";
 import { DEFAULT_LOG_OPEN_BY_PANE, type PaneId } from "@/lib/panes";
 import { defaultSettings, type SettingsPreferences } from "@/lib/settings";
+import { DEFAULT_TOOL_ORDER, sameToolOrder, type ToolModuleId } from "@/lib/toolLayout";
 import type { Theme } from "@/store/theme";
 
 export type SettingsSection =
@@ -19,6 +20,7 @@ export interface SettingsSnapshot {
   theme: Theme;
   localePreference: LocalePreference;
   logOpenByPane: Record<PaneId, boolean>;
+  toolOrder: readonly ToolModuleId[];
 }
 
 export interface SettingsRowMeta {
@@ -53,6 +55,12 @@ export const SETTINGS_SECTIONS: ReadonlyArray<SettingsSectionMeta> = [
         label: (m) => m.settings.rows.theme.label,
         description: (m) => m.settings.rows.theme.description,
         modified: (state, defaults) => state.theme !== defaults.theme,
+      },
+      {
+        id: "toolLayout",
+        label: (m) => m.settings.rows.toolLayout.label,
+        description: (m) => m.settings.rows.toolLayout.description,
+        modified: (state, defaults) => !sameToolOrder(state.toolOrder, defaults.toolOrder),
       },
       {
         id: "startupPane",
@@ -276,6 +284,7 @@ export function defaultSettingsSnapshot(): SettingsSnapshot {
     theme: "system",
     localePreference: "system",
     logOpenByPane: { ...DEFAULT_LOG_OPEN_BY_PANE },
+    toolOrder: DEFAULT_TOOL_ORDER,
   };
 }
 
@@ -294,6 +303,7 @@ export interface SectionResetPlan {
   settingsKeys: ReadonlyArray<keyof SettingsPreferences>;
   resetTheme: boolean;
   resetLogPanes: boolean;
+  resetToolOrder: boolean;
 }
 
 const RESET_PLANS: Readonly<Record<SettingsSection, SectionResetPlan>> = {
@@ -301,23 +311,37 @@ const RESET_PLANS: Readonly<Record<SettingsSection, SectionResetPlan>> = {
     settingsKeys: ["general", "performance"],
     resetTheme: true,
     resetLogPanes: false,
+    resetToolOrder: true,
   },
   logcat: {
     settingsKeys: ["logcat"],
     resetTheme: false,
     resetLogPanes: true,
+    resetToolOrder: false,
   },
   capture: {
     settingsKeys: ["capture", "screenshot", "recording"],
     resetTheme: false,
     resetLogPanes: false,
+    resetToolOrder: false,
   },
-  files: { settingsKeys: ["files"], resetTheme: false, resetLogPanes: false },
-  apps: { settingsKeys: ["apps"], resetTheme: false, resetLogPanes: false },
+  files: {
+    settingsKeys: ["files"],
+    resetTheme: false,
+    resetLogPanes: false,
+    resetToolOrder: false,
+  },
+  apps: {
+    settingsKeys: ["apps"],
+    resetTheme: false,
+    resetLogPanes: false,
+    resetToolOrder: false,
+  },
   codegen: {
     settingsKeys: ["codegen"],
     resetTheme: false,
     resetLogPanes: false,
+    resetToolOrder: false,
   },
 };
 
@@ -332,6 +356,7 @@ export function hasSectionResetChanges(section: SettingsSection, state: Settings
     preferences: resetSettingsSection(state.preferences, section),
     theme: plan.resetTheme ? "system" : state.theme,
     logOpenByPane: plan.resetLogPanes ? DEFAULT_LOG_OPEN_BY_PANE : state.logOpenByPane,
+    toolOrder: plan.resetToolOrder ? DEFAULT_TOOL_ORDER : state.toolOrder,
   };
   return findSettingsSection(section).rows.some((row) => row.modified?.(state, reset));
 }

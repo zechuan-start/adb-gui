@@ -60,6 +60,7 @@ describe("ToolModule", () => {
         drag={{
           handleLabel: "拖动排序 截图, 第 1 项, 共 9 项",
           dragging: false,
+          lifted: false,
           moduleRef: null,
           handleRef: null,
           headerProps: {},
@@ -86,6 +87,7 @@ describe("ToolModule", () => {
         drag={{
           handleLabel: "拖动排序 截图, 第 1 项, 共 9 项",
           dragging: true,
+          lifted: true,
           moduleRef: null,
           handleRef: null,
           style: { transform: "translate(12px, 20px)" },
@@ -102,5 +104,31 @@ describe("ToolModule", () => {
     expect(html).toContain("z-10");
     // Opaque so the card underneath does not read through the lifted one.
     expect(html).toContain("bg-paper");
+  });
+
+  it("keeps a landing module above the others without the grabbing cursor", () => {
+    const html = renderToStaticMarkup(
+      <ToolModule
+        icon={null}
+        title="截图"
+        reference="A-01"
+        drag={{
+          handleLabel: "拖动排序 截图, 第 1 项, 共 9 项",
+          dragging: false,
+          lifted: true,
+          moduleRef: null,
+          handleRef: null,
+          headerProps: {},
+          onHandleKeyDown: () => {},
+        }}
+      >
+        内容
+      </ToolModule>,
+    );
+
+    expect(html).toContain("z-10");
+    expect(html).toContain("bg-paper");
+    expect(html).toContain("cursor-grab");
+    expect(html).not.toContain("cursor-grabbing");
   });
 });

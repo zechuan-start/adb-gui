@@ -192,3 +192,57 @@ interface ToolModuleProps {
 - **宽模块空洞**: 端口转发 `wide` 被拖到行尾时, CSS 网格放不下会留空. 接受该行为, 不加 `grid-auto-flow: dense` —— dense 会让视觉顺序与存储顺序脱钩, 拖拽命中随之失真.
 - **重排不得有业务副作用**: 各工具组件按 id 作 key, React 重排 DOM 而非卸载重建, 录屏计时与端口轮询不受影响. 除 key 之外还有一层: `ToolWorkbench` 用 `useMemo` 按 `active` 缓存九个模块 body 的 element, 引用不变时 React 会整棵子树 bail out, 拖拽期间每帧 setState 才不会把九个工具重渲染一遍. 浏览器冒烟里用"拖走一个填过内容的模块后输入框仍保留原值"来卡这条.
 - **不改的文件**: `src-tauri/` 全部, 九个工具组件自身, `lib/settings.ts`, `lib/settingsSections.ts`.
+
+## 迭代 2 设计
+
+### 闪动根因
+
+最近中心判定配合真实网格重排不是幂等的. 宽模块换行后, 换位后的布局里离指针最近的中心又指向另一模块, 两次换位互为逆操作, 指针每动一步就翻转一次; `lockedTarget` 只记一个目标, 挡不住 A/B 交替. 另外换位那一帧用目标旧槽位预测被拖模块新槽位, 宽窄不一时预测错一整列.
+
+### 命中与确认
+
+```typescript
+interface ToolDragState {
+  moved, origin, grab, offset, originOrder, previewOrder, active,
+  pointer: ToolDragPoint;                       // 最近一次指针
+  pending: { order; slot: ToolDragRect | null } | null;  // 待确认的换位
+}
+updateToolDrag(state, pointer, rects)   // 命中则产生 pending, 不再猜 offset
+settleToolDrag(state, rects)            // 用换位后的真实槽位确认或撤回
+```
+
+- 命中: 指针先夹进所有矩形的包围盒, 再找包含它的矩形. 无命中或命中自身时只更新 offset.
+- 确认: 换位后的布局里被拖模块槽位包含(夹后的)指针才保留, offset 用真实槽位计算; 否则恢复 `pending.order`, offset 按 `pending.slot` 计算.
+- 不变量: 确认后指针一定在被拖模块槽位内, 所以下一次换位必须等指针离开该槽位, A/B 翻转在构造上不可能出现. `lockedTarget` 因此删除.
+- `moveTool` 语义是"被拖模块占据目标下标", 均匀网格里新槽位就是目标旧槽位, 确认必然通过; 只有尺寸不一时才会撤回.
+
+`useToolDrag` 用 `flushSync` 提交每次指针更新, `useLayoutEffect` 在绘制前调用 `settleToolDrag`, 撤回的中间布局不会被画出来, 下一次指针事件读到的 DOM 也一定是已确认的布局.
+
+槽位测量改用 `offsetLeft/offsetTop/offsetWidth/offsetHeight` 加网格原点. 这组属性按定义不含 transform, 被拖模块的 translate 和进行中的过渡都不会污染命中, 原先"减去上一帧 offset"的补偿随之删除. 网格加 `relative` 成为 offsetParent.
+
+### 过渡 (FLIP + WAAPI)
+
+依据 emilkowalski/skills `animate`: 让位是屏幕内移动, 用 `ease-in-out`; 松手是系统对释放的响应, 用 `ease-out` 且要快; 属性只有 `transform`; 需要程序控制且可打断, 选 WAAPI, 不装 Motion.
+
+```typescript
+// lib/motion.ts
+EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)"
+EASE_IN_OUT = "cubic-bezier(0.77, 0, 0.175, 1)"
+LAYOUT_SHIFT_MS = 200
+DROP_SETTLE_MS = 200
+// lib/layoutFlip.ts (纯函数)
+planLayoutFlip(first, last, running) -> { id, from }[]
+// hooks/useLayoutFlip.ts (DOM 适配)
+capture({ settle? }) / skipNext() / settlingId
+```
+
+- First: 变化发生前, 各模块相对网格的视觉位置(`getBoundingClientRect`, 含进行中的动画). 采集时机: 尝试换位前、松手或取消前、store 中 `toolOrder` 被外部改写时(zustand `subscribe` 同步触发, 早于 React 提交). 一次快照被消费前不再覆盖, 保证松手时带上的 settle 信息不被 store 订阅冲掉.
+- Last: 确认后的槽位(offset 系列属性) 加该模块的静态 transform(拖拽中的模块被排除).
+- 规划: 差值小于 1px 跳过; 正在朝同一槽位运动的模块不重启动画, 避免重头走缓动; 其余取消旧动画, 从差值动画到 0.
+- 松手落位的模块在动画期间保持浮起外观(`settlingId`), 动画结束或被取消时清除.
+- 键盘排序先 `skipNext()` 再写 store; 减少动态效果或工具页不可见时不采集.
+
+### 恢复入口
+
+- 设置页: `SettingsSnapshot` 增加 `toolOrder`, 通用分组新增 `toolLayout` 行(`modified` 用 `sameToolOrder` 比较), 放在 fieldset 之前(不属于设置文件). `SectionResetPlan` 增加 `resetToolOrder`, 仅通用分组为 true.
+- 入口读已提交的 `toolOrder`, 与拖拽预览无关. 侧栏图标按钮只用于对比, 已移除.

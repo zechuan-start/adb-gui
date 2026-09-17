@@ -11,7 +11,10 @@ import { cn } from "@/lib/utils";
 export interface ToolModuleDragProps {
   /** Accessible name of the grip button, including the module's current position. */
   handleLabel: string;
+  /** Following the pointer. */
   dragging: boolean;
+  /** Painted above the other modules: while dragged and while landing after a drop. */
+  lifted: boolean;
   moduleRef: Ref<HTMLElement>;
   handleRef: Ref<HTMLButtonElement>;
   style?: CSSProperties;
@@ -47,7 +50,7 @@ export function ToolModule({
         wide && "min-[1180px]:col-span-2",
         // Opaque while lifted: the module floats over other cards and the
         // blueprint grid, which stay readable through the translucent surface.
-        drag?.dragging
+        drag?.lifted
           && "relative z-10 border-ink3 bg-paper shadow-[3px_3px_0_var(--color-hard-shadow)]",
       )}
     >

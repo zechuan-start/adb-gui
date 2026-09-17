@@ -36,12 +36,44 @@ async function dragTo(page, from, to, { drop = true } = {}) {
   }
 }
 
-async function open(browser, { storage, viewport, theme = "light" } = {}) {
+/** Restores the default order through its only entry, the settings dialog. */
+async function resetFromSettings(page, whileOpen) {
+  const dialog = page.getByRole("dialog");
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await dialog.getByRole("button", { name: "Restore default layout" }).click();
+  await whileOpen?.();
+  await page.keyboard.press("Escape");
+  await dialog.waitFor({ state: "hidden" });
+}
+
+function section(page, reference) {
+  return page.locator("#tool-grid > section").filter({ hasText: reference }).first();
+}
+
+/** References of the modules with a running animation. */
+async function animated(page) {
+  return page.locator("#tool-grid > section").evaluateAll(
+    (nodes) => nodes
+      .filter((node) => node.getAnimations().length > 0)
+      .map((node) => node.querySelector("header > span:last-child").textContent.trim()),
+  );
+}
+
+/** Whether the page cancels a text selection starting inside a module body. */
+async function selectionBlocked(page) {
+  return page.locator("#tool-grid > section > div").first().evaluate((body) => {
+    const event = new Event("selectstart", { bubbles: true, cancelable: true });
+    body.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+}
+
+async function open(browser, { storage, viewport, theme = "light", motion = "reduce" } = {}) {
   const context = await browser.newContext({
     locale: "en",
     viewport: viewport ?? { width: 1200, height: 800 },
     colorScheme: theme,
-    reducedMotion: "reduce",
+    reducedMotion: motion,
   });
   await context.addInitScript({ path: MOCK_SCRIPT });
   // Seed once only: a reload must read back what the application stored.
@@ -73,48 +105,56 @@ try {
     const reordered = await order(page);
     assert.notDeepEqual(reordered, DEFAULT_ORDER, "drag changed the order");
     assert.equal(reordered.indexOf("A-01"), 3, "A-01 took the fourth slot");
+    assert.deepEqual(await animated(page), [], "reduced motion moves modules without animating");
     console.log("  after drag:", reordered.join(" "));
 
-    await page.getByRole("button", { name: "Restore default layout" }).waitFor();
+    // The only reset entry lives in the settings dialog.
+    assert.equal(
+      await page.getByRole("button", { name: "Restore default layout" }).count(),
+      0,
+      "neither the tools page nor the sidebar offers a reset",
+    );
 
     await page.reload();
     await page.getByText("Pixel 7", { exact: true }).first().waitFor();
     assert.deepEqual(await order(page), reordered, "order survived the reload");
 
-    await page.getByRole("button", { name: "Restore default layout" }).click();
-    await page.waitForTimeout(60);
+    await resetFromSettings(page);
     assert.deepEqual(await order(page), DEFAULT_ORDER, "reset restored the default");
-    assert.equal(await page.getByRole("button", { name: "Restore default layout" }).count(), 0);
     assert.deepEqual(errors, []);
     await context.close();
     console.log("passed drag reorder, persistence and reset entry");
   }
 
-  // 2. A plain header click does not reorder; Escape rolls a drag back.
+  // 2. A plain header click does not reorder; Escape rolls a drag back; text
+  //    selection is blocked only while a drag is in progress.
   {
     const { context, page, errors } = await open(browser);
     const first = await headerBox(page, "A-01");
     await page.mouse.click(first.x, first.y);
     await page.waitForTimeout(60);
     assert.deepEqual(await order(page), DEFAULT_ORDER, "a click is not a drag");
+    assert.equal(await selectionBlocked(page), false, "module text is selectable at rest");
 
     await dragTo(page, first, await headerBox(page, "A-05"), { drop: false });
     assert.notDeepEqual(await order(page), DEFAULT_ORDER, "preview reordered mid-drag");
-    // The reset row is part of the scroll flow. Showing it on the first preview
-    // swap would push the grid down and move every drop target under a
-    // stationary pointer, so it must wait for the drop.
+    // Chromium never starts this selection, WebKit does; the guard is what
+    // keeps the Tauri webview from highlighting text the pointer crosses.
+    assert.equal(await selectionBlocked(page), true, "a drag cancels text selection");
+    // The reset entry reflects the stored order, not the live preview.
     assert.equal(
       await page.getByRole("button", { name: "Restore default layout" }).count(),
       0,
-      "the reset row stays hidden until the drag is committed",
+      "the reset entry stays hidden until the drag is committed",
     );
     await page.keyboard.press("Escape");
     await page.mouse.up();
     await page.waitForTimeout(60);
     assert.deepEqual(await order(page), DEFAULT_ORDER, "Escape rolled the drag back");
+    assert.equal(await selectionBlocked(page), false, "selection returns after the drag");
     assert.deepEqual(errors, []);
     await context.close();
-    console.log("passed header click and Escape rollback");
+    console.log("passed header click, Escape rollback and selection guard");
   }
 
   // 3. Keyboard reordering keeps focus on the grip and announces the position.
@@ -171,8 +211,7 @@ try {
     await dragTo(page, await headerBox(page, "A-01"), await headerBox(page, "A-02"));
     const narrow = await order(page);
     assert.equal(narrow.indexOf("A-01"), 1, "a narrow-layout drag still reorders");
-    await page.getByRole("button", { name: "Restore default layout" }).click();
-    await page.waitForTimeout(60);
+    await resetFromSettings(page);
 
     const scroller = await page.locator("#tool-grid").evaluate((grid) => {
       const box = grid.parentElement.parentElement.getBoundingClientRect();
@@ -217,6 +256,155 @@ try {
     assert.deepEqual(errors, []);
     await context.close();
     console.log("passed module body interaction and state survival");
+  }
+  // 7. Sweeping across the wide module neither flips the order back and forth
+  //    nor lets the lifted module drift from the pointer.
+  {
+    const { context, page, errors } = await open(browser);
+    await page.evaluate(() => {
+      window.__frames = [];
+      let pointer = null;
+      window.addEventListener("pointermove", (event) => {
+        pointer = { x: event.clientX, y: event.clientY };
+      });
+      const sections = () => [...document.querySelectorAll("#tool-grid > section")];
+      const reference = (node) => node.querySelector("header > span:last-child").textContent.trim();
+      const sample = () => {
+        const lifted = sections().find((node) => reference(node) === "A-01");
+        if (pointer && lifted) {
+          const box = lifted.getBoundingClientRect();
+          window.__frames.push({
+            dx: box.left - pointer.x,
+            dy: box.top - pointer.y,
+            x: pointer.x,
+            order: sections().map(reference).join(" "),
+          });
+        }
+        window.__sampling = requestAnimationFrame(sample);
+      };
+      window.__sampling = requestAnimationFrame(sample);
+    });
+
+    const start = await headerBox(page, "A-01");
+    const ports = await section(page, "A-05").boundingBox();
+    const y = ports.y + ports.height / 2;
+    const xs = [];
+    for (let x = ports.x - 60; x <= ports.x + ports.width + 20; x += 20) xs.push(x);
+
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(start.x, start.y + 10);
+    await page.waitForTimeout(32);
+    await page.evaluate(() => { window.__frames = []; });
+    for (const x of [...xs, ...[...xs].reverse()]) {
+      await page.mouse.move(x, y);
+      await page.waitForTimeout(16);
+    }
+    const frames = await page.evaluate(() => {
+      cancelAnimationFrame(window.__sampling);
+      return window.__frames;
+    });
+    await page.mouse.up();
+
+    assert.ok(frames.length > xs.length, "sampled every step");
+    const drift = Math.max(...frames.map((frame) =>
+      Math.hypot(frame.dx - frames[0].dx, frame.dy - frames[0].dy)));
+    assert.ok(drift <= 2, `the lifted module stayed under the pointer (drift ${drift.toFixed(1)} px)`);
+
+    const changes = [];
+    for (const frame of frames) {
+      if (changes.at(-1)?.order !== frame.order) changes.push(frame);
+    }
+    // Into the wide module's row, onto the slot past it, and back.
+    assert.ok(changes.length <= 4, `order changed ${changes.length} times`);
+    for (let index = 2; index < changes.length; index += 1) {
+      if (changes[index].order === changes[index - 2].order) {
+        assert.ok(
+          Math.abs(changes[index].x - changes[index - 1].x) >= 100,
+          "undoing a swap took real pointer travel",
+        );
+      }
+    }
+    assert.deepEqual(errors, []);
+    await context.close();
+    console.log(`passed wide module sweep without flips (${changes.length} orders, drift ${drift.toFixed(1)} px)`);
+  }
+
+  // 8. With motion allowed, displaced modules slide, a dropped module lands
+  //    lifted, keyboard moves stay instant and a reset slides back.
+  {
+    const { context, page, errors } = await open(browser, { motion: "no-preference" });
+    const first = await headerBox(page, "A-01");
+    const second = await section(page, "A-02").boundingBox();
+
+    await page.mouse.move(first.x, first.y);
+    await page.mouse.down();
+    await page.mouse.move(first.x + 10, first.y);
+    await page.mouse.move(second.x + second.width / 2, second.y + second.height / 2);
+    const shifting = await animated(page);
+    assert.ok(shifting.includes("A-02"), "the displaced module slides");
+    assert.ok(!shifting.includes("A-01"), "the dragged module follows the pointer without animating");
+
+    await page.mouse.up();
+    assert.ok((await animated(page)).includes("A-01"), "the dropped module lands");
+    assert.match(await section(page, "A-01").getAttribute("class"), /z-10/, "it stays lifted while landing");
+
+    await page.waitForTimeout(400);
+    assert.deepEqual(await animated(page), [], "every animation finished");
+    assert.doesNotMatch(await section(page, "A-01").getAttribute("class"), /z-10/, "it settled");
+    assert.deepEqual(
+      await page.locator("#tool-grid > section").evaluateAll((nodes) => nodes.map((node) => node.style.transform)),
+      Array(DEFAULT_ORDER.length).fill(""),
+      "no transform is left behind",
+    );
+    assert.equal((await order(page)).indexOf("A-01"), 1, "the drop committed");
+
+    const grip = page.getByRole("button", { name: /^Reorder Install APK/ });
+    await grip.focus();
+    await page.keyboard.press("Control+ArrowRight");
+    assert.equal((await order(page)).indexOf("A-03"), 3, "the keyboard moved it");
+    assert.deepEqual(await animated(page), [], "a keyboard move is instant");
+
+    await resetFromSettings(page, async () => {
+      assert.ok((await animated(page)).length > 0, "a reset slides the modules home");
+      await page.waitForTimeout(400);
+      assert.deepEqual(await animated(page), []);
+    });
+    assert.deepEqual(await order(page), DEFAULT_ORDER, "the reset restored the default");
+    assert.deepEqual(errors, []);
+    await context.close();
+    console.log("passed layout animations, landing and instant keyboard moves");
+  }
+
+  // 9. The settings dialog marks a changed layout and restores it.
+  {
+    const { context, page, errors } = await open(browser);
+    const dialog = page.getByRole("dialog");
+    const reset = dialog.getByRole("button", { name: "Restore default layout" });
+    const openSettings = () => page.getByRole("button", { name: "Settings", exact: true }).click();
+
+    await openSettings();
+    assert.equal(await reset.isDisabled(), true, "nothing to restore at first");
+    await page.keyboard.press("Escape");
+    await dialog.waitFor({ state: "hidden" });
+
+    await dragTo(page, await headerBox(page, "A-01"), await headerBox(page, "A-04"));
+    assert.notDeepEqual(await order(page), DEFAULT_ORDER);
+
+    await openSettings();
+    const row = dialog.getByText("Tools layout", { exact: true }).locator("..");
+    assert.equal(await row.getByText("Modified", { exact: true }).count(), 1, "the row is marked");
+    assert.equal(await reset.isDisabled(), false);
+    await reset.click();
+    assert.equal(await reset.isDisabled(), true, "restored");
+    assert.equal(await row.getByText("Modified", { exact: true }).count(), 0, "the mark cleared");
+    await page.keyboard.press("Escape");
+    await dialog.waitFor({ state: "hidden" });
+    assert.deepEqual(await order(page), DEFAULT_ORDER, "the dialog restored the default");
+    assert.equal(await page.getByRole("button", { name: "Restore default layout" }).count(), 0);
+    assert.deepEqual(errors, []);
+    await context.close();
+    console.log("passed settings entry for the tools layout");
   }
 } finally {
   await browser.close();

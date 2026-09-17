@@ -27,18 +27,32 @@ export interface ToolDragRect extends ToolDragPoint {
   height: number;
 }
 
+/** A swap that has been applied to the preview but not yet checked against layout. */
+export interface ToolDragPending {
+  /** Preview order before the swap, restored when the swap is refused. */
+  order: readonly ToolModuleId[];
+  /** Slot the dragged module occupied before the swap. */
+  slot: ToolDragRect | null;
+}
+
 export interface ToolDragState {
   moved: ToolModuleId;
   /** Pointer position at press, measured against for the activation distance. */
   origin: ToolDragPoint;
   /** Where inside the module the pointer grabbed it. */
   grab: ToolDragPoint;
+  /** Latest pointer position. */
+  pointer: ToolDragPoint;
   /** Translation to paint on the module, zero until the drag activates. */
   offset: ToolDragPoint;
   originOrder: readonly ToolModuleId[];
   previewOrder: readonly ToolModuleId[];
   active: boolean;
-  lockedTarget: ToolModuleId | null;
+  /**
+   * Set by `updateToolDrag` when it swaps, cleared by `settleToolDrag`. The
+   * caller must render the preview and settle it before the next update.
+   */
+  pending: ToolDragPending | null;
 }
 
 export function beginToolDrag(
@@ -47,21 +61,30 @@ export function beginToolDrag(
   order: readonly ToolModuleId[],
   rects: readonly ToolDragRect[],
 ): ToolDragState {
-  const slot = rects.find((rect) => rect.id === moved);
+  const slot = slotOf(rects, moved);
   return {
     moved,
     origin: { x: pointer.x, y: pointer.y },
     grab: slot
       ? { x: pointer.x - slot.x, y: pointer.y - slot.y }
       : { x: 0, y: 0 },
+    pointer: { x: pointer.x, y: pointer.y },
     offset: { x: 0, y: 0 },
     originOrder: [...order],
     previewOrder: [...order],
     active: false,
-    lockedTarget: null,
+    pending: null,
   };
 }
 
+/**
+ * Follows the pointer and, when it enters another module, moves the dragged
+ * module into that module's index.
+ *
+ * Only a rectangle that contains the pointer is a target. Nearest-centre
+ * resolution flips between two orders when modules differ in size: the swap
+ * reflows the grid, and in the new layout another centre is nearest.
+ */
 export function updateToolDrag(
   state: ToolDragState,
   pointer: ToolDragPoint,
@@ -71,54 +94,62 @@ export function updateToolDrag(
     || Math.hypot(pointer.x - state.origin.x, pointer.y - state.origin.y)
       > DRAG_ACTIVATION_DISTANCE;
   if (!active) {
-    return { ...state, active: false };
+    return { ...state, pointer };
   }
 
-  const slotOf = (id: ToolModuleId) => rects.find((rect) => rect.id === id) ?? null;
-  const target = nearestModule(pointer, rects);
-
+  const slot = slotOf(rects, state.moved);
+  const lifted: ToolDragState = {
+    ...state,
+    active,
+    pointer,
+    offset: liftOffset(state.grab, pointer, slot, state.offset),
+  };
+  const target = moduleAt(rects, clampToBounds(pointer, rects));
   if (target === null || target === state.moved) {
-    // The pointer is over the dragged module's own slot, so there is nothing to
-    // displace. Releasing the lock here lets the previous target win again once
-    // the pointer travels back onto it.
-    return {
-      ...state,
-      active,
-      offset: liftOffset(state, pointer, slotOf(state.moved)),
-      lockedTarget: null,
-    };
-  }
-  if (target === state.lockedTarget) {
-    // Already displaced this module. Without the lock, a caller that reuses a
-    // stale measurement keeps resolving the same target and the two modules
-    // swap back and forth on every pointer move.
-    return { ...state, active, offset: liftOffset(state, pointer, slotOf(state.moved)) };
+    // A gap, a hole left by a wide module, or the dragged module's own slot:
+    // nothing to displace.
+    return lifted;
   }
 
   return {
-    ...state,
-    active,
+    ...lifted,
     previewOrder: moveTool(state.previewOrder, state.moved, target),
-    lockedTarget: target,
-    // The module is about to occupy the target's slot. Anchoring the lift there
-    // now keeps it under the pointer instead of snapping back to where the drag
-    // started for a frame.
-    offset: liftOffset(state, pointer, slotOf(target)),
+    pending: { order: state.previewOrder, slot },
   };
 }
 
-/** Translation that keeps the grabbed point of the module under the pointer. */
-function liftOffset(
+/**
+ * Keeps a pending swap only if, in the layout it produced, the dragged module's
+ * slot contains the pointer.
+ *
+ * That makes every accepted state stable: the next swap needs the pointer to
+ * leave the slot first, so two orders can never alternate under a pointer that
+ * stays put. In a uniform grid the dragged module takes over the target's slot
+ * exactly and the check always passes; it only refuses swaps that a wider or
+ * taller module would have sent somewhere else.
+ */
+export function settleToolDrag(
   state: ToolDragState,
-  pointer: ToolDragPoint,
-  slot: ToolDragRect | null,
-): ToolDragPoint {
-  if (!slot) {
-    return state.offset;
+  rects: readonly ToolDragRect[],
+): ToolDragState {
+  const { pending } = state;
+  if (!pending) {
+    return state;
+  }
+
+  const slot = slotOf(rects, state.moved);
+  if (slot && contains(slot, clampToBounds(state.pointer, rects))) {
+    return {
+      ...state,
+      pending: null,
+      offset: liftOffset(state.grab, state.pointer, slot, state.offset),
+    };
   }
   return {
-    x: pointer.x - slot.x - state.grab.x,
-    y: pointer.y - slot.y - state.grab.y,
+    ...state,
+    previewOrder: pending.order,
+    pending: null,
+    offset: liftOffset(state.grab, state.pointer, pending.slot, state.offset),
   };
 }
 
@@ -130,29 +161,61 @@ export function cancelToolDrag(state: ToolDragState): readonly ToolModuleId[] {
   return state.originOrder;
 }
 
+/** Translation that keeps the grabbed point of the module under the pointer. */
+function liftOffset(
+  grab: ToolDragPoint,
+  pointer: ToolDragPoint,
+  slot: ToolDragRect | null,
+  fallback: ToolDragPoint,
+): ToolDragPoint {
+  if (!slot) {
+    return fallback;
+  }
+  return {
+    x: pointer.x - slot.x - grab.x,
+    y: pointer.y - slot.y - grab.y,
+  };
+}
+
+function slotOf(rects: readonly ToolDragRect[], id: ToolModuleId): ToolDragRect | null {
+  return rects.find((rect) => rect.id === id) ?? null;
+}
+
+function contains(rect: ToolDragRect, point: ToolDragPoint): boolean {
+  return point.x >= rect.x
+    && point.x < rect.x + rect.width
+    && point.y >= rect.y
+    && point.y < rect.y + rect.height;
+}
+
+function moduleAt(
+  rects: readonly ToolDragRect[],
+  point: ToolDragPoint,
+): ToolModuleId | null {
+  return rects.find((rect) => contains(rect, point))?.id ?? null;
+}
+
 /**
- * Nearest rectangle centre wins, rather than "the rectangle containing the
- * pointer": the grid has a 14 px gap, and a pointer resting in a gap still
- * needs a definite drop target.
+ * Pulls a pointer outside the grid back onto its edge, so dragging above the
+ * first row or past the last column still targets the modules there. Edge
+ * auto-scroll relies on this: the pointer rests in the band above the grid.
  */
-function nearestModule(
+function clampToBounds(
   pointer: ToolDragPoint,
   rects: readonly ToolDragRect[],
-): ToolModuleId | null {
-  let nearest: ToolModuleId | null = null;
-  let nearestDistance = Number.POSITIVE_INFINITY;
-
-  for (const rect of rects) {
-    const dx = pointer.x - (rect.x + rect.width / 2);
-    const dy = pointer.y - (rect.y + rect.height / 2);
-    const distance = dx * dx + dy * dy;
-    if (distance < nearestDistance) {
-      nearestDistance = distance;
-      nearest = rect.id;
-    }
+): ToolDragPoint {
+  if (rects.length === 0) {
+    return pointer;
   }
-
-  return nearest;
+  const left = Math.min(...rects.map((rect) => rect.x));
+  const top = Math.min(...rects.map((rect) => rect.y));
+  const right = Math.max(...rects.map((rect) => rect.x + rect.width));
+  const bottom = Math.max(...rects.map((rect) => rect.y + rect.height));
+  // One pixel inside the far edges, because `contains` excludes them.
+  return {
+    x: Math.min(Math.max(pointer.x, left), right - 1),
+    y: Math.min(Math.max(pointer.y, top), bottom - 1),
+  };
 }
 
 /**

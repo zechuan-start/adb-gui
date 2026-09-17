@@ -110,3 +110,21 @@ corepack pnpm test:browser
 - "恢复默认布局"的显隐取已提交的 `toolOrder` 而非拖拽预览顺序. 该行在滚动流里, 跟着预览出现会在第一次换位时把整个网格下推一行, 落点随之在指针下漂移.
 - `useToolDrag` 的 window 监听在工具页变为非激活时解绑并回滚当前手势, 对齐 `hook-guidelines.md` 的 Persistent Hidden Panes 一节.
 - 新增 `scripts/screenshots/toolDragSmoke.mjs` 并接进 `pnpm test:browser`.
+
+## 迭代 2 实施
+
+1. [x] `lib/toolDragController.ts`: 包含式命中, 包围盒夹取, `pending` + `settleToolDrag`, 删除 `lockedTarget`; 重写对应单测(缝隙不动, 自身不动, 待确认换位, 确认, 撤回, 网格外夹取, 尺寸不一时不翻转).
+2. [x] `lib/motion.ts`, `lib/layoutFlip.ts` 及单测(阈值, 同目标不重启, 反向差值).
+3. [x] `hooks/useLayoutFlip.ts`; `hooks/useToolDrag.ts` 改为 offset 测量, `flushSync`, layout effect 确认, 接入 FLIP 与 store 订阅, 键盘跳过动画.
+4. [x] `ToolModule` 拆分浮起外观与抓取光标; `ToolWorkbench` 删除恢复行, 网格 `relative`.
+5. [x] 设置页 `toolLayout` 行, 快照与分组重置计划; 中英文案; 相关单测. 侧栏图标按钮对比后移除.
+6. [x] `toolDragSmoke.mjs`: 入口只在设置页, 宽模块横扫无翻转无跳动, 动画出现与结束, 减少动态效果无动画.
+7. [x] 规范更新, 构建安装, macOS 实机走查.
+
+验证: `pnpm test`, `pnpm build`, `pnpm test:browser`, `pnpm tauri build --bundles app`.
+
+### 迭代 2 走查记录
+
+- Chromium 冒烟 9 组全部通过; 宽模块横扫只出现 4 种顺序, 被拖模块最大偏差 0.6 px. 同一探针在改动前测得 8/39/33 帧偏离一整列或一整行.
+- macOS 实机: 可见窗口里拖过宽模块并松手, 落位动画播放完毕, 顺序正确; 设置页"Tools layout"行显示 MODIFIED 与恢复按钮.
+- 已知现象: 窗口被其他窗口完全遮挡时, WebKit 暂停 WAAPI 动画, 画面停在第一帧, 回到前台后继续. 真实用户无法在被遮挡的窗口里拖拽, 不做处理; 后台自动化走查需先把窗口切到前台.

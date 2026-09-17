@@ -30,6 +30,7 @@ const uiState = vi.hoisted(() => ({
     perf: false,
   },
   setLogOpen: () => {},
+  resetToolOrder: () => {},
 }));
 
 vi.mock("@/store/settings", () => ({
@@ -48,8 +49,11 @@ vi.mock("@/store/ui", () => ({
 function render(section: "general" | "logcat", available: boolean): string {
   settingsState.preferences = defaultSettings();
   settingsState.available = available;
+  // A changed tool layout, so its reset button is enabled like every other control.
   return renderToStaticMarkup(
-    section === "general" ? <GeneralSection /> : <LogcatSection />,
+    <SettingsView value={{ modified: (id) => id === "toolLayout" }}>
+      {section === "general" ? <GeneralSection /> : <LogcatSection />}
+    </SettingsView>,
   );
 }
 
@@ -76,6 +80,7 @@ describe("settings section ownership", () => {
     expect(language).toBeGreaterThanOrEqual(0);
     expect(language).toBeLessThan(start);
     expect(markup.indexOf('aria-label="主题"')).toBeLessThan(start);
+    expect(markup.indexOf("恢复默认布局")).toBeLessThan(start);
     expect(markup.indexOf("启动页面")).toBeGreaterThan(start);
     expect(markup.indexOf("启动时检查更新")).toBeGreaterThan(start);
     expect(markup.indexOf("离开性能页后继续采集")).toBeGreaterThan(start);
@@ -96,6 +101,26 @@ describe("settings section ownership", () => {
       expect(markup).toContain('<fieldset class="min-w-0 disabled:opacity-50">');
       expect(markup).not.toContain("disabled=\"\"");
     }
+  });
+});
+
+describe("tool layout row", () => {
+  it("enables its reset only while the layout differs from the default", () => {
+    settingsState.preferences = defaultSettings();
+    settingsState.available = true;
+    const markup = (changed: boolean) => renderToStaticMarkup(
+      <SettingsView value={{ modified: (id) => changed && id === "toolLayout" }}>
+        <GeneralSection />
+      </SettingsView>,
+    );
+
+    const resetButton = (html: string) =>
+      html.match(/<button[^>]*>(?:(?!<\/button>)[\s\S])*恢复默认布局<\/button>/)?.[0] ?? "";
+    expect(resetButton(markup(false))).toContain('disabled=""');
+    expect(resetButton(markup(true))).not.toBe("");
+    expect(resetButton(markup(true))).not.toContain('disabled=""');
+    expect(markup(true)).toContain("工具页布局");
+    expect(markup(true)).toContain("已修改");
   });
 });
 

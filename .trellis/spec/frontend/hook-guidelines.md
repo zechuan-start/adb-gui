@@ -73,80 +73,95 @@ When listener registration is asynchronous, runtime gating alone is insufficient
 
 ### 1. Scope / Trigger
 
-- Trigger: adding or changing a pointer-driven reorder surface whose order persists, such as the tools grid.
-- Applies to `lib/toolLayout.ts`, `lib/toolDragController.ts`, `hooks/useToolDrag.ts`, `components/ToolWorkbench.tsx`, and any future draggable list or grid.
+- Trigger: adding or changing a pointer-driven reorder surface whose order persists, such as the tools grid, or animating elements that move when a layout changes.
+- Applies to `lib/toolLayout.ts`, `lib/toolDragController.ts`, `lib/layoutFlip.ts`, `lib/motion.ts`, `hooks/useToolDrag.ts`, `hooks/useLayoutFlip.ts`, `components/ToolWorkbench.tsx`, and any future draggable list or grid.
 
 ### 2. Signatures
 
 - `beginToolDrag(moved, pointer, order, rects) -> ToolDragState`
-- `updateToolDrag(state, pointer, rects) -> ToolDragState`
+- `updateToolDrag(state, pointer, rects) -> ToolDragState`, sets `pending` when it swaps
+- `settleToolDrag(state, rects) -> ToolDragState`, keeps or undoes `pending` against the new layout
 - `commitToolDrag(state) -> readonly Id[]` returns `previewOrder`
 - `cancelToolDrag(state) -> readonly Id[]` returns `originOrder`
 - `edgeScrollVelocity(pointerY, top, bottom) -> number`, negative upward, `0` outside both edge bands
 - `moveTool(order, moved, target) -> Id[]`, `shiftTool(order, moved, delta: 1 | -1) -> Id[]`
-- `useToolDrag(scrollRef, active) -> { order, draggingId, dragOffset, announcedId, moduleRef, handleRef, onHeaderPointerDown, onHandleKeyDown }`
+- `planLayoutFlip(first, last, heading) -> { id, from: Point | null }[]`
+- `useLayoutFlip(container, elements) -> { capture(landing?), play(exclude), landingId }`
+- `useToolDrag(scrollRef, active) -> { order, draggingId, liftedId, dragOffset, announcedId, gridRef, moduleRef, handleRef, onHeaderPointerDown, onHandleKeyDown }`
 
 ### 3. Contracts
 
 - Every reordering decision lives in a pure function that takes measured rectangles. The project has no jsdom, so a hook that decides anything cannot be tested. The hook measures, listens, and forwards.
-- Measure the dragged element's **slot**, not its painted box. `getBoundingClientRect()` includes the element's own translate, so subtract the offset the last render applied.
-- Resolve the drop target by nearest rectangle centre, not by "rectangle contains pointer": grid gaps would otherwise produce pointer positions with no target.
-- Read the insertion index in the pre-removal array, then remove, then insert at that index. Removal shifts later elements left by one, which yields "after the target" for a forward drag and "before the target" for a backward drag without a direction branch.
-- Anchor the lift to the module's current slot (`pointer - slot - grab`), and to the target's slot on the frame that swaps. Anchoring to the press point makes the element jump away from the cursor after every swap.
+- Measure **slots** with `offsetLeft/offsetTop/offsetWidth/offsetHeight` plus the grid origin, with the grid `relative` so it is the offset parent. Those properties ignore transforms, so neither the dragged element's translate nor a running layout animation moves a hit target.
+- A target is the rectangle that **contains** the pointer. Pull a pointer outside the grid onto its edge first, so edge auto-scroll, which leaves the pointer above the grid, still reaches the first slot. A pointer in a gap or in the hole a wide item leaves changes nothing.
+- Nearest-centre resolution is wrong once items differ in size: the swap reflows the grid, another centre becomes nearest in the new layout, and the order flips on every pointer step. A one-target lock does not help, because the flip alternates between two targets.
+- Every swap is tentative. Render it, then in a layout effect keep it only if the dragged item's new slot contains the (edge-pulled) pointer; otherwise restore the previous order. After an accepted swap the pointer is inside the dragged slot, so the next swap needs the pointer to leave it first, and alternation is impossible by construction. The lift offset is always computed from a measured slot, never predicted from the target's old one.
+- Commit pointer updates with `flushSync`, so the tentative render and its settle finish before the next pointer event measures. Do not call `flushSync` from an effect; the hidden-pane cancel path updates normally.
 - Take pointer moves from `window` listeners, not `setPointerCapture`. Applying a preview order makes React move the dragged element between slots, and a captured element moved in the DOM can lose its capture. `setPointerCapture` remains correct for a handle that never moves, such as the log resize separator.
 - Gate those listeners on the pane's `active` flag and roll the gesture back when it clears, per **Persistent Hidden Panes**. A hidden pane measures as empty rectangles, so a surviving gesture would commit an order resolved against nothing.
+- Cancel `selectstart` on `document` for as long as a drag is in progress, and only then. `user-select: none` on the drag surface is not enough in WebKit (the Tauri macOS webview): it still lets a selection start from that surface once the pointer moves, and highlights text in every element the pointer crosses. Chromium does not, so a Chromium-only smoke never shows the bug.
 - Cache ref callbacks per id. A fresh callback each render makes React detach and reattach every element on every pointer move.
 - Key rows by domain id and memoise their bodies by anything other than order, so a reorder moves the existing DOM subtree instead of remounting it and restarting timers or polls.
-- A control whose visibility depends on the order must read the **committed** order. Driving it from the preview makes it appear mid-gesture; if it sits in the scroll flow it then shifts every drop target under a stationary pointer.
+- A control whose visibility depends on the order must read the **committed** order, never the preview.
+- Layout motion is FLIP with WAAPI, following the `animate` skill in emilkowalski/skills: `transform` only, `lib/motion.ts` curves and durations (displacement `EASE_IN_OUT` 200 ms, a dropped item landing `EASE_OUT` 200 ms), no motion library.
+  - `capture` the painted positions (`getBoundingClientRect`, relative to the grid) before the DOM changes: before a tentative swap, before a drop or cancel, and from a synchronous `useUiStore.subscribe` listener for orders written elsewhere (the settings dialog). The first capture wins until `play` consumes it, so a drop's landing mark survives the store notification it causes.
+  - `play` runs in the same layout effect after the settle, so the inverted frame is the first one painted. It skips an element already animating toward the same slot, and restarts or stops one whose slot changed, because its keyframes are relative to the slot it left.
+  - Animations use `composite: "add"`, so an item grabbed again while it lands keeps its inline drag transform and glides onto the pointer.
+  - Keep a landing item lifted (`z-10`, opaque) until its animation finishes or is cancelled.
+  - Keyboard reordering stays instant: it can repeat many times a second. `prefers-reduced-motion: reduce` skips every layout animation, because they are all movement. The global CSS reduced-motion rule does not reach WAAPI, so the hook checks `matchMedia` itself.
 
 ### 4. Validation & Error Matrix
 
 - Travel at or below `DRAG_ACTIVATION_DISTANCE` (4 px) -> stays a click; `active` false, `offset` zero, preview equals the original order.
-- Pointer resting in a grid gap -> nearest centre still resolves a target.
-- Nearest rectangle is the dragged module itself -> no swap, and the target lock releases so the previous target can win again on the way back.
-- Nearest rectangle equals `lockedTarget` -> no second swap, which is what stops two modules oscillating under one stale measurement.
+- Pointer in a grid gap or a wide-item hole -> preview unchanged, no `pending`.
+- Pointer over the dragged item's own slot -> preview unchanged.
+- Pointer outside the grid -> pulled onto the nearest edge before hit testing.
+- Swap whose new slot does not contain the pointer -> `settleToolDrag` restores `pending.order` and computes the offset from `pending.slot`.
 - Escape, `pointercancel`, or window blur -> `cancelToolDrag`; a release outside the window never reports `pointerup`.
-- Pane becomes inactive mid-gesture -> cancel and unbind.
+- Pane becomes inactive mid-gesture -> cancel and unbind, no capture.
 - No rectangles measured -> preview unchanged rather than an arbitrary target.
+- Element painted within 1 px of its slot with no running animation -> no animation.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: dragging a module onto a neighbour's centre swaps exactly once, and holding the pointer still afterwards leaves the preview alone.
+- Good: sweeping a narrow item across a two-column item in 20 px steps changes the order once per slot actually entered, and the lifted item stays within 2 px of the pointer on every frame.
 - Base: pressing a header and releasing without moving writes nothing to the store, because the equal-order guard in the store short-circuits.
-- Bad: passing `getBoundingClientRect()` through unmodified makes the dragged element measure closest to the pointer at all times, its own dead zone swallows every target, and no drag ever reorders anything.
+- Bad: measuring with `getBoundingClientRect()` makes running layout animations and the dragged translate move the hit targets.
+- Bad: offsetting the lift by the target's pre-swap slot; with mixed sizes the item lands elsewhere and is painted a whole column away from the pointer.
 - Bad: committing the preview order to the store on each pointer move persists intermediate states and makes Escape unable to roll back.
 
 ### 6. Tests Required
 
-- Pure controller tests drive constructed rectangles and assert the activation threshold, gap resolution, the self branch, lock behaviour, lift anchoring on the swap frame, commit/cancel return values, and edge-scroll velocity including the clamp beyond each edge.
+- Pure controller tests use a sparse grid auto-placement helper with a wide item and assert: the activation threshold, gap and hole no-ops, the self branch, edge pulling, pending contents, settle accept with a measured offset, settle refusal with the previous order and offset, and a full sweep across the wide item that changes order a bounded number of times without undoing a swap on pixel jitter.
+- `planLayoutFlip` tests cover the 1 px threshold, an animation heading to the same slot left alone, a retarget from the painted position, a stop without a new animation, and elements not painted before.
 - Order-algebra tests assert forward and backward drags, both ends, a no-op onto itself, and clamping at both ends of a keyboard shift.
-- Everything DOM-coupled needs a browser smoke: transform compensation, no remount on reorder (assert typed local state survives), no layout shift mid-gesture, edge auto-scroll reaching the first slot, keyboard reordering with focus restoration and a live-region announcement, and recovery from a corrupt stored order. `scripts/screenshots/toolDragSmoke.mjs` runs these after the main smoke in `pnpm test:browser`.
+- Everything DOM-coupled needs a browser smoke: no remount on reorder (typed local state survives), edge auto-scroll reaching the first slot, keyboard reordering with focus restoration and a live-region announcement, recovery from a corrupt stored order, a `selectstart` dispatched into a module body being cancelled during a drag and not at rest, the wide-item sweep sampled per frame, animations present with motion allowed and absent with reduced motion or a keyboard move, a landing item lifted then settled with no leftover transform, and both reset entries. `scripts/screenshots/toolDragSmoke.mjs` runs these after the main smoke in `pnpm test:browser`.
 
 ### 7. Wrong vs Correct
 
 #### Wrong
 
 ```typescript
-const rects = elements.map((element, id) => {
-  const box = element.getBoundingClientRect();
-  return { id, x: box.left, y: box.top, width: box.width, height: box.height };
-});
+const target = nearestCentre(pointer, rects);
+if (target !== state.moved && target !== state.lockedTarget) {
+  return { ...state, previewOrder: moveTool(order, moved, target), lockedTarget: target };
+}
 ```
 
 #### Correct
 
 ```typescript
-const rects = elements.map((element, id) => {
-  const box = element.getBoundingClientRect();
-  const dragged = lifted?.moved === id;
-  return {
-    id,
-    x: box.left - (dragged ? lifted.offset.x : 0),
-    y: box.top - (dragged ? lifted.offset.y : 0),
-    width: box.width,
-    height: box.height,
-  };
-});
+// Pointer update: propose.
+const next = updateToolDrag(current, pointer, measureSlots());
+if (next.pending) flip.capture();
+flushSync(() => setDrag(next));
+
+// Layout effect: confirm against the layout the proposal produced, then animate.
+if (drag.pending) {
+  setDrag(settleToolDrag(drag, measureSlots()));
+  return;
+}
+flip.play(drag.active ? drag.moved : null);
 ```
 
 ---

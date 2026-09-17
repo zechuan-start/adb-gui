@@ -1,17 +1,21 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
+import { flushSync } from "react-dom";
+import { useLayoutFlip } from "@/hooks/useLayoutFlip";
 import {
   beginToolDrag,
   cancelToolDrag,
   commitToolDrag,
   edgeScrollVelocity,
+  settleToolDrag,
   updateToolDrag,
   type ToolDragPoint,
   type ToolDragRect,
@@ -24,9 +28,13 @@ export interface ToolDragApi {
   /** Live preview while dragging, otherwise the stored order. */
   order: readonly ToolModuleId[];
   draggingId: ToolModuleId | null;
+  /** Dragged, or still landing after a drop: painted above the other modules. */
+  liftedId: ToolModuleId | null;
   dragOffset: ToolDragPoint;
   /** Last module moved by keyboard, for the polite live region. */
   announcedId: ToolModuleId | null;
+  /** The grid element: offset parent of every module and origin of all measurements. */
+  gridRef: RefObject<HTMLDivElement | null>;
   moduleRef: (id: ToolModuleId) => (element: HTMLElement | null) => void;
   handleRef: (id: ToolModuleId) => (element: HTMLButtonElement | null) => void;
   onHeaderPointerDown: (id: ToolModuleId, event: ReactPointerEvent<HTMLElement>) => void;
@@ -39,12 +47,16 @@ export interface ToolDragApi {
 const NO_OFFSET: ToolDragPoint = { x: 0, y: 0 };
 
 /**
- * Connects measured module rectangles to the pure drag controller.
+ * Connects measured module slots to the pure drag controller.
  *
  * Pointer moves are read from `window` rather than through `setPointerCapture`
  * as the log resize handle does. Applying a preview order makes React move the
  * dragged `<section>` between grid slots, and a captured element that is moved
  * in the DOM can lose its capture mid-gesture.
+ *
+ * Every pointer update is rendered synchronously and settled in a layout
+ * effect, so a swap the layout refuses is undone before it is painted and the
+ * next pointer event always measures a settled layout.
  */
 export function useToolDrag(
   scrollRef: RefObject<HTMLElement | null>,
@@ -57,13 +69,15 @@ export function useToolDrag(
   const [announcedId, setAnnouncedId] = useState<ToolModuleId | null>(null);
 
   const dragRef = useRef<ToolDragState | null>(null);
+  const activeRef = useRef(active);
   const pointerIdRef = useRef<number | null>(null);
-  const pointerRef = useRef<ToolDragPoint | null>(null);
   const velocityRef = useRef(0);
   const scrollFrameRef = useRef<number | null>(null);
   const applyPointerRef = useRef<(pointer: ToolDragPoint) => void>(() => {});
   const restoreFocusRef = useRef<ToolModuleId | null>(null);
+  const keyboardMoveRef = useRef(false);
 
+  const gridRef = useRef<HTMLDivElement>(null);
   const modulesRef = useRef(new Map<ToolModuleId, HTMLElement>());
   const handlesRef = useRef(new Map<ToolModuleId, HTMLButtonElement>());
   const moduleRefCache = useRef(
@@ -72,6 +86,12 @@ export function useToolDrag(
   const handleRefCache = useRef(
     new Map<ToolModuleId, (element: HTMLButtonElement | null) => void>(),
   );
+
+  const { capture, play, landingId } = useLayoutFlip(gridRef, modulesRef);
+
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
 
   const moduleRef = useCallback((id: ToolModuleId) => {
     const cached = moduleRefCache.current.get(id);
@@ -108,29 +128,28 @@ export function useToolDrag(
   }, []);
 
   /**
-   * Reads the grid slots each module occupies.
+   * Reads the grid slot each module occupies, in viewport coordinates.
    *
-   * The dragged module carries a translate, and `getBoundingClientRect` reports
-   * it. Subtracting the transform the last render painted gives back its slot
-   * rectangle, so the module keeps a stable dead zone over its own cell instead
-   * of following the pointer and winning every hit test.
+   * The offset properties ignore transforms, so neither the dragged module's
+   * translate nor a running layout animation moves a slot.
    */
-  const measure = useCallback((applied: ToolDragState | null): ToolDragRect[] => {
-    const lifted = applied?.active === true ? applied : null;
-
-    const rects: ToolDragRect[] = [];
-    for (const [id, element] of modulesRef.current) {
-      const box = element.getBoundingClientRect();
-      const dragged = lifted?.moved === id;
-      rects.push({
-        id,
-        x: box.left - (dragged ? lifted.offset.x : 0),
-        y: box.top - (dragged ? lifted.offset.y : 0),
-        width: box.width,
-        height: box.height,
-      });
+  const measure = useCallback((): ToolDragRect[] => {
+    const origin = gridRef.current?.getBoundingClientRect();
+    if (!origin) {
+      return [];
     }
-    return rects;
+    return [...modulesRef.current].map(([id, element]) => ({
+      id,
+      x: origin.left + element.offsetLeft,
+      y: origin.top + element.offsetTop,
+      width: element.offsetWidth,
+      height: element.offsetHeight,
+    }));
+  }, []);
+
+  const commitPreview = useCallback((next: ToolDragState) => {
+    dragRef.current = next;
+    flushSync(() => setDrag(next));
   }, []);
 
   const stopEdgeScroll = useCallback(() => {
@@ -145,7 +164,7 @@ export function useToolDrag(
     function step(): void {
       const container = scrollRef.current;
       const velocity = velocityRef.current;
-      const pointer = pointerRef.current;
+      const pointer = dragRef.current?.pointer;
       if (!container || velocity === 0 || !pointer) {
         scrollFrameRef.current = null;
         return;
@@ -166,10 +185,11 @@ export function useToolDrag(
     if (!current) {
       return;
     }
-    pointerRef.current = pointer;
-    const next = updateToolDrag(current, pointer, measure(current));
-    dragRef.current = next;
-    setDrag(next);
+    const next = updateToolDrag(current, pointer, measure());
+    if (next.pending) {
+      capture();
+    }
+    commitPreview(next);
 
     const container = scrollRef.current;
     if (!container || !next.active) {
@@ -183,26 +203,35 @@ export function useToolDrag(
       return;
     }
     startEdgeScroll();
-  }, [measure, scrollRef, startEdgeScroll, stopEdgeScroll]);
+  }, [capture, commitPreview, measure, scrollRef, startEdgeScroll, stopEdgeScroll]);
 
   useEffect(() => {
     applyPointerRef.current = applyPointer;
   }, [applyPointer]);
 
-  const finishDrag = useCallback((committed: boolean) => {
+  const finishDrag = useCallback((committed: boolean, synchronous: boolean) => {
     const current = dragRef.current;
-    dragRef.current = null;
     pointerIdRef.current = null;
-    pointerRef.current = null;
     stopEdgeScroll();
-    setDrag(null);
     if (!current) {
       return;
     }
-    setToolOrder(
-      committed && current.active ? commitToolDrag(current) : cancelToolDrag(current),
-    );
-  }, [setToolOrder, stopEdgeScroll]);
+    if (current.active && activeRef.current) {
+      capture(current.moved);
+    }
+    const finish = () => {
+      dragRef.current = null;
+      setDrag(null);
+      setToolOrder(
+        committed && current.active ? commitToolDrag(current) : cancelToolDrag(current),
+      );
+    };
+    if (synchronous) {
+      flushSync(finish);
+    } else {
+      finish();
+    }
+  }, [capture, setToolOrder, stopEdgeScroll]);
 
   const onHeaderPointerDown = useCallback((
     id: ToolModuleId,
@@ -211,15 +240,13 @@ export function useToolDrag(
     if (!active || event.button !== 0 || dragRef.current) {
       return;
     }
-    const pointer = { x: event.clientX, y: event.clientY };
     const begun = beginToolDrag(
       id,
-      pointer,
+      { x: event.clientX, y: event.clientY },
       useUiStore.getState().toolOrder,
-      measure(null),
+      measure(),
     );
     pointerIdRef.current = event.pointerId;
-    pointerRef.current = pointer;
     dragRef.current = begun;
     setDrag(begun);
   }, [active, measure]);
@@ -234,7 +261,7 @@ export function useToolDrag(
       // A hidden pane must not keep window listeners, and its modules measure as
       // empty rectangles, so a gesture that outlives the pane rolls back instead
       // of committing an order resolved against nothing.
-      finishDrag(false);
+      finishDrag(false, false);
       return;
     }
 
@@ -249,11 +276,11 @@ export function useToolDrag(
       if (pointerIdRef.current !== event.pointerId) {
         return;
       }
-      finishDrag(true);
+      finishDrag(true, true);
     }
 
     function onPointerCancel(): void {
-      finishDrag(false);
+      finishDrag(false, true);
     }
 
     function onKeyDown(event: KeyboardEvent): void {
@@ -261,7 +288,14 @@ export function useToolDrag(
         return;
       }
       event.preventDefault();
-      finishDrag(false);
+      finishDrag(false, true);
+    }
+
+    // WebKit still starts a text selection from a `user-select: none` header
+    // once the pointer moves, highlighting text in every module it crosses.
+    // It dispatches `selectstart` first, and a cancelled one stops it.
+    function onSelectStart(event: Event): void {
+      event.preventDefault();
     }
 
     window.addEventListener("pointermove", onPointerMove);
@@ -270,6 +304,7 @@ export function useToolDrag(
     window.addEventListener("keydown", onKeyDown);
     // A release outside the window never reports a pointerup.
     window.addEventListener("blur", onPointerCancel);
+    document.addEventListener("selectstart", onSelectStart);
 
     return () => {
       window.removeEventListener("pointermove", onPointerMove);
@@ -277,10 +312,38 @@ export function useToolDrag(
       window.removeEventListener("pointercancel", onPointerCancel);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("blur", onPointerCancel);
+      document.removeEventListener("selectstart", onSelectStart);
     };
   }, [active, applyPointer, dragging, finishDrag]);
 
   useEffect(() => stopEdgeScroll, [stopEdgeScroll]);
+
+  // An order written by someone else, such as the settings dialog, animates
+  // too. The store notifies before React commits, so the
+  // modules are still painted where they were.
+  useEffect(() => useUiStore.subscribe((state, previous) => {
+    if (state.toolOrder === previous.toolOrder) {
+      return;
+    }
+    if (keyboardMoveRef.current) {
+      keyboardMoveRef.current = false;
+      return;
+    }
+    if (activeRef.current && !dragRef.current) {
+      capture();
+    }
+  }), [capture]);
+
+  useLayoutEffect(() => {
+    const current = dragRef.current;
+    if (current?.pending) {
+      const settled = settleToolDrag(current, measure());
+      dragRef.current = settled;
+      setDrag(settled);
+      return;
+    }
+    play(current?.active ? current.moved : null);
+  }, [drag, measure, play, toolOrder]);
 
   const onHandleKeyDown = useCallback((
     id: ToolModuleId,
@@ -301,6 +364,8 @@ export function useToolDrag(
     if (sameToolOrder(current, next)) {
       return;
     }
+    // A keyboard move can repeat many times a second; it stays instant.
+    keyboardMoveRef.current = true;
     setToolOrder(next);
     setAnnouncedId(id);
     // Reordering moves the button's DOM node, which drops focus.
@@ -317,12 +382,15 @@ export function useToolDrag(
   }, [toolOrder]);
 
   const activeDrag = drag?.active === true;
+  const draggingId = activeDrag && drag ? drag.moved : null;
 
   return {
     order: activeDrag && drag ? drag.previewOrder : toolOrder,
-    draggingId: activeDrag && drag ? drag.moved : null,
+    draggingId,
+    liftedId: draggingId ?? landingId,
     dragOffset: activeDrag && drag ? drag.offset : NO_OFFSET,
     announcedId,
+    gridRef,
     moduleRef,
     handleRef,
     onHeaderPointerDown,
