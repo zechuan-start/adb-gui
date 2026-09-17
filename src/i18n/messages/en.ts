@@ -43,6 +43,13 @@ export const en: Messages = {
       bugReport: "Bug report",
     },
 
+    toolLayout: {
+      dragHandle: ({ title, position, total }) =>
+        `Reorder ${title}, ${position} of ${total}`,
+      moved: ({ title, position, total }) => `${title}, ${position} of ${total}`,
+      reset: "Restore default layout",
+    },
+
     status: {
       noDevice: "No device detected",
       unauthorized:

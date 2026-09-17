@@ -3,7 +3,7 @@
   "name": "tools-drag-reorder",
   "title": "工具页模块拖拽排序与顺序记忆",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "frontend",
   "package": null,

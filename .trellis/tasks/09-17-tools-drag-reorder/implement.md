@@ -4,8 +4,8 @@
 
 ## 1. 顺序代数与模块身份
 
-- [ ] 新建 `src/lib/toolLayout.ts`: `ToolModuleId`、`DEFAULT_TOOL_ORDER`、`reconcileToolOrder`、`moveTool`、`shiftTool`.
-- [ ] 新建 `src/lib/toolLayout.test.ts`.
+- [x] 新建 `src/lib/toolLayout.ts`: `ToolModuleId`、`DEFAULT_TOOL_ORDER`、`reconcileToolOrder`、`moveTool`、`shiftTool`.
+- [x] 新建 `src/lib/toolLayout.test.ts`.
 
 测试必须覆盖:
 
@@ -17,8 +17,8 @@
 
 ## 2. 拖拽状态机
 
-- [ ] 新建 `src/lib/toolDragController.ts`: `beginToolDrag` / `updateToolDrag` / `commitToolDrag` / `cancelToolDrag`.
-- [ ] 新建 `src/lib/toolDragController.test.ts`, 用构造矩形数组驱动, 不依赖 DOM.
+- [x] 新建 `src/lib/toolDragController.ts`: `beginToolDrag` / `updateToolDrag` / `commitToolDrag` / `cancelToolDrag`.
+- [x] 新建 `src/lib/toolDragController.test.ts`, 用构造矩形数组驱动, 不依赖 DOM.
 
 测试必须覆盖:
 
@@ -33,8 +33,8 @@
 
 ## 3. 持久化
 
-- [ ] `src/store/ui.ts`: 加 `toolOrder`、`setToolOrder`、`resetToolOrder`, 接入 `partialize` 与 `mergePersistedPreferences`.
-- [ ] 扩充 `src/store/ui.test.ts`.
+- [x] `src/store/ui.ts`: 加 `toolOrder`、`setToolOrder`、`resetToolOrder`, 接入 `partialize` 与 `mergePersistedPreferences`.
+- [x] 扩充 `src/store/ui.test.ts`.
 
 测试必须覆盖:
 
@@ -48,10 +48,10 @@
 
 ## 4. 注册表与渲染层
 
-- [ ] 新建 `src/lib/toolModules.tsx`, 把 `src/App.tsx:215-241` 的九段 JSX 搬进来, 图号保持现有绑定(剪贴板仍为 `A-09`).
-- [ ] `src/App.tsx` 改为按 `toolOrder` 映射注册表渲染, key 用模块 id.
-- [ ] `src/components/ToolModule.tsx` 加 `dragHandleProps` / `dragging` / `dragHandleLabel`, header 插入 `GripVertical`.
-- [ ] 扩充 `src/components/ToolModule.test.tsx`: 未传 `dragHandleProps` 时不渲染手柄; 传入时渲染且 `<button type="button">`; 现有 class 断言全部保留.
+- [x] 新建 `src/lib/toolModules.tsx`, 把 `src/App.tsx:215-241` 的九段 JSX 搬进来, 图号保持现有绑定(剪贴板仍为 `A-09`).
+- [x] `src/App.tsx` 改为按 `toolOrder` 映射注册表渲染, key 用模块 id.
+- [x] `src/components/ToolModule.tsx` 加 `dragHandleProps` / `dragging` / `dragHandleLabel`, header 插入 `GripVertical`.
+- [x] 扩充 `src/components/ToolModule.test.tsx`: 未传 `dragHandleProps` 时不渲染手柄; 传入时渲染且 `<button type="button">`; 现有 class 断言全部保留.
 
 此步结束时顺序已可由 store 驱动, 但还不能拖. 验证:
 
@@ -61,21 +61,22 @@
 
 ## 5. 交互层
 
-- [ ] 新建 `src/hooks/useToolDrag.ts`: 测量、`setPointerCapture`、边缘自动滚动、rAF 清理.
-- [ ] 接入键盘路径: `Ctrl/Cmd + ←/→`、aria-live 播报、移动后焦点回到手柄.
-- [ ] 工具页加"恢复默认布局"入口, 仅在顺序非默认时出现.
-- [ ] `src/i18n/messages/zh-CN.ts` 与 `en.ts` 同步新增文案: 手柄 aria-label、位次播报、恢复默认.
+- [x] 新建 `src/hooks/useToolDrag.ts`: 测量、`setPointerCapture`、边缘自动滚动、rAF 清理.
+- [x] 接入键盘路径: `Ctrl/Cmd + ←/→`、aria-live 播报、移动后焦点回到手柄.
+- [x] 工具页加"恢复默认布局"入口, 仅在顺序非默认时出现.
+- [x] `src/i18n/messages/zh-CN.ts` 与 `en.ts` 同步新增文案: 手柄 aria-label、位次播报、恢复默认.
 
 文案必须进 catalog, 组件内不得出现中文字面量, 否则 `src/i18n/catalog.test.ts` 会失败.
 
 ## 集成验证
 
 ```bash
-corepack pnpm test
-corepack pnpm build
+corepack pnpm test        # 502 passed
+corepack pnpm build       # tsc + vite build
+corepack pnpm test:browser
 ```
 
-浏览器冒烟(`corepack pnpm test:browser` 或手动), 逐条对齐 prd 验收标准:
+`scripts/screenshots/toolDragSmoke.mjs` 是本任务新增的冒烟脚本, 已接进 `test:browser`(跑在既有 `smoke.mjs` 之后), 六个用例逐条对齐 prd 验收标准:
 
 - 拖动改序并松开生效; 刷新后保持.
 - header 点击不重排; 模块内按钮、输入框、下拉正常.
@@ -84,9 +85,12 @@ corepack pnpm build
 - 手柄聚焦后 `Ctrl/Cmd + ←/→` 移动, 焦点不丢.
 - "恢复默认布局"出现与消失的时机正确.
 - `1200x800` 与 `900x600` 两档下落点与视觉一致.
-- 亮暗主题下手柄、拖拽态、落点提示可辨.
+- 亮暗主题下手柄、拖拽态、落点提示可辨(截图人工确认).
+- 重排不卸载模块: 拖走一个填过内容的模块后输入框仍保留原值.
 
-Tauri 打包应用需单独确认 pointer capture 与自动滚动的真实表现: 按 `.trellis/spec/frontend/quality-guidelines.md` 的要求, 用 LaunchServices 启动 `.app`, 不直接执行二进制. 本机无设备时, 依赖设备的工具模块只验证 disabled 态下仍可拖动.
+既有 `smoke.mjs` 的八档矩阵(中英 × 明暗 × `900x600` / `1400x880`)全部通过, 说明网格改造没有引入横向溢出.
+
+未覆盖: Tauri 打包应用下的真实 WKWebView / WebView2 表现. 本环境是 Linux 容器, 无法按 `.trellis/spec/frontend/quality-guidelines.md` 要求用 macOS LaunchServices 启动 `.app`. 需要在 macOS 上补一次: 指针拖拽跟手程度、边缘自动滚动、`touch-none` 对触控板的影响. 本机无设备时, 依赖设备的工具模块只验证 disabled 态下仍可拖动.
 
 ## 回滚点
 
@@ -94,3 +98,12 @@ Tauri 打包应用需单独确认 pointer capture 与自动滚动的真实表现
 
 风险文件: `src/App.tsx`、`src/components/ToolModule.tsx`、`src/store/ui.ts`.
 不修改: `src-tauri/` 全部、九个工具组件自身、`src/lib/settings.ts`、`src/lib/settingsSections.ts`.
+
+## 实施中与计划的偏差
+
+- 第 4 步没有把网格留在 `App.tsx`, 而是新建 `src/components/ToolWorkbench.tsx` 承载滚动容器、网格、恢复入口与播报区. 边缘自动滚动需要滚动容器的 ref.
+- `TOOL_MODULES` 用 `Record<ToolModuleId, _>` 而非数组, 省掉单独的穷尽性断言.
+- 事件层用 window 监听取代 `setPointerCapture`; 理由见 design.md 事件层一节.
+- `moveTool` 的插入下标改为在移除前读取, 否则"往后拖到相邻模块"是空操作.
+- `ToolDragState` 增加 `grab` 字段, `offset` 锚定当前槽位而非按下点, 否则换位后模块会飞离指针.
+- 新增 `scripts/screenshots/toolDragSmoke.mjs` 并接进 `pnpm test:browser`.

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_TOOL_ORDER, type ToolModuleId } from "@/lib/toolLayout";
 
 class MemoryStorage implements Storage {
   private values = new Map<string, string>();
@@ -137,6 +138,7 @@ describe("useUiStore", () => {
         perf: false,
       },
       logHeight: 420,
+      toolOrder: [...DEFAULT_TOOL_ORDER],
     });
 
     vi.resetModules();
@@ -156,5 +158,88 @@ describe("useUiStore", () => {
       logReadThroughSeq: null,
       logQueryFocusNonce: 0,
     });
+  });
+
+  it("starts the tool grid in the designed module order", async () => {
+    const { useUiStore } = await import("@/store/ui");
+
+    expect(useUiStore.getState().toolOrder).toEqual([...DEFAULT_TOOL_ORDER]);
+  });
+
+  it("restores a stored tool order across a restart", async () => {
+    const reordered: ToolModuleId[] = [
+      "ports",
+      "deeplink",
+      "screenshot",
+      "recording",
+      "install",
+      "keys",
+      "clipboard",
+      "currentApp",
+      "bugReport",
+    ];
+
+    const firstModule = await import("@/store/ui");
+    firstModule.useUiStore.getState().setToolOrder(reordered);
+
+    const persisted = JSON.parse(storage.getItem("adb-gui-ui") ?? "null");
+    expect(persisted.state.toolOrder).toEqual(reordered);
+
+    vi.resetModules();
+    const restoredModule = await import("@/store/ui");
+    expect(restoredModule.useUiStore.getState().toolOrder).toEqual(reordered);
+  });
+
+  it("renders every module even when the stored order is corrupt", async () => {
+    storage.setItem(
+      "adb-gui-ui",
+      JSON.stringify({
+        state: {
+          activePane: "tools",
+          toolOrder: ["ports", "retiredTool", "ports", "screenshot"],
+        },
+        version: 0,
+      }),
+    );
+
+    const { useUiStore } = await import("@/store/ui");
+    const { toolOrder } = useUiStore.getState();
+
+    expect(toolOrder).toHaveLength(DEFAULT_TOOL_ORDER.length);
+    expect(new Set(toolOrder).size).toBe(DEFAULT_TOOL_ORDER.length);
+    expect(toolOrder).not.toContain("retiredTool");
+    // The surviving entries keep the position the user gave them.
+    expect(toolOrder[0]).toBe("ports");
+    expect(toolOrder.indexOf("ports")).toBeLessThan(toolOrder.indexOf("screenshot"));
+  });
+
+  it("falls back to the default order when the stored value is not an array", async () => {
+    storage.setItem(
+      "adb-gui-ui",
+      JSON.stringify({ state: { toolOrder: "ports" }, version: 0 }),
+    );
+
+    const { useUiStore } = await import("@/store/ui");
+
+    expect(useUiStore.getState().toolOrder).toEqual([...DEFAULT_TOOL_ORDER]);
+  });
+
+  it("restores the default tool order on request", async () => {
+    const { useUiStore } = await import("@/store/ui");
+
+    useUiStore.getState().setToolOrder(["bugReport", ...DEFAULT_TOOL_ORDER.slice(0, -1)]);
+    expect(useUiStore.getState().toolOrder[0]).toBe("bugReport");
+
+    useUiStore.getState().resetToolOrder();
+    expect(useUiStore.getState().toolOrder).toEqual([...DEFAULT_TOOL_ORDER]);
+  });
+
+  it("keeps the same array when an order write changes nothing", async () => {
+    const { useUiStore } = await import("@/store/ui");
+
+    const before = useUiStore.getState().toolOrder;
+    useUiStore.getState().setToolOrder([...DEFAULT_TOOL_ORDER]);
+
+    expect(useUiStore.getState().toolOrder).toBe(before);
   });
 });

@@ -1,5 +1,24 @@
-import type { ReactNode } from "react";
+import type {
+  CSSProperties,
+  HTMLAttributes,
+  KeyboardEvent as ReactKeyboardEvent,
+  ReactNode,
+  Ref,
+} from "react";
+import { GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+export interface ToolModuleDragProps {
+  /** Accessible name of the grip button, including the module's current position. */
+  handleLabel: string;
+  dragging: boolean;
+  moduleRef: Ref<HTMLElement>;
+  handleRef: Ref<HTMLButtonElement>;
+  style?: CSSProperties;
+  /** Pointer handlers for the header, which is the drag surface in full. */
+  headerProps: HTMLAttributes<HTMLElement>;
+  onHandleKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => void;
+}
 
 export interface ToolModuleProps {
   icon: ReactNode;
@@ -7,6 +26,8 @@ export interface ToolModuleProps {
   reference: string;
   children: ReactNode;
   wide?: boolean;
+  /** Omitted where a module is rendered outside the reorderable grid. */
+  drag?: ToolModuleDragProps;
 }
 
 export function ToolModule({
@@ -15,15 +36,40 @@ export function ToolModule({
   reference,
   children,
   wide = false,
+  drag,
 }: ToolModuleProps) {
   return (
     <section
+      ref={drag?.moduleRef}
+      style={drag?.style}
       className={cn(
         "flex min-w-0 flex-col overflow-hidden rounded-[2px] border border-rule bg-surface2",
         wide && "min-[1180px]:col-span-2",
+        // Opaque while lifted: the module floats over other cards and the
+        // blueprint grid, which stay readable through the translucent surface.
+        drag?.dragging
+          && "relative z-10 border-ink3 bg-paper shadow-[3px_3px_0_var(--color-hard-shadow)]",
       )}
     >
-      <header className="flex min-w-0 items-center gap-2 border-b border-rule px-3 py-[7px]">
+      <header
+        {...(drag?.headerProps ?? {})}
+        className={cn(
+          "flex min-w-0 items-center gap-2 border-b border-rule px-3 py-[7px]",
+          drag && "touch-none cursor-grab select-none",
+          drag?.dragging && "cursor-grabbing",
+        )}
+      >
+        {drag && (
+          <button
+            type="button"
+            ref={drag.handleRef}
+            aria-label={drag.handleLabel}
+            onKeyDown={drag.onHandleKeyDown}
+            className="flex h-4 w-4 shrink-0 items-center justify-center text-ink3 hover:text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-ink2"
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+        )}
         <span
           aria-hidden="true"
           className="flex h-4 w-4 shrink-0 items-center justify-center text-ink2 [&>svg]:h-4 [&>svg]:w-4"

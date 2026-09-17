@@ -43,6 +43,28 @@ export const zhCN = {
       bugReport: "Bug 报告",
     },
 
+    toolLayout: {
+      dragHandle: ({
+        title,
+        position,
+        total,
+      }: {
+        title: string;
+        position: number;
+        total: number;
+      }) => `拖动排序 ${title}, 第 ${position} 项, 共 ${total} 项`,
+      moved: ({
+        title,
+        position,
+        total,
+      }: {
+        title: string;
+        position: number;
+        total: number;
+      }) => `${title}, 第 ${position} 项, 共 ${total} 项`,
+      reset: "恢复默认布局",
+    },
+
     status: {
       noDevice: "没有检测到设备",
       unauthorized:

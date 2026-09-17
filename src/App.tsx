@@ -1,24 +1,7 @@
 import { AppError, toAppError, errorIdentity } from "@/i18n/errors";
-import { useT } from "@/i18n";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import {
-  AppWindow,
-  ArrowLeftRight,
-  Bug,
-  Camera,
-  Clipboard,
-  Keyboard,
-  Link2,
-  PackageOpen,
-  Video,
-} from "lucide-react";
-import { CurrentAppActionsTool } from "@/components/ActivityMonitor";
-import { ApkTool } from "@/components/AppManager";
-import { BugReportTool } from "@/components/BugReportTool";
 import { CodeDecoderPage } from "@/components/CodeDecoderPage";
 import { CodeGeneratorPage } from "@/components/CodeGeneratorPage";
-import { DeepLinkTool } from "@/components/DeepLinkTool";
-import { DeviceSpecStrip } from "@/components/DeviceSpecStrip";
 import { DeviceFileManager } from "@/components/DeviceFileManager";
 import { AppShell } from "@/components/layout/AppShell";
 import { StatusBanner } from "@/components/layout/StatusBanner";
@@ -27,15 +10,10 @@ import { LogcatPanel } from "@/components/logcat/LogcatPanel";
 import { LogcatRuntime } from "@/components/logcat/LogcatRuntime";
 import { PackageManagerPanel } from "@/components/PackageManager";
 import { PerformancePanel } from "@/components/performance/PerformancePanel";
-import { PortForwardTool } from "@/components/PortForwardTool";
-import { QuickKeysTool } from "@/components/QuickKeys";
-import { ScreenRecordTool } from "@/components/ScreenRecordTool";
-import { ScreenshotTool } from "@/components/Screenshot";
 import { ToastBar } from "@/components/ToastBar";
-import { ToolModule } from "@/components/ToolModule";
+import { ToolWorkbench } from "@/components/ToolWorkbench";
 import { UpdateChecker } from "@/components/UpdateChecker";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
-import { ClipboardTool } from "@/components/ClipboardTool";
 import {
   createActivityPollingController,
   type ActivityPollingController,
@@ -76,7 +54,6 @@ function WorkspacePane({ id, activePane, children }: WorkspacePaneProps) {
 }
 
 function App() {
-  const t = useT();
   const activityControllerRef = useRef<ActivityPollingController | null>(null);
   const processGenerationRef = useRef(0);
   const [activityRefreshing, setActivityRefreshing] = useState(false);
@@ -205,43 +182,11 @@ function App() {
         logcat={<LogcatPanel visible={logcatVisible} />}
       >
         <WorkspacePane id="tools" activePane={activePane}>
-          <div className="h-full min-h-0 overflow-y-auto px-[18px] pb-6 pt-4">
-            <div className="space-y-4">
-              <DeviceSpecStrip
-                activityRefreshing={activityRefreshing}
-                onRefreshActivity={refreshCurrentActivity}
-              />
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(min(240px,100%),1fr))] gap-3.5">
-                <ToolModule icon={<Camera />} title={t.shell.modules.screenshot} reference="A-01">
-                  <ScreenshotTool />
-                </ToolModule>
-                <ToolModule icon={<Video />} title={t.shell.modules.recording} reference="A-02">
-                  <ScreenRecordTool active={activePane === "tools"} />
-                </ToolModule>
-                <ToolModule icon={<PackageOpen />} title={t.shell.modules.install} reference="A-03">
-                  <ApkTool active={activePane === "tools"} />
-                </ToolModule>
-                <ToolModule icon={<Link2 />} title="Deep Link" reference="A-04">
-                  <DeepLinkTool />
-                </ToolModule>
-                <ToolModule icon={<ArrowLeftRight />} title={t.shell.modules.ports} reference="A-05" wide>
-                  <PortForwardTool active={activePane === "tools"} />
-                </ToolModule>
-                <ToolModule icon={<Keyboard />} title={t.shell.modules.keys} reference="A-06">
-                  <QuickKeysTool />
-                </ToolModule>
-                <ToolModule icon={<Clipboard />} title={t.shell.modules.clipboard} reference="A-09">
-                  <ClipboardTool />
-                </ToolModule>
-                <ToolModule icon={<AppWindow />} title={t.shell.modules.currentApp} reference="A-07">
-                  <CurrentAppActionsTool />
-                </ToolModule>
-                <ToolModule icon={<Bug />} title={t.shell.modules.bugReport} reference="A-08">
-                  <BugReportTool />
-                </ToolModule>
-              </div>
-            </div>
-          </div>
+          <ToolWorkbench
+            active={activePane === "tools"}
+            activityRefreshing={activityRefreshing}
+            onRefreshActivity={refreshCurrentActivity}
+          />
         </WorkspacePane>
         <WorkspacePane id="apps" activePane={activePane}>
           <PackageManagerPanel />
