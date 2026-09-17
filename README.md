@@ -198,4 +198,4 @@ Recommended editor setup: [VS Code](https://code.visualstudio.com/) with the [Ta
 
 ## License
 
-[MIT](LICENSE)
+[GNU General Public License v3.0](LICENSE)
