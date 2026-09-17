@@ -1,0 +1,9 @@
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"约束 ToolModule 手柄改造、lucide 尺寸和 cn() 条件 class 写法."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"约束 toolOrder 进 ui store 的写法和 selector 订阅粒度."}
+{"file":".trellis/spec/frontend/hook-guidelines.md","reason":"约束 useToolDrag 的 pointer capture 与 rAF 清理."}
+{"file":".trellis/spec/frontend/i18n.md","reason":"文案只进 catalog, 含 aria-label; title 用 (t) => string 而非冻结字符串."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"ToolModuleId 联合类型与注册表穷尽性校验."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"复用 AppShell 已有的 setPointerCapture 写法, 避免另造一套拖拽层."}
+{"file":"src/components/layout/AppShell.tsx","reason":"既有 pointer 拖拽基线: setPointerCapture、onLostPointerCapture、touch-none、键盘微调."}
+{"file":"src/hooks/followScrollController.ts","reason":"纯控制器 + 薄 hook 的既有分层范例, toolDragController 照此切分."}
+{"file":"src/store/ui.ts","reason":"persist / partialize / merge 防御式回填的既有写法, toolOrder 照此接入."}

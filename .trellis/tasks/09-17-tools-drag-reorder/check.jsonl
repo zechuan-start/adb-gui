@@ -1,0 +1,6 @@
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"检查禁用模式、type=\"button\"、cleanup 与新增状态转换的回归测试覆盖."}
+{"file":".trellis/spec/frontend/i18n.md","reason":"检查两个 catalog 结构一致且组件内无中文字面量."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"检查 toolOrder 没有派生冗余字段, 订阅粒度正确."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"检查拖拽层没有与 followScroll / AppShell 形成重复实现或过度抽象."}
+{"file":"src/components/ToolModule.test.tsx","reason":"检查现有 class 断言未被破坏, 手柄相关断言为新增."}
+{"file":"src/i18n/catalog.test.ts","reason":"检查新增文案通过结构一致性与中文字面量两条卡点."}
