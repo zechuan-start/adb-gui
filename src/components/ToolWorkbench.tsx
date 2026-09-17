@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, type ReactNode } from "react";
 import { RotateCcw } from "lucide-react";
 import { DeviceSpecStrip } from "@/components/DeviceSpecStrip";
 import { ToolModule } from "@/components/ToolModule";
@@ -26,6 +26,7 @@ export function ToolWorkbench({
 }: ToolWorkbenchProps) {
   const t = useT();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const storedOrder = useUiStore((state) => state.toolOrder);
   const resetToolOrder = useUiStore((state) => state.resetToolOrder);
   const drag = useToolDrag(scrollRef, active);
 
@@ -33,14 +34,17 @@ export function ToolWorkbench({
   // DOM subtree instead of remounting it, which would restart a recording timer
   // or a port-forward poll.
   const bodies = useMemo(
-    () => new Map<ToolModuleId, ReturnType<typeof TOOL_MODULES[ToolModuleId]["render"]>>(
+    () => new Map<ToolModuleId, ReactNode>(
       DEFAULT_TOOL_ORDER.map((id) => [id, TOOL_MODULES[id].render({ active })]),
     ),
     [active],
   );
 
   const total = drag.order.length;
-  const customized = !sameToolOrder(drag.order, DEFAULT_TOOL_ORDER);
+  // Deliberately the committed order, not the live preview: this row is part of
+  // the scroll flow, so letting it appear on the first preview swap would push
+  // the whole grid down mid-gesture and move the drop targets under the pointer.
+  const customized = !sameToolOrder(storedOrder, DEFAULT_TOOL_ORDER);
   const announcement = drag.announcedId
     ? t.shell.toolLayout.moved({
       title: TOOL_MODULES[drag.announcedId].title(t),

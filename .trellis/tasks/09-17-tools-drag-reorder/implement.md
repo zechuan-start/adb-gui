@@ -83,7 +83,7 @@ corepack pnpm test:browser
 - 拖拽中 `Esc` 回滚.
 - 边缘自动滚动可把模块拖到首位与末位.
 - 手柄聚焦后 `Ctrl/Cmd + ←/→` 移动, 焦点不丢.
-- "恢复默认布局"出现与消失的时机正确.
+- "恢复默认布局"出现与消失的时机正确; 拖拽过程中不出现, 避免中途把网格下推.
 - `1200x800` 与 `900x600` 两档下落点与视觉一致.
 - 亮暗主题下手柄、拖拽态、落点提示可辨(截图人工确认).
 - 重排不卸载模块: 拖走一个填过内容的模块后输入框仍保留原值.
@@ -106,4 +106,7 @@ corepack pnpm test:browser
 - 事件层用 window 监听取代 `setPointerCapture`; 理由见 design.md 事件层一节.
 - `moveTool` 的插入下标改为在移除前读取, 否则"往后拖到相邻模块"是空操作.
 - `ToolDragState` 增加 `grab` 字段, `offset` 锚定当前槽位而非按下点, 否则换位后模块会飞离指针.
+- `ToolModule` 的拖拽 props 收成单个可选 `drag` 对象(见 design.md), 不是第 4 步写的三个平铺 props; 这样"不可拖时不渲染手柄"只是一次 `drag &&`.
+- "恢复默认布局"的显隐取已提交的 `toolOrder` 而非拖拽预览顺序. 该行在滚动流里, 跟着预览出现会在第一次换位时把整个网格下推一行, 落点随之在指针下漂移.
+- `useToolDrag` 的 window 监听在工具页变为非激活时解绑并回滚当前手势, 对齐 `hook-guidelines.md` 的 Persistent Hidden Panes 一节.
 - 新增 `scripts/screenshots/toolDragSmoke.mjs` 并接进 `pnpm test:browser`.

@@ -100,6 +100,14 @@ try {
 
     await dragTo(page, first, await headerBox(page, "A-05"), { drop: false });
     assert.notDeepEqual(await order(page), DEFAULT_ORDER, "preview reordered mid-drag");
+    // The reset row is part of the scroll flow. Showing it on the first preview
+    // swap would push the grid down and move every drop target under a
+    // stationary pointer, so it must wait for the drop.
+    assert.equal(
+      await page.getByRole("button", { name: "Restore default layout" }).count(),
+      0,
+      "the reset row stays hidden until the drag is committed",
+    );
     await page.keyboard.press("Escape");
     await page.mouse.up();
     await page.waitForTimeout(60);

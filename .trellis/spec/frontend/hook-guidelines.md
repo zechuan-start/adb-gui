@@ -69,6 +69,88 @@ When listener registration is asynchronous, runtime gating alone is insufficient
 - Cancel every outstanding frame lease during cleanup, including delayed programmatic-scroll guards and user-intent windows. Hidden tabs can otherwise replay stale scroll writes when shown again.
 - A FIFO anchor regression must assert both layers: the controller immediately shifts `scrollTop` after a 10,000-row head eviction, and the hook routes anchored revisions through the layout effect without scheduling the passive animation frame. Calling `measureNow()` directly in a controller-only test does not cover the paint-timing bug.
 
+## Scenario: Pointer Drag Reordering
+
+### 1. Scope / Trigger
+
+- Trigger: adding or changing a pointer-driven reorder surface whose order persists, such as the tools grid.
+- Applies to `lib/toolLayout.ts`, `lib/toolDragController.ts`, `hooks/useToolDrag.ts`, `components/ToolWorkbench.tsx`, and any future draggable list or grid.
+
+### 2. Signatures
+
+- `beginToolDrag(moved, pointer, order, rects) -> ToolDragState`
+- `updateToolDrag(state, pointer, rects) -> ToolDragState`
+- `commitToolDrag(state) -> readonly Id[]` returns `previewOrder`
+- `cancelToolDrag(state) -> readonly Id[]` returns `originOrder`
+- `edgeScrollVelocity(pointerY, top, bottom) -> number`, negative upward, `0` outside both edge bands
+- `moveTool(order, moved, target) -> Id[]`, `shiftTool(order, moved, delta: 1 | -1) -> Id[]`
+- `useToolDrag(scrollRef, active) -> { order, draggingId, dragOffset, announcedId, moduleRef, handleRef, onHeaderPointerDown, onHandleKeyDown }`
+
+### 3. Contracts
+
+- Every reordering decision lives in a pure function that takes measured rectangles. The project has no jsdom, so a hook that decides anything cannot be tested. The hook measures, listens, and forwards.
+- Measure the dragged element's **slot**, not its painted box. `getBoundingClientRect()` includes the element's own translate, so subtract the offset the last render applied.
+- Resolve the drop target by nearest rectangle centre, not by "rectangle contains pointer": grid gaps would otherwise produce pointer positions with no target.
+- Read the insertion index in the pre-removal array, then remove, then insert at that index. Removal shifts later elements left by one, which yields "after the target" for a forward drag and "before the target" for a backward drag without a direction branch.
+- Anchor the lift to the module's current slot (`pointer - slot - grab`), and to the target's slot on the frame that swaps. Anchoring to the press point makes the element jump away from the cursor after every swap.
+- Take pointer moves from `window` listeners, not `setPointerCapture`. Applying a preview order makes React move the dragged element between slots, and a captured element moved in the DOM can lose its capture. `setPointerCapture` remains correct for a handle that never moves, such as the log resize separator.
+- Gate those listeners on the pane's `active` flag and roll the gesture back when it clears, per **Persistent Hidden Panes**. A hidden pane measures as empty rectangles, so a surviving gesture would commit an order resolved against nothing.
+- Cache ref callbacks per id. A fresh callback each render makes React detach and reattach every element on every pointer move.
+- Key rows by domain id and memoise their bodies by anything other than order, so a reorder moves the existing DOM subtree instead of remounting it and restarting timers or polls.
+- A control whose visibility depends on the order must read the **committed** order. Driving it from the preview makes it appear mid-gesture; if it sits in the scroll flow it then shifts every drop target under a stationary pointer.
+
+### 4. Validation & Error Matrix
+
+- Travel at or below `DRAG_ACTIVATION_DISTANCE` (4 px) -> stays a click; `active` false, `offset` zero, preview equals the original order.
+- Pointer resting in a grid gap -> nearest centre still resolves a target.
+- Nearest rectangle is the dragged module itself -> no swap, and the target lock releases so the previous target can win again on the way back.
+- Nearest rectangle equals `lockedTarget` -> no second swap, which is what stops two modules oscillating under one stale measurement.
+- Escape, `pointercancel`, or window blur -> `cancelToolDrag`; a release outside the window never reports `pointerup`.
+- Pane becomes inactive mid-gesture -> cancel and unbind.
+- No rectangles measured -> preview unchanged rather than an arbitrary target.
+
+### 5. Good/Base/Bad Cases
+
+- Good: dragging a module onto a neighbour's centre swaps exactly once, and holding the pointer still afterwards leaves the preview alone.
+- Base: pressing a header and releasing without moving writes nothing to the store, because the equal-order guard in the store short-circuits.
+- Bad: passing `getBoundingClientRect()` through unmodified makes the dragged element measure closest to the pointer at all times, its own dead zone swallows every target, and no drag ever reorders anything.
+- Bad: committing the preview order to the store on each pointer move persists intermediate states and makes Escape unable to roll back.
+
+### 6. Tests Required
+
+- Pure controller tests drive constructed rectangles and assert the activation threshold, gap resolution, the self branch, lock behaviour, lift anchoring on the swap frame, commit/cancel return values, and edge-scroll velocity including the clamp beyond each edge.
+- Order-algebra tests assert forward and backward drags, both ends, a no-op onto itself, and clamping at both ends of a keyboard shift.
+- Everything DOM-coupled needs a browser smoke: transform compensation, no remount on reorder (assert typed local state survives), no layout shift mid-gesture, edge auto-scroll reaching the first slot, keyboard reordering with focus restoration and a live-region announcement, and recovery from a corrupt stored order. `scripts/screenshots/toolDragSmoke.mjs` runs these after the main smoke in `pnpm test:browser`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+const rects = elements.map((element, id) => {
+  const box = element.getBoundingClientRect();
+  return { id, x: box.left, y: box.top, width: box.width, height: box.height };
+});
+```
+
+#### Correct
+
+```typescript
+const rects = elements.map((element, id) => {
+  const box = element.getBoundingClientRect();
+  const dragged = lifted?.moved === id;
+  return {
+    id,
+    x: box.left - (dragged ? lifted.offset.x : 0),
+    y: box.top - (dragged ? lifted.offset.y : 0),
+    width: box.width,
+    height: box.height,
+  };
+});
+```
+
+---
+
 事件监听 (Tauri events):
 
 ```tsx

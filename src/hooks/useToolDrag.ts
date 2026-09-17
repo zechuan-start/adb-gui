@@ -230,6 +230,13 @@ export function useToolDrag(
     if (!dragging) {
       return;
     }
+    if (!active) {
+      // A hidden pane must not keep window listeners, and its modules measure as
+      // empty rectangles, so a gesture that outlives the pane rolls back instead
+      // of committing an order resolved against nothing.
+      finishDrag(false);
+      return;
+    }
 
     function onPointerMove(event: PointerEvent): void {
       if (pointerIdRef.current !== event.pointerId) {
@@ -271,7 +278,7 @@ export function useToolDrag(
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("blur", onPointerCancel);
     };
-  }, [applyPointer, dragging, finishDrag]);
+  }, [active, applyPointer, dragging, finishDrag]);
 
   useEffect(() => stopEdgeScroll, [stopEdgeScroll]);
 
