@@ -1,6 +1,9 @@
 # ADB GUI
 
-<img src="docs/images/app-icon.png" width="96" alt="ADB GUI 图标">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo-intro-dark.gif">
+  <img src="docs/images/logo-intro-light.gif" alt="ADB GUI 标志动画">
+</picture>
 
 [English](README.md) | **简体中文**
 
