@@ -108,7 +108,6 @@ async fn run(
         "none",
         &helper_command(&remote),
     ]);
-    // A submitted set may already have changed the device even if its response is lost.
     let result = async {
         let (success, stdout) = exchange(&mut command, &request, HOST_TIMEOUT).await?;
         parse_response(&stdout, success, text.is_some())
@@ -116,11 +115,26 @@ async fn run(
     .await;
     result.map_err(|error| {
         if text.is_some() {
-            AppError::new(codes::CLIPBOARD_WRITE_UNCONFIRMED).cause(error)
+            write_failure(error)
         } else {
             error
         }
     })
+}
+
+// A submitted set may already have changed the device even if its response is
+// lost. Only an explicit helper rejection proves the text was not stored.
+fn write_failure(error: AppError) -> AppError {
+    match error.code {
+        codes::CLIPBOARD_LOCKED
+        | codes::CLIPBOARD_USER
+        | codes::CLIPBOARD_PERMISSION
+        | codes::CLIPBOARD_DEVICE_NO_TEXT
+        | codes::CLIPBOARD_TOO_LARGE
+        | codes::CLIPBOARD_PROTOCOL
+        | codes::CLIPBOARD_UNSUPPORTED => error,
+        _ => AppError::new(codes::CLIPBOARD_WRITE_UNCONFIRMED).cause(error),
+    }
 }
 
 fn helper_command(remote: &str) -> String {
@@ -244,6 +258,7 @@ fn parse_response(
             "no_text" => codes::CLIPBOARD_DEVICE_NO_TEXT,
             "too_large" => codes::CLIPBOARD_TOO_LARGE,
             "unverified" => codes::CLIPBOARD_UNVERIFIED,
+            "readback" => codes::CLIPBOARD_READBACK_FAILED,
             "request" | "version" => codes::CLIPBOARD_PROTOCOL,
             _ => codes::CLIPBOARD_UNSUPPORTED,
         }));
@@ -336,6 +351,41 @@ mod tests {
             parse_response(&empty, true, false).unwrap(),
             ClipboardResult::NoText
         );
+    }
+
+    #[test]
+    fn reports_unconfirmed_writes_only_when_the_outcome_is_unknown() {
+        let helper_error = |code: &str| {
+            let output =
+                response(serde_json::json!({"version":1,"ok":false,"error":{"code":code}}));
+            parse_response(&output, false, true).unwrap_err()
+        };
+        for code in [
+            "locked",
+            "user",
+            "permission",
+            "identity",
+            "too_large",
+            "unknown",
+        ] {
+            let error = write_failure(helper_error(code));
+            assert_ne!(error.code, codes::CLIPBOARD_WRITE_UNCONFIRMED, "{code}");
+        }
+        for (code, cause) in [
+            ("readback", codes::CLIPBOARD_READBACK_FAILED),
+            ("unverified", codes::CLIPBOARD_UNVERIFIED),
+        ] {
+            let error = write_failure(helper_error(code));
+            assert_eq!(error.code, codes::CLIPBOARD_WRITE_UNCONFIRMED);
+            assert_eq!(error.causes[0].code, cause);
+        }
+        for lost in [
+            AppError::new(codes::CLIPBOARD_TIMEOUT),
+            AppError::new(codes::CLIPBOARD_INVALID_RESPONSE),
+            AppError::new(codes::CLIPBOARD_ABNORMAL_EXIT),
+        ] {
+            assert_eq!(write_failure(lost).code, codes::CLIPBOARD_WRITE_UNCONFIRMED);
+        }
     }
 
     #[cfg(unix)]

@@ -69,7 +69,21 @@ final class ClipboardAccess {
     void set(String text) throws Exception {
         Main.validateText(text);
         checkAccess();
-        clipboard.setPrimaryClip(ClipData.newPlainText("ADB GUI", text));
-        if (!text.equals(get())) throw new Main.Failure("unverified");
+        Exception submitError = null;
+        try {
+            clipboard.setPrimaryClip(ClipData.newPlainText("ADB GUI", text));
+        } catch (Exception error) {
+            // Some ROMs throw after the clip is already stored; the readback decides.
+            submitError = error;
+        }
+        String stored;
+        try {
+            stored = get();
+        } catch (Exception error) {
+            throw new Main.Failure("readback");
+        }
+        if (text.equals(stored)) return;
+        if (submitError != null) throw submitError;
+        throw new Main.Failure("unverified");
     }
 }

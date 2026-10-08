@@ -197,10 +197,12 @@ export const backendErrorsEn = {
   "clipboard.locked": () => "The phone is locked. Unlock it and try again",
   "clipboard.user": () => "Only the primary user clipboard is supported",
   "clipboard.permission": () =>
-    "The system denied shell access to the clipboard",
+    "Android denied the phone-side ADB shell access to the clipboard",
   "clipboard.deviceNoText": () => "The phone clipboard has no available text",
   "clipboard.unverified": () =>
     "The phone did not return matching clipboard contents",
+  "clipboard.readbackFailed": () =>
+    "The text was submitted, but reading it back to confirm failed",
   "clipboard.protocol": () => "The clipboard protocol is incompatible",
   "clipboard.unsupported": () =>
     "This device does not support the current clipboard helper",

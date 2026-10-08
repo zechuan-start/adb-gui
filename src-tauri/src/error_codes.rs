@@ -69,6 +69,7 @@ pub const CLIPBOARD_PREPARE_DEX_FAILED: &str = "clipboard.prepareDexFailed";
 pub const CLIPBOARD_PROTOCOL: &str = "clipboard.protocol";
 pub const CLIPBOARD_READ_DEX_FAILED: &str = "clipboard.readDexFailed";
 pub const CLIPBOARD_READ_OUTPUT_FAILED: &str = "clipboard.readOutputFailed";
+pub const CLIPBOARD_READBACK_FAILED: &str = "clipboard.readbackFailed";
 pub const CLIPBOARD_REAP_FAILED: &str = "clipboard.reapFailed";
 pub const CLIPBOARD_SEND_FAILED: &str = "clipboard.sendFailed";
 pub const CLIPBOARD_START_FAILED: &str = "clipboard.startFailed";
@@ -331,6 +332,7 @@ pub const ALL: &[&str] = &[
     CLIPBOARD_PROTOCOL,
     CLIPBOARD_READ_DEX_FAILED,
     CLIPBOARD_READ_OUTPUT_FAILED,
+    CLIPBOARD_READBACK_FAILED,
     CLIPBOARD_REAP_FAILED,
     CLIPBOARD_SEND_FAILED,
     CLIPBOARD_START_FAILED,
