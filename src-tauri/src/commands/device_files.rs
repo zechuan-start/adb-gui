@@ -351,6 +351,8 @@ fn parse_directory_records(
             let path = fields
                 .next()
                 .ok_or_else(|| AppError::new(codes::FILES_MISSING_BATCH_PATH))?;
+            // Some devices end metadata rows with CRLF even without a PTY.
+            let row = row.strip_suffix('\r').unwrap_or(row);
             entries.push(parse_directory_entry(row, path, directory)?);
         }
     }
@@ -368,7 +370,7 @@ fn parse_directory_entry(
         return Err(AppError::new(codes::FILES_INVALID_FIELD_COUNT).param("count", fields.len()));
     };
     let mode = u32::from_str_radix(mode, 16)
-        .map_err(|error| AppError::new(codes::FILES_INVALID_MODE).detail(error.to_string()))?;
+        .map_err(|error| invalid_field(codes::FILES_INVALID_MODE, mode, error))?;
     let kind = match mode & 0o170000 {
         0o040000 => DeviceFileKind::Directory,
         0o100000 => DeviceFileKind::File,
@@ -380,10 +382,9 @@ fn parse_directory_entry(
     };
     let size = size
         .parse::<u64>()
-        .map_err(|error| AppError::new(codes::FILES_INVALID_SIZE).detail(error.to_string()))?;
-    let modified_at = modified_at.parse::<i64>().map_err(|error| {
-        AppError::new(codes::FILES_INVALID_MODIFIED_AT).detail(error.to_string())
-    })?;
+        .map_err(|error| invalid_field(codes::FILES_INVALID_SIZE, size, error))?;
+    let modified_at = parse_modified_at(modified_at)
+        .map_err(|error| invalid_field(codes::FILES_INVALID_MODIFIED_AT, modified_at, error))?;
     let path = normalize_device_path(utf8_field(path, codes::FILES_PATH_NOT_UTF8)?)?;
     if device_parent_path(&path).as_deref() != Some(directory) {
         return Err(AppError::new(codes::FILES_OUT_OF_SCOPE).param("path", path));
@@ -412,6 +413,30 @@ fn trim_protocol_line_endings(mut output: &[u8]) -> &[u8] {
 
 fn utf8_field<'a>(value: &'a [u8], code: &'static str) -> Result<&'a str, AppError> {
     std::str::from_utf8(value).map_err(|error| AppError::new(code).detail(error.to_string()))
+}
+
+// Quote the raw field so control characters stay visible in the reported diagnostic.
+fn invalid_field(code: &'static str, raw: &str, error: impl std::fmt::Display) -> AppError {
+    AppError::new(code).detail(format!("{error}: {raw:?}"))
+}
+
+fn parse_modified_at(value: &str) -> Result<i64, std::num::ParseIntError> {
+    // Some stat builds print fractional seconds; the listing only needs whole seconds.
+    let seconds = match value.split_once('.') {
+        Some((seconds, fraction))
+            if !fraction.is_empty() && fraction.bytes().all(|byte| byte.is_ascii_digit()) =>
+        {
+            seconds
+        }
+        _ => value,
+    };
+    // Toybox prints %Y as unsigned, so a pre-1970 time arrives as its two's complement.
+    seconds.parse::<i64>().or_else(|error| {
+        seconds
+            .parse::<u64>()
+            .map(|wrapped| wrapped as i64)
+            .map_err(|_| error)
+    })
 }
 
 fn normalize_device_path(path: &str) -> Result<String, AppError> {
@@ -971,6 +996,47 @@ mod tests {
             "/sdcard/Download"
         )
         .is_err());
+    }
+
+    #[test]
+    fn accepts_crlf_rows_and_alternate_modified_time_formats() {
+        let output = concat!(
+            "81a4 4 1700000000\r\n41ed 4096 1700000001.123456789\r\n",
+            "81a4 8 18446744073709551615\r\n\0",
+            "/sdcard/Download/a.txt\0",
+            "/sdcard/Download/b\0",
+            "/sdcard/Download/c.txt\0"
+        );
+        let entries = parse_directory_records(output.as_bytes(), "/sdcard/Download").unwrap();
+        let times: Vec<_> = entries.iter().map(|entry| entry.modified_at).collect();
+        assert_eq!(times, [1_700_000_000, 1_700_000_001, -1]);
+        assert_eq!(entries[1].kind, DeviceFileKind::Directory);
+    }
+
+    #[test]
+    fn reports_the_raw_field_when_a_numeric_column_is_invalid() {
+        use crate::error_codes as codes;
+        for (output, code, detail) in [
+            (
+                &b"81a4 4 17000x\n\0/sdcard/Download/a\0"[..],
+                codes::FILES_INVALID_MODIFIED_AT,
+                "invalid digit found in string: \"17000x\"",
+            ),
+            (
+                &b"81a4 4 1.\n\0/sdcard/Download/a\0"[..],
+                codes::FILES_INVALID_MODIFIED_AT,
+                "invalid digit found in string: \"1.\"",
+            ),
+            (
+                &b"81a4 4\r 1\n\0/sdcard/Download/a\0"[..],
+                codes::FILES_INVALID_SIZE,
+                "invalid digit found in string: \"4\\r\"",
+            ),
+        ] {
+            let error = parse_directory_records(output, "/sdcard/Download").unwrap_err();
+            assert_eq!(error.code, code);
+            assert_eq!(error.detail.as_deref(), Some(detail));
+        }
     }
 
     #[test]
