@@ -97,7 +97,7 @@ try {
 - `adb connect` stdout contains `failed`, `unable`, or `cannot` -> `WIFI_CONNECT_FAILED` with trimmed stdout in `detail`, even if process status is success. These checks parse the adb protocol output, not translated application text.
 - `adb connect` reports success but `adb -s <address> get-state` is not `device` -> disconnect the stale address and retry connect once.
 - The single reconnect attempt fails or still does not reach `device` -> return `Err(...)`; never emit a success response.
-- Missing WiFi IP from `wlan0` -> `WIFI_NO_IP` (`wifi.noIp`).
+- WiFi IP discovery reads `ip -f inet addr show` for all interfaces. It prefers an address whose subnet the host reaches directly (UDP-connect source address), then `wlan0`, then other WiFi/hotspot interfaces (`wlan*`, `swlan*`, `ap*`, `softap*`). It never picks loopback, link-local, cellular, VPN or USB-tethering addresses. No candidate -> `WIFI_NO_IP` (`wifi.noIp`).
 - `adb tcpip 5555` failure -> `WIFI_TCPIP_FAILED` with the underlying `AppError` in `causes`.
 
 ### 5. Good/Base/Bad Cases

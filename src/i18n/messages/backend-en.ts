@@ -63,7 +63,7 @@ export const backendErrorsEn = {
   "report.emptyScreenshot": () =>
     "The screenshot is empty. Check that the device screen is available.",
   "wifi.noIp": () =>
-    "No WiFi IP address was found. Check that the device is connected to WiFi",
+    "No usable WiFi IP address was found. Check that the device is connected to WiFi or has its hotspot on",
   "wifi.emptyAddress": () => "Enter a device IP address or ip:port",
   "ports.invalidDirection": () =>
     "Invalid direction. Expected forward or reverse.",
