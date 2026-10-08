@@ -1,33 +1,53 @@
 import { useT, translateError } from "@/i18n";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { CheckCircle2, AlertCircle, X } from "lucide-react";
-import { useFeedbackStore } from "@/store/feedback";
+import { useFeedbackStore, type ToastState } from "@/store/feedback";
 import { cn } from "@/lib/utils";
 
+// Errors stay longer than confirmations; hovering or focusing a toast holds it open.
+const TOAST_DURATION_MS = { success: 3000, error: 8000 } as const;
+
 export function ToastBar() {
-  const t = useT();
   const toast = useFeedbackStore((s) => s.toast);
   const toastId = useFeedbackStore((s) => s.toastId);
-  const clearToast = useFeedbackStore((s) => s.clearToast);
-
-  useEffect(() => {
-    if (!toast || toast.kind !== "success") {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      clearToast();
-    }, 3000);
-
-    return () => window.clearTimeout(timer);
-  }, [toastId, toast, clearToast]);
 
   if (!toast) {
     return null;
   }
 
+  // Keyed per toast so a replaced toast starts a fresh countdown and hold state.
+  return <Toast key={toastId} toast={toast} />;
+}
+
+function Toast({ toast }: { toast: ToastState }) {
+  const t = useT();
+  const clearToast = useFeedbackStore((s) => s.clearToast);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const held = hovered || focused;
+
+  useEffect(() => {
+    if (held) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      clearToast();
+    }, TOAST_DURATION_MS[toast.kind]);
+
+    return () => window.clearTimeout(timer);
+  }, [held, toast.kind, clearToast]);
+
   return (
-    <div className="fixed bottom-4 left-[184px] z-50 w-[min(340px,calc(100vw-200px))]">
+    <div
+      className="fixed bottom-4 left-[184px] z-50 w-[min(340px,calc(100vw-200px))]"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
+      }}
+    >
       <div
         role={toast.kind === "success" ? "status" : "alert"}
         aria-live={toast.kind === "success" ? "polite" : "assertive"}

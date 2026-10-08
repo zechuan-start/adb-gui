@@ -177,17 +177,11 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
         if (!activeRef.current || requestId !== listRequestRef.current) {
           return;
         }
-        const message = toAppError(error);
-        dispatch({ type: "list-error", serial, requestId, error: message });
-        if (
-          operationContextRef.current.serial === serial &&
-          requestId === listRequestRef.current
-        ) {
-          showToast("error", message);
-        }
+        // The list renders this error inline with retry actions; no toast.
+        dispatch({ type: "list-error", serial, requestId, error: toAppError(error) });
       }
     },
-    [showToast],
+    [],
   );
 
   const loadStartDirectory = useCallback((serial: string) => {

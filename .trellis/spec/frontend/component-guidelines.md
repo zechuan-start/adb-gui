@@ -58,6 +58,8 @@ export function ToolName() {
 
 Use [Bilingual UI and Error Presentation](./i18n.md) when adding component text or feedback. Subscribe with `useT()`, and pass toast product text as a callback rather than a previously translated string.
 
+`ToastBar` dismisses success toasts after 3 s and error toasts after 8 s; hovering or focusing a toast holds it open until the pointer/focus leaves. Errors that need to stay visible belong inline next to their retry action, not in a toast. Do not also toast a failure that the component already renders inline (for example the file list's `listError`).
+
 ## Props Conventions
 
 - 当前组件多为无 props 的顶层工具面板, 通过 store 获取数据.
