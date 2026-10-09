@@ -29,8 +29,8 @@ corepack pnpm test
 
 ## 2. 起始目录回退逻辑
 
-- [ ] `src/lib/deviceFiles.ts`: 加 `isUnavailableStartDirectoryError`; `DeviceFileManagerState` 加 `startFallback`; 新 action `start-fallback`; `list-start` 加可选 `keepStartFallback`; `reset` 清空.
-- [ ] 扩充 `src/lib/deviceFiles.test.ts`.
+- [x] `src/lib/deviceFiles.ts`: 加 `isUnavailableStartDirectoryError`; `DeviceFileManagerState` 加 `startFallback`; 新 action `start-fallback`; `list-start` 加可选 `keepStartFallback`; `reset` 清空.
+- [x] 扩充 `src/lib/deviceFiles.test.ts`.
 
 测试必须覆盖:
 

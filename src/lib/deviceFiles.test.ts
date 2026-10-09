@@ -15,6 +15,7 @@ import {
   invalidateDeviceOperationContext,
   isDeviceDirectoryViewLoading,
   isDeviceOperationContextCurrent,
+  isUnavailableStartDirectoryError,
   localFileName,
   updateDeviceOperationContext,
 } from "@/lib/deviceFiles";
@@ -137,6 +138,124 @@ describe("device file helpers", () => {
         items: [items[1]],
       }, zhCN),
     ).toBe("下载失败: 1 个");
+  });
+});
+
+describe("start directory fallback", () => {
+  const missing = { code: "files.notDirectory", params: { path: "/sdcard/Work" } };
+
+  function startFallback(state: ReturnType<typeof createDeviceFileManagerState>) {
+    state = deviceFileManagerReducer(state, {
+      type: "list-start",
+      serial: "device-a",
+      requestId: 1,
+    });
+    return deviceFileManagerReducer(state, {
+      type: "start-fallback",
+      serial: "device-a",
+      requestId: 1,
+      path: "/sdcard/Work",
+      error: missing,
+    });
+  }
+
+  it("falls back only for a missing or unreadable directory", () => {
+    expect(isUnavailableStartDirectoryError(missing)).toBe(true);
+    expect(
+      isUnavailableStartDirectoryError({
+        code: "files.directoryPermission",
+        params: { path: "/data" },
+      }),
+    ).toBe(true);
+    expect(
+      isUnavailableStartDirectoryError({ code: "files.listFailed", params: { path: "/sdcard" } }),
+    ).toBe(false);
+    expect(isUnavailableStartDirectoryError({ code: "adb.commandFailed" })).toBe(false);
+  });
+
+  it("records the failed start path without showing a list error", () => {
+    const state = startFallback(createDeviceFileManagerState("device-a"));
+
+    expect(state.startFallback).toEqual({ path: "/sdcard/Work", error: missing });
+    expect(state.listError).toBeNull();
+    expect(state.listLoading).toBe(true);
+  });
+
+  it("ignores a fallback from a stale request or another device", () => {
+    let state = createDeviceFileManagerState("device-a");
+    state = deviceFileManagerReducer(state, {
+      type: "list-start",
+      serial: "device-a",
+      requestId: 2,
+    });
+
+    for (const stale of [
+      { serial: "device-a", requestId: 1 },
+      { serial: "device-b", requestId: 2 },
+    ]) {
+      const next = deviceFileManagerReducer(state, {
+        type: "start-fallback",
+        ...stale,
+        path: "/sdcard/Work",
+        error: missing,
+      });
+      expect(next).toBe(state);
+    }
+  });
+
+  it("keeps the notice through the fallback load and clears it on the next navigation", () => {
+    let state = startFallback(createDeviceFileManagerState("device-a"));
+    state = deviceFileManagerReducer(state, {
+      type: "list-start",
+      serial: "device-a",
+      requestId: 2,
+      keepStartFallback: true,
+    });
+    state = deviceFileManagerReducer(state, {
+      type: "list-success",
+      serial: "device-a",
+      requestId: 2,
+      listing,
+    });
+
+    expect(state.path).toBe("/sdcard/Download");
+    expect(state.startFallback?.path).toBe("/sdcard/Work");
+
+    state = deviceFileManagerReducer(state, {
+      type: "list-start",
+      serial: "device-a",
+      requestId: 3,
+    });
+    expect(state.startFallback).toBeNull();
+  });
+
+  it("keeps the notice when the default directory also fails", () => {
+    let state = startFallback(createDeviceFileManagerState("device-a"));
+    state = deviceFileManagerReducer(state, {
+      type: "list-start",
+      serial: "device-a",
+      requestId: 2,
+      keepStartFallback: true,
+    });
+    const failure = { code: "files.notDirectory", params: { path: "/sdcard/Download" } };
+    state = deviceFileManagerReducer(state, {
+      type: "list-error",
+      serial: "device-a",
+      requestId: 2,
+      error: failure,
+    });
+
+    expect(state.startFallback?.path).toBe("/sdcard/Work");
+    expect(state.listError).toEqual(failure);
+  });
+
+  it("clears the notice on a device switch", () => {
+    const state = deviceFileManagerReducer(
+      startFallback(createDeviceFileManagerState("device-a")),
+      { type: "reset", serial: "device-b" },
+    );
+
+    expect(state.startFallback).toBeNull();
   });
 });
 
