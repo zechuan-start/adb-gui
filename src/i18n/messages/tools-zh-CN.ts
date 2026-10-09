@@ -408,16 +408,12 @@ export const toolMessagesZh = {
       couldNotChooseUploadFiles: ({ detail }: { detail: string }) =>
         `选择上传文件失败: ${detail}`,
       fileSavedTo: ({ path }: { path: string }) => `文件已保存到 ${path}`,
-      couldNotDownloadFile: ({ detail }: { detail: string }) =>
-        `下载文件失败: ${detail}`,
       couldNotChooseSaveLocation: ({ detail }: { detail: string }) =>
         `选择保存位置失败: ${detail}`,
       pathCopied: "路径已复制",
       couldNotCopyPath: ({ detail }: { detail: string }) =>
         `复制路径失败: ${detail}`,
       createdDirectory: ({ path }: { path: string }) => `已新建目录 ${path}`,
-      couldNotCreateDirectory: ({ detail }: { detail: string }) =>
-        `新建目录失败: ${detail}`,
       couldNotRevealFile: ({ detail }: { detail: string }) =>
         `无法在文件管理器中显示文件: ${detail}`,
       goToStartDirectory: "返回起始目录",

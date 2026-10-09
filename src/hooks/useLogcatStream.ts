@@ -9,13 +9,11 @@ import {
   stopLogcat,
 } from "@/lib/tauri";
 import { useDeviceStore } from "@/store/device";
-import { useFeedbackStore } from "@/store/feedback";
 import { useLogcatStore } from "@/store/logcat";
 
 export function useLogcatStream(): void {
   const devices = useDeviceStore((state) => state.devices);
   const selectedDevice = useDeviceStore((state) => state.selectedDevice);
-  const showToast = useFeedbackStore((state) => state.showToast);
   const restartNonce = useLogcatStore((state) => state.restartNonce);
   const selected = getDeviceBySerial(devices, selectedDevice);
   const onlineSerial = selected?.state === "device" ? selected.serial : null;
@@ -87,8 +85,8 @@ export function useLogcatStream(): void {
         if (!isCurrentGeneration()) {
           return;
         }
-        useLogcatStore.getState().failStart(detail);
-        showToast("error", { code: "logcat_start", causes: [detail] });
+        // The disconnect banner renders this error inline; no toast.
+        useLogcatStore.getState().failStart({ code: "logcat_start", causes: [detail] });
       },
       onAsyncError: console.error,
     });
@@ -96,5 +94,5 @@ export function useLogcatStream(): void {
     // Register both listeners before starting adb so the initial dump cannot be lost.
     void controller.run();
     return controller.dispose;
-  }, [onlineSerial, restartNonce, showToast]);
+  }, [onlineSerial, restartNonce]);
 }

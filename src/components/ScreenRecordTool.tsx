@@ -59,18 +59,14 @@ export function ScreenRecordTool({ active = true }: { active?: boolean }) {
       choosePath: pickRecordingSavePath,
       confirmDiscard: confirmDiscardRecording,
       onChange: setView,
-      onError: (message) =>
-        useFeedbackStore.getState().showToast("error", message),
       onSaved: (result, behavior) => {
         const openFailed = behavior.openAfterSave && !result.opened;
+        // A source-cleanup failure renders inline under the saved path; no toast.
         useFeedbackStore.getState().showToast(
-          result.source_cleanup_error || openFailed ? "error" : "success",
+          openFailed ? "error" : "success",
           (t) => t.tools.screenRecordTool.recordingSaved({
             path: result.path,
-            warnings: [
-              result.source_cleanup_error ? errorText(result.source_cleanup_error, t) : null,
-              openFailed ? t.tools.screenRecordTool.couldNotOpenVideoAutomatically : null,
-            ].filter((warning): warning is string => warning !== null),
+            warnings: openFailed ? [t.tools.screenRecordTool.couldNotOpenVideoAutomatically] : [],
           }),
         );
       },

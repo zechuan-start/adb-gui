@@ -422,8 +422,6 @@ export const toolMessagesEn = {
       couldNotChooseUploadFiles: ({ detail }: { detail: string }) =>
         `Could not choose upload files: ${detail}`,
       fileSavedTo: ({ path }: { path: string }) => `File saved to ${path}`,
-      couldNotDownloadFile: ({ detail }: { detail: string }) =>
-        `Could not download file: ${detail}`,
       couldNotChooseSaveLocation: ({ detail }: { detail: string }) =>
         `Could not choose save location: ${detail}`,
       pathCopied: "Path copied",
@@ -431,8 +429,6 @@ export const toolMessagesEn = {
         `Could not copy path: ${detail}`,
       createdDirectory: ({ path }: { path: string }) =>
         `Created directory ${path}`,
-      couldNotCreateDirectory: ({ detail }: { detail: string }) =>
-        `Could not create directory: ${detail}`,
       couldNotRevealFile: ({ detail }: { detail: string }) =>
         `Could not reveal file: ${detail}`,
       goToStartDirectory: "Go to start directory",

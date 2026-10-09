@@ -53,16 +53,13 @@ export function ApkTool({ active = true }: ApkToolProps) {
         showToast("error", (t) => (t.apps.appManager.installingAPKPleaseWait));
         return;
       }
+      // Results render in the status line below; no toast.
       if (!isApkPath(path)) {
-        const message: Message = (t) => t.apps.appManager.onlyAPKFilesAreSupported;
-        setStatus(() => message);
-        showToast("error", message);
+        setStatus(() => (t: Parameters<Message>[0]) => t.apps.appManager.onlyAPKFilesAreSupported);
         return;
       }
       if (!device || !isOnlineDevice(device)) {
-        const message: Message = (t) => t.apps.appManager.selectAnOnlineDeviceFirstLabel;
-        setStatus(() => message);
-        showToast("error", message);
+        setStatus(() => (t: Parameters<Message>[0]) => t.apps.appManager.selectAnOnlineDeviceFirstLabel);
         return;
       }
 
@@ -73,11 +70,8 @@ export function ApkTool({ active = true }: ApkToolProps) {
       try {
         const message = installMessage(await installApk(device.serial, path));
         setStatus(() => message);
-        showToast("success", message);
       } catch (error) {
-        const message = toAppError(error);
-        setStatus(() => message);
-        showToast("error", message);
+        setStatus(() => toAppError(error));
       } finally {
         busyRef.current = false;
         setBusy(false);
@@ -90,20 +84,16 @@ export function ApkTool({ active = true }: ApkToolProps) {
     (paths: string[]) => {
       const apkPaths = paths.filter(isApkPath);
       if (apkPaths.length === 0) {
-        const message: Message = (t) => t.apps.appManager.onlyAPKFilesAreSupported;
-        setStatus(() => message);
-        showToast("error", message);
+        setStatus(() => (t: Parameters<Message>[0]) => t.apps.appManager.onlyAPKFilesAreSupported);
         return;
       }
       if (apkPaths.length > 1) {
-        const message: Message = (t) => t.apps.appManager.installOneAPKAtATime;
-        setStatus(() => message);
-        showToast("error", message);
+        setStatus(() => (t: Parameters<Message>[0]) => t.apps.appManager.installOneAPKAtATime);
         return;
       }
       void handleInstall(apkPaths[0]);
     },
-    [handleInstall, showToast],
+    [handleInstall],
   );
 
   const handlePick = useCallback(async () => {
@@ -113,11 +103,9 @@ export function ApkTool({ active = true }: ApkToolProps) {
         await handleInstall(selected);
       }
     } catch (error) {
-      const message = toAppError(error);
-      setStatus(() => message);
-      showToast("error", message);
+      setStatus(() => toAppError(error));
     }
-  }, [handleInstall, showToast]);
+  }, [handleInstall]);
 
   useEffect(() => {
     if (!active || !online || !isTauriRuntime()) {

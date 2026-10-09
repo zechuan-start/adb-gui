@@ -465,9 +465,8 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
         if (!isDeviceOperationContextCurrent(operationContextRef.current, operationContext)) {
           return;
         }
-        const message = toAppError(error);
-        dispatch({ type: "transfer-item-error", serial, index: 0, error: message });
-        showToast("error", (t) => (t.files.deviceFileManager.couldNotDownloadFile({ detail: errorText(message, t) })));
+        // The transfer panel renders this error inline; no toast.
+        dispatch({ type: "transfer-item-error", serial, index: 0, error: toAppError(error) });
       } finally {
         if (isDeviceOperationContextCurrent(operationContextRef.current, operationContext)) {
           dispatch({ type: "transfer-finish", serial });
@@ -535,10 +534,9 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
         await loadDirectory(serial, parentPath);
       }
     } catch (error) {
-      const message = toAppError(error);
       if (isDeviceOperationContextCurrent(operationContextRef.current, operationContext)) {
-        setFolderError(message);
-        showToast("error", (t) => (t.files.deviceFileManager.couldNotCreateDirectory({ detail: errorText(message, t) })));
+        // The dialog renders this error inline; no toast.
+        setFolderError(toAppError(error));
       }
     } finally {
       if (isDeviceOperationContextCurrent(operationContextRef.current, operationContext)) {

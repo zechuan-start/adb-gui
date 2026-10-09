@@ -58,7 +58,7 @@ export function ToolName() {
 
 Use [Bilingual UI and Error Presentation](./i18n.md) when adding component text or feedback. Subscribe with `useT()`, and pass toast product text as a callback rather than a previously translated string.
 
-`ToastBar` dismisses success toasts after 3 s and error toasts after 8 s; hovering or focusing a toast holds it open until the pointer/focus leaves. Errors that need to stay visible belong inline next to their retry action, not in a toast. Do not also toast a failure that the component already renders inline (for example the file list's `listError`).
+`ToastBar` dismisses success toasts after 3 s and error toasts after 8 s; hovering or focusing a toast holds it open until the pointer/focus leaves. Errors that need to stay visible belong inline next to their retry action, not in a toast. Do not also toast a failure that the component already renders inline: the file list's `listError`, the new-directory dialog's `folderError`, a failed download in the transfer panel, the APK tool's status line, the recording `view.error`, the logcat disconnect banner, and the performance panel's `error`. When a hook stores the error for an inline surface, store it already wrapped with its context code (for example `{ code: "logcat_start", causes: [detail] }`) instead of toasting the wrapped form.
 
 ## Props Conventions
 

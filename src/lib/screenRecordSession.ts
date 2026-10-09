@@ -36,7 +36,6 @@ interface RecordingDependencies {
   onChange: (view: RecordingView) => void;
   onSaved: (result: ScreenRecordResult, behavior: SaveBehavior) => void;
   onDiscarded: (result: DiscardRecordingResult) => void;
-  onError: (message: AppErrorPayload) => void;
 }
 
 export function createRecordingController(deps: RecordingDependencies) {
@@ -85,7 +84,6 @@ export function createRecordingController(deps: RecordingDependencies) {
       if (!current()) return;
       const message = toAppError(error);
       publish({ error: message });
-      deps.onError(message);
       try {
         const status = await deps.getStatus();
         if (current()) publish({ status });

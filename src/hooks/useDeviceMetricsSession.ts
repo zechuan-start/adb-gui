@@ -1,5 +1,4 @@
-import { errorIdentity } from "@/i18n/errors";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { createDeviceMetricsSessionController } from "@/hooks/deviceMetricsSessionController";
 import { getDeviceBySerial } from "@/lib/device";
 import { getDeviceMetricsKey } from "@/lib/deviceMetrics";
@@ -12,7 +11,6 @@ import {
 } from "@/lib/tauri";
 import { useDeviceStore } from "@/store/device";
 import { useDeviceMetricsStore } from "@/store/deviceMetrics";
-import { useFeedbackStore } from "@/store/feedback";
 import { useSettingsStore } from "@/store/settings";
 
 export function useDeviceMetricsSession(active: boolean): void {
@@ -21,8 +19,6 @@ export function useDeviceMetricsSession(active: boolean): void {
   const backgroundEnabled = useSettingsStore((state) => state.available && state.preferences.performance.backgroundEnabled);
   const paused = useDeviceMetricsStore((state) => state.paused);
   const restartNonce = useDeviceMetricsStore((state) => state.restartNonce);
-  const showToast = useFeedbackStore((state) => state.showToast);
-  const lastErrorRef = useRef("");
   const selected = getDeviceBySerial(devices, selectedDevice);
   const onlineDevice = selected?.state === "device" ? selected : null;
   const onlineSerial = onlineDevice?.serial ?? null;
@@ -46,7 +42,6 @@ export function useDeviceMetricsSession(active: boolean): void {
       start: startDeviceMetrics,
       stop: stopDeviceMetrics,
       onStarted: (session) => {
-        lastErrorRef.current = "";
         useDeviceMetricsStore
           .getState()
           .beginSession(deviceKey, onlineSerial, session.session_id);
@@ -54,16 +49,15 @@ export function useDeviceMetricsSession(active: boolean): void {
       onFrame: (frame) => {
         useDeviceMetricsStore.getState().acceptFrame(frame);
       },
+      // The performance panel renders these errors inline; no toast.
       onExit: (exit) => {
-        const message = exit.detail ?? { code: "metrics_stopped", detail: exit.reason };
-        const key = errorIdentity(message);
-        useDeviceMetricsStore
-          .getState()
-          .acceptExit(exit.serial, exit.session_id, message);
-        if (lastErrorRef.current !== key) {
-          lastErrorRef.current = key;
-          showToast("error", { code: "metrics_stopped", causes: [message] });
-        }
+        useDeviceMetricsStore.getState().acceptExit(
+          exit.serial,
+          exit.session_id,
+          exit.detail
+            ? { code: "metrics_stopped", causes: [exit.detail] }
+            : { code: "metrics_stopped", detail: exit.reason },
+        );
       },
       onStopped: (session) => {
         useDeviceMetricsStore
@@ -71,12 +65,9 @@ export function useDeviceMetricsSession(active: boolean): void {
           .markStopped(session.serial, session.session_id);
       },
       onStartFailure: (detail) => {
-        const key = errorIdentity(detail);
-        useDeviceMetricsStore.getState().failStart(deviceKey, onlineSerial, detail);
-        if (lastErrorRef.current !== key) {
-          lastErrorRef.current = key;
-          showToast("error", { code: "metrics_start", causes: [detail] });
-        }
+        useDeviceMetricsStore
+          .getState()
+          .failStart(deviceKey, onlineSerial, { code: "metrics_start", causes: [detail] });
       },
       onAsyncError: (error) => {
         console.error("Failed to stop device metrics session", error);
@@ -85,5 +76,5 @@ export function useDeviceMetricsSession(active: boolean): void {
 
     void controller.run();
     return controller.dispose;
-  }, [deviceKey, enabled, onlineSerial, restartNonce, showToast]);
+  }, [deviceKey, enabled, onlineSerial, restartNonce]);
 }
