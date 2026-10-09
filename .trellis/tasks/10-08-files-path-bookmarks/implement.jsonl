@@ -1,1 +1,8 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"Blueprint 浮层与主题化菜单规范: 不透明 bg-paper、硬阴影、Esc 焦点归还、dropdownPlacement、键盘交互; 星标与色板按钮的 lucide 尺寸和 cn() 写法."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"新增 useFileBookmarkStore 的 persist / partialize / merge 写法, 参照 toolOrder 的防御式协调; 说明为什么不放 settings 或 ui store."}
+{"file":".trellis/spec/frontend/settings-clipboard.md","reason":"起始目录读取时机与 'Unavailable start path' 规则, 本任务要修改为自动回退; 设为起始目录必须走 settings.update."}
+{"file":".trellis/spec/frontend/i18n.md","reason":"新增 files.bookmarks.* 与回退提示文案只进 catalog, aria-label / title 也要双语, 渲染期取文本."}
+{"file":".trellis/spec/frontend/hook-guidelines.md","reason":"useDismissableLayer 的事件监听注册与清理."}
+{"file":".trellis/spec/frontend/type-safety.md","reason":"BookmarkColor 联合类型与色板类名表的穷尽性."}
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"多文件功能放 components/files/ 子目录."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"复用 BlueprintSelect / WifiConnect 的浮层与键盘写法, 不另造一套."}
