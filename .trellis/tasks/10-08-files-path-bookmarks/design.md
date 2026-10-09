@@ -127,17 +127,20 @@ export const BOOKMARK_COLOR_TEXT: Record<BookmarkColor, string> = {
 ## 模块边界
 
 ```text
-lib/fileBookmarks.ts          纯函数: 类型、色板 id、协调、增删改、名称、匹配
-store/fileBookmarks.ts        Zustand + persist, key `adb-gui-file-bookmarks`
-lib/deviceFiles.ts            起始目录回退: 错误判定、reducer 的提示状态
-hooks/useDismissableLayer.ts  浮层外部点击 / Esc 关闭 / 焦点归还, 两个新浮层共用
+lib/fileBookmarks.ts                 纯函数: 类型、色板 id 与类名表、协调、增删改、名称、按路径索引
+store/fileBookmarks.ts               Zustand + persist, key `adb-gui-file-bookmarks`
+lib/deviceFiles.ts                   起始目录回退: 错误判定、reducer 的提示状态
+hooks/useDismissableLayer.ts         浮层外部点击 / Esc 关闭 / 焦点归还
+hooks/useDropdownPlacement.ts        浮层上下翻转与最大高度 (测量裁剪祖先, 与 BlueprintSelect 同法)
+components/files/buttonClasses.ts    文件页按钮与浮层外观类名, 从 DeviceFileManager 移出供共用
+components/files/BookmarkFolderIcon.tsx  有色收藏实心文件夹 / 无色描边文件夹
 components/files/BookmarkEditor.tsx  色板 + 设为起始目录 + 取消收藏
 components/files/BookmarkStar.tsx    星标按钮 + 弹出编辑面板 (路径栏 / 详情面板两种外观)
 components/files/BookmarkMenu.tsx    收藏列表按钮 + 浮层 (列表视图 / 编辑视图)
 components/DeviceFileManager.tsx     接入上述组件, 图标上色, 回退提示条
 ```
 
-现有 `LogcatLevelMenu` 和 `WifiConnect` 各自内联了外部点击 / Esc 处理. 本任务新增两个浮层, 抽一个 hook 供它们共用, 不回头改那两个现有组件, 避免扩大改动面.
+现有 `LogcatLevelMenu`、`WifiConnect` 内联了外部点击 / Esc 处理, `BlueprintSelect` 内联了裁剪祖先测量. 本任务新增两个浮层, 把这两段逻辑各抽成一个 hook 供它们共用, 不回头改那三个现有组件, 避免扩大改动面.
 
 测试环境没有 jsdom, 组件测试只能 `renderToStaticMarkup`. 所以收藏的增删改、协调、回退判定、reducer 状态都放在纯函数里测; 组件只验证静态结构 (按钮存在、`aria-*`、颜色类名).
 
