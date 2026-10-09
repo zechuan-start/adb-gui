@@ -33,6 +33,8 @@ import {
   X,
   XCircle,
 } from "lucide-react";
+import { BookmarkStar } from "@/components/files/BookmarkStar";
+import { commandButtonClass, iconButtonClass } from "@/components/files/buttonClasses";
 import { getDeviceBySerial, isOnlineDevice } from "@/lib/device";
 import {
   BOOKMARK_COLOR_TEXT,
@@ -605,6 +607,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
             aria-label={t.files.deviceFileManager.absoluteDevicePath}
             className="h-8 min-w-0 flex-1 border border-rule bg-paper px-3 font-data text-[11.5px] text-ink outline-none placeholder:text-ink3 disabled:cursor-not-allowed disabled:opacity-60"
           />
+          <BookmarkStar variant="toolbar" path={visiblePath || null} />
           <button
             type="button"
             onClick={() => void handleCopyPath(visiblePath)}
@@ -1143,15 +1146,18 @@ function DeviceFileDetails({
               {t.files.deviceFileManager.copyPath}
             </button>
             {entry.kind === "directory" ? (
-              <button
-                type="button"
-                onClick={() => onOpenDirectory(entry)}
-                disabled={disabled}
-                className={commandButtonClass}
-              >
-                <FolderOpen className="h-4 w-4" />
-                {t.files.deviceFileManager.openDirectory}
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => onOpenDirectory(entry)}
+                  disabled={disabled}
+                  className={commandButtonClass}
+                >
+                  <FolderOpen className="h-4 w-4" />
+                  {t.files.deviceFileManager.openDirectory}
+                </button>
+                <BookmarkStar variant="details" path={entry.path} />
+              </>
             ) : entry.kind === "file" ? (
               <button
                 type="button"
@@ -1245,9 +1251,3 @@ function TransferStatusIcon({ status }: { status: DeviceTransferBatch["items"][n
       return <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-err" />;
   }
 }
-
-const iconButtonClass =
-  "inline-flex h-8 w-8 shrink-0 items-center justify-center border border-rule text-ink2 hover:border-ink3 hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40";
-
-const commandButtonClass =
-  "inline-flex h-7 items-center gap-1.5 border border-rule px-2 font-data text-[10.5px] font-medium text-ink hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40";

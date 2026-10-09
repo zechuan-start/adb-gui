@@ -53,12 +53,12 @@ corepack pnpm test
 
 ## 4. 星标、编辑面板、详情面板按钮
 
-- [ ] 新建 `src/hooks/useDismissableLayer.ts`: 外部 `pointerdown` 关闭、Esc 关闭并把焦点还给触发按钮; 写法参照 `WifiConnect.tsx:40-55`.
-- [ ] 新建 `src/components/files/BookmarkEditor.tsx`: 色板 `radiogroup`、设为起始目录、取消收藏.
-- [ ] 新建 `src/components/files/BookmarkStar.tsx`: `variant: "toolbar" | "details"`; 未收藏点击直接收藏, 已收藏点击弹出 `BookmarkEditor`.
-- [ ] `DeviceFileManager.tsx`: 路径栏在复制按钮前插入星标; 详情面板选中目录时插入详情外观的星标按钮.
-- [ ] 文案: `tools-zh-CN.ts` / `tools-en.ts` 加 `files.bookmarks.*`.
-- [ ] 组件测试 (`renderToStaticMarkup`): 未收藏 / 已收藏无色 / 已收藏有色三种星标的 `aria-pressed`、`aria-label` 和颜色类名; 选中文件时详情面板没有收藏按钮.
+- [x] 新建 `src/hooks/useDismissableLayer.ts`: 外部 `pointerdown` 关闭、Esc 关闭并把焦点还给触发按钮; 写法参照 `WifiConnect.tsx:40-55`.
+- [x] 新建 `src/components/files/BookmarkEditor.tsx`: 色板 `radiogroup`、设为起始目录、取消收藏.
+- [x] 新建 `src/components/files/BookmarkStar.tsx`: `variant: "toolbar" | "details"`; 未收藏点击直接收藏, 已收藏点击弹出 `BookmarkEditor`.
+- [x] `DeviceFileManager.tsx`: 路径栏在复制按钮前插入星标; 详情面板选中目录时插入详情外观的星标按钮.
+- [x] 文案: `tools-zh-CN.ts` / `tools-en.ts` 加 `files.bookmarks.*`.
+- [x] 组件测试 (`renderToStaticMarkup`): 未收藏 / 已收藏无色 / 已收藏有色三种星标的 `aria-haspopup` / `aria-expanded`、`aria-label` 和颜色类名; 编辑面板色板选中项、起始目录按钮状态. 选中文件时没有收藏按钮依赖组件内部选择状态, 静态渲染测不到, 由浏览器冒烟覆盖.
 
 验证:
 
