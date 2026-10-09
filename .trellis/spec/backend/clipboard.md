@@ -21,6 +21,7 @@
 - Run `adb -s SERIAL shell -T -e none` with a generated fixed command containing `toybox timeout -s KILL 8 app_process`. Bound host input/output/wait to 10 seconds; consume all pipes concurrently with bounded buffers and reap terminated host children.
 - Use shell UID 2000, package/opPackage `com.android.shell`, and matching AttributionSource on API 31+. Instantiate ClipboardManager with the shell wrapper context; delegated `getSystemService` would retain system attribution.
 - Reject locked devices and non-primary users. Read only `ClipData.Item.getText`; do not resolve URIs. Require set readback equality. Never retry an already-submitted set, even after response loss.
+- Read back even when `setPrimaryClip` throws, because some ROMs store the clip and then throw. Matching text is success; a mismatch rethrows the submit error; a readback that itself throws reports `readback` (`clipboard.readbackFailed`).
 - Preserve the original app-info parser and read-only retry behavior. Share deployment, not its long-running query lock.
 
 ## 4. Validation & Error Matrix
@@ -28,7 +29,8 @@
 - Empty/no-text -> preserve destination and show explicit feedback.
 - Locked/permission/identity/non-primary user -> reject; never change permissions or unlock automatically.
 - Unknown/invalid version, wrong result kind, missing/duplicate marker, trailing JSON or nonzero successful envelope -> fail without echoing raw stdout/stderr.
-- Lost set response -> report unconfirmed result; do not promise rollback or resubmit.
+- Lost set response, `unverified` or `readback` -> report unconfirmed result (`clipboard.writeUnconfirmed` with the cause); do not promise rollback or resubmit.
+- Explicit helper rejection on set (locked, user, permission/identity, no_text, too_large, request/version, unsupported) -> return that code directly; it proves the text was not stored, so it is not "unconfirmed".
 - Missing remote DEX -> publish through the shared deployment service; deployment failure -> no helper execution.
 
 ## 5. Good/Base/Bad Cases

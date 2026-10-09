@@ -146,6 +146,7 @@ export const BACKEND_ERROR_PARAMS = {
   "clipboard.permission": {},
   "clipboard.deviceNoText": {},
   "clipboard.unverified": {},
+  "clipboard.readbackFailed": {},
   "clipboard.protocol": {},
   "clipboard.unsupported": {},
   "adb.executeFailed": {},
