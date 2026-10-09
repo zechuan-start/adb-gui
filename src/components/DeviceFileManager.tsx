@@ -35,6 +35,12 @@ import {
 } from "lucide-react";
 import { getDeviceBySerial, isOnlineDevice } from "@/lib/device";
 import {
+  BOOKMARK_COLOR_TEXT,
+  fileBookmarkMap,
+  type BookmarkColor,
+  type FileBookmark,
+} from "@/lib/fileBookmarks";
+import {
   buildDeviceBreadcrumbs,
   createDeviceFileManagerState,
   deviceFileManagerReducer,
@@ -67,6 +73,7 @@ import {
   type DeviceFileEntry,
 } from "@/lib/tauri";
 import { useDeviceStore } from "@/store/device";
+import { useFileBookmarkStore } from "@/store/fileBookmarks";
 import { useFeedbackStore } from "@/store/feedback";
 import { cn } from "@/lib/utils";
 import { requireSettings, useSettingsStore } from "@/store/settings";
@@ -92,6 +99,8 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
   const devices = useDeviceStore((state) => state.devices);
   const selectedDevice = useDeviceStore((state) => state.selectedDevice);
   const showToast = useFeedbackStore((state) => state.showToast);
+  const bookmarks = useFileBookmarkStore((state) => state.bookmarks);
+  const bookmarkByPath = useMemo(() => fileBookmarkMap(bookmarks), [bookmarks]);
   const device = getDeviceBySerial(devices, selectedDevice);
   const onlineSerial = device && isOnlineDevice(device) ? device.serial : null;
   const operationContextRef = useRef<DeviceOperationContext>({
@@ -129,6 +138,8 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
     [contextMatches, visibleEntries, state.selectedPath],
   );
   const breadcrumbs = useMemo(() => buildDeviceBreadcrumbs(visiblePath), [visiblePath]);
+  const selectedBookmark =
+    selectedEntry?.kind === "directory" ? bookmarkByPath.get(selectedEntry.path) ?? null : null;
   const handleSortColumn = useCallback(
     (column: FileSortBy) => {
       if (preferences.sortBy === column) {
@@ -699,6 +710,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
           sortDisabled={!settingsAvailable}
           onSortColumn={handleSortColumn}
           selectedPath={contextMatches ? state.selectedPath : null}
+          bookmarkByPath={bookmarkByPath}
           loading={directoryLoading}
           loaded={directoryLoaded}
           error={contextMatches ? state.listError : null}
@@ -711,6 +723,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
         <aside className="flex min-h-0 flex-col border-l border-rule bg-surface2">
           <DeviceFileDetails
             entry={selectedEntry}
+            bookmark={selectedBookmark}
             preview={state.preview}
             disabled={controlsDisabled}
             onCopyPath={handleCopyPath}
@@ -800,6 +813,7 @@ interface DeviceFileListProps {
   sortDisabled: boolean;
   onSortColumn: (column: FileSortBy) => void;
   selectedPath: string | null;
+  bookmarkByPath: ReadonlyMap<string, FileBookmark>;
   loading: boolean;
   loaded: boolean;
   error: AppErrorPayload | null;
@@ -820,6 +834,7 @@ function DeviceFileList({
   sortDisabled,
   onSortColumn,
   selectedPath,
+  bookmarkByPath,
   loading,
   loaded,
   error,
@@ -903,7 +918,12 @@ function DeviceFileList({
                 style={{ height: virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}
               >
                 <span className="flex min-w-0 items-center gap-2">
-                  <DeviceEntryIcon entry={entry} />
+                  <DeviceEntryIcon
+                    entry={entry}
+                    bookmarkColor={
+                      entry.kind === "directory" ? bookmarkByPath.get(entry.path)?.color ?? null : null
+                    }
+                  />
                   <span className="truncate font-medium text-ink">{entry.name}</span>
                 </span>
                 <span className="truncate text-ink3">{deviceFileTypeLabel(entry, t)}</span>
@@ -1002,9 +1022,15 @@ function CenteredState({ icon, text }: { icon: ReactNode; text: string }) {
   );
 }
 
-function DeviceEntryIcon({ entry }: { entry: DeviceFileEntry }) {
+function DeviceEntryIcon({
+  entry,
+  bookmarkColor = null,
+}: {
+  entry: DeviceFileEntry;
+  bookmarkColor?: BookmarkColor | null;
+}) {
   if (entry.kind === "directory") {
-    return <Folder className="h-4 w-4 shrink-0 text-note" />;
+    return <BookmarkFolderIcon color={bookmarkColor} className="h-4 w-4 shrink-0" />;
   }
   if (entry.kind === "symlink") {
     return <Link className="h-4 w-4 shrink-0 text-ink3" />;
@@ -1015,8 +1041,29 @@ function DeviceEntryIcon({ entry }: { entry: DeviceFileEntry }) {
   return <File className="h-4 w-4 shrink-0 text-ink3" />;
 }
 
+// A colored bookmark is a filled folder, so it differs from a plain folder in
+// shape as well as hue. Colorless bookmarks keep the plain outline.
+function BookmarkFolderIcon({
+  color,
+  className,
+}: {
+  color: BookmarkColor | null;
+  className: string;
+}) {
+  return color ? (
+    <Folder
+      className={cn(className, BOOKMARK_COLOR_TEXT[color])}
+      fill="currentColor"
+      fillOpacity={0.85}
+    />
+  ) : (
+    <Folder className={cn(className, "text-note")} />
+  );
+}
+
 interface DeviceFileDetailsProps {
   entry: DeviceFileEntry | null;
+  bookmark: FileBookmark | null;
   preview: {
     loading: boolean;
     data: { data_url: string } | null;
@@ -1030,6 +1077,7 @@ interface DeviceFileDetailsProps {
 
 function DeviceFileDetails({
   entry,
+  bookmark,
   preview,
   disabled,
   onCopyPath,
@@ -1049,7 +1097,7 @@ function DeviceFileDetails({
       ) : (
         <>
           <div className="flex min-w-0 items-start gap-2">
-            <DeviceEntryIcon entry={entry} />
+            <DeviceEntryIcon entry={entry} bookmarkColor={bookmark?.color ?? null} />
             <div className="min-w-0 flex-1">
               <h2 className="break-all text-sm font-semibold text-ink">{entry.name}</h2>
               <div className="mt-1 font-data text-[10.5px] text-ink3">{deviceFileTypeLabel(entry, t)}</div>
@@ -1066,7 +1114,7 @@ function DeviceFileDetails({
                 className="max-h-full max-w-full object-contain"
               />
             ) : entry.kind === "directory" ? (
-              <Folder className="h-14 w-14 text-note" />
+              <BookmarkFolderIcon color={bookmark?.color ?? null} className="h-14 w-14" />
             ) : entry.previewable ? (
               <div className="px-4 text-center text-xs text-ink3">
                 {preview.error ? errorText(preview.error, t) : t.files.deviceFileManager.imagePreviewUnavailable}

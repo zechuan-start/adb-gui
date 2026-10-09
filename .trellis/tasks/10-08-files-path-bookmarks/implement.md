@@ -42,9 +42,9 @@ corepack pnpm test
 
 ## 3. 色板与文件列表上色
 
-- [ ] `src/index.css`: `@theme static` 与 `.dark` 各加 5 个 `--color-tag-*`.
-- [ ] `DeviceFileManager.tsx`: 订阅收藏 store, 建 `Map<path, FileBookmark>`; `DeviceEntryIcon` 加 `bookmarkColor`, 有颜色时实心 + `text-tag-*`.
-- [ ] 不改行高 (`estimateSize` 仍为 38), 不改选中行样式.
+- [x] `src/index.css`: `@theme static` 与 `.dark` 各加 5 个 `--color-tag-*`.
+- [x] `DeviceFileManager.tsx`: 订阅收藏 store, 建 `Map<path, FileBookmark>`; `DeviceEntryIcon` 加 `bookmarkColor`, 有颜色时实心 + `text-tag-*`.
+- [x] 不改行高 (`estimateSize` 仍为 38), 不改选中行样式.
 
 验证:
 
