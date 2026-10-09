@@ -3,7 +3,7 @@ import { toAppError, type AppErrorPayload } from "@/i18n/errors";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileUp } from "lucide-react";
 import { useDeviceStore } from "@/store/device";
-import { useFeedbackStore } from "@/store/feedback";
+import { useFeedbackStore, type ToastKind } from "@/store/feedback";
 import { getDeviceBySerial, isOnlineDevice } from "@/lib/device";
 import { installApk, isTauriRuntime, onDragDrop, pickApkFile } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
@@ -37,6 +37,8 @@ export function ApkTool({ active = true }: ApkToolProps) {
   const [status, setStatus] = useState<Message | AppErrorPayload | null>(null);
 
   listenerEnabledRef.current = active && online;
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   const fileName = useMemo(() => currentFile.split(/[\\/]/).pop() ?? "", [currentFile]);
   const dropHint = useMemo(() => {
@@ -47,19 +49,30 @@ export function ApkTool({ active = true }: ApkToolProps) {
     return t.apps.appManager.dropAnAPKIntoThisWindow;
   }, [busy, dragState, online, t]);
 
+  // The result renders in the status line; only toast when this tool is out of
+  // view, such as an install finishing after the user switched panes.
+  const report = useCallback(
+    (kind: ToastKind, message: Message | AppErrorPayload) => {
+      setStatus(() => message);
+      if (!activeRef.current) {
+        showToast(kind, message);
+      }
+    },
+    [showToast],
+  );
+
   const handleInstall = useCallback(
     async (path: string) => {
       if (busyRef.current) {
         showToast("error", (t) => (t.apps.appManager.installingAPKPleaseWait));
         return;
       }
-      // Results render in the status line below; no toast.
       if (!isApkPath(path)) {
-        setStatus(() => (t: Parameters<Message>[0]) => t.apps.appManager.onlyAPKFilesAreSupported);
+        report("error", (t) => t.apps.appManager.onlyAPKFilesAreSupported);
         return;
       }
       if (!device || !isOnlineDevice(device)) {
-        setStatus(() => (t: Parameters<Message>[0]) => t.apps.appManager.selectAnOnlineDeviceFirstLabel);
+        report("error", (t) => t.apps.appManager.selectAnOnlineDeviceFirstLabel);
         return;
       }
 
@@ -68,32 +81,31 @@ export function ApkTool({ active = true }: ApkToolProps) {
       setCurrentFile(path);
       setStatus(() => (t: Parameters<Message>[0]) => t.apps.appManager.installing);
       try {
-        const message = installMessage(await installApk(device.serial, path));
-        setStatus(() => message);
+        report("success", installMessage(await installApk(device.serial, path)));
       } catch (error) {
-        setStatus(() => toAppError(error));
+        report("error", toAppError(error));
       } finally {
         busyRef.current = false;
         setBusy(false);
       }
     },
-    [device, showToast],
+    [device, report, showToast],
   );
 
   const handleDroppedPaths = useCallback(
     (paths: string[]) => {
       const apkPaths = paths.filter(isApkPath);
       if (apkPaths.length === 0) {
-        setStatus(() => (t: Parameters<Message>[0]) => t.apps.appManager.onlyAPKFilesAreSupported);
+        report("error", (t) => t.apps.appManager.onlyAPKFilesAreSupported);
         return;
       }
       if (apkPaths.length > 1) {
-        setStatus(() => (t: Parameters<Message>[0]) => t.apps.appManager.installOneAPKAtATime);
+        report("error", (t) => t.apps.appManager.installOneAPKAtATime);
         return;
       }
       void handleInstall(apkPaths[0]);
     },
-    [handleInstall],
+    [handleInstall, report],
   );
 
   const handlePick = useCallback(async () => {
@@ -103,9 +115,9 @@ export function ApkTool({ active = true }: ApkToolProps) {
         await handleInstall(selected);
       }
     } catch (error) {
-      setStatus(() => toAppError(error));
+      report("error", toAppError(error));
     }
-  }, [handleInstall]);
+  }, [handleInstall, report]);
 
   useEffect(() => {
     if (!active || !online || !isTauriRuntime()) {

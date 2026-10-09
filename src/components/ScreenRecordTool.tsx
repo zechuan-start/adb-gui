@@ -1,5 +1,5 @@
 import { errorText, useT } from "@/i18n";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Clock,
   FolderOpen,
@@ -39,6 +39,8 @@ export function ScreenRecordTool({ active = true }: { active?: boolean }) {
   const selectedDevice = useDeviceStore((state) => state.selectedDevice);
   const device = getDeviceBySerial(devices, selectedDevice);
   const online = Boolean(device && isOnlineDevice(device));
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const [view, setView] = useState<RecordingView>({
     status: IDLE_RECORDING,
     busy: null,
@@ -59,14 +61,24 @@ export function ScreenRecordTool({ active = true }: { active?: boolean }) {
       choosePath: pickRecordingSavePath,
       confirmDiscard: confirmDiscardRecording,
       onChange: setView,
+      // Errors render inline in this tool; only toast when it is out of view,
+      // such as a background auto-save failing while another pane is open.
+      onError: (message) => {
+        if (!activeRef.current) {
+          useFeedbackStore.getState().showToast("error", message);
+        }
+      },
       onSaved: (result, behavior) => {
         const openFailed = behavior.openAfterSave && !result.opened;
-        // A source-cleanup failure renders inline under the saved path; no toast.
+        const cleanupError = activeRef.current ? null : result.source_cleanup_error;
         useFeedbackStore.getState().showToast(
-          openFailed ? "error" : "success",
+          cleanupError || openFailed ? "error" : "success",
           (t) => t.tools.screenRecordTool.recordingSaved({
             path: result.path,
-            warnings: openFailed ? [t.tools.screenRecordTool.couldNotOpenVideoAutomatically] : [],
+            warnings: [
+              cleanupError ? errorText(cleanupError, t) : null,
+              openFailed ? t.tools.screenRecordTool.couldNotOpenVideoAutomatically : null,
+            ].filter((warning): warning is string => warning !== null),
           }),
         );
       },

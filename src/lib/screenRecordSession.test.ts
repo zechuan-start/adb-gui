@@ -65,6 +65,7 @@ function setup() {
     }),
     onSaved: vi.fn(),
     onDiscarded: vi.fn(),
+    onError: vi.fn(),
   };
   const controller = createRecordingController(deps);
   controller.bindSerial("device-a");
@@ -162,7 +163,7 @@ describe("recording session actions", () => {
     await saving;
     expect(deps.save).not.toHaveBeenCalled();
     expect(view().status.session_id).toBe("new");
-    expect(view().error).toEqual(
+    expect(deps.onError).toHaveBeenCalledWith(
       expect.objectContaining({ code: "recording_session_changed" }),
     );
   });

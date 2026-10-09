@@ -465,8 +465,13 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
         if (!isDeviceOperationContextCurrent(operationContextRef.current, operationContext)) {
           return;
         }
-        // The transfer panel renders this error inline; no toast.
-        dispatch({ type: "transfer-item-error", serial, index: 0, error: toAppError(error) });
+        const message = toAppError(error);
+        dispatch({ type: "transfer-item-error", serial, index: 0, error: message });
+        // The transfer panel renders this error inline, but re-entering the pane
+        // resets it, so only toast when the failure lands out of view.
+        if (!activeRef.current) {
+          showToast("error", (t) => (t.files.deviceFileManager.couldNotDownloadFile({ detail: errorText(message, t) })));
+        }
       } finally {
         if (isDeviceOperationContextCurrent(operationContextRef.current, operationContext)) {
           dispatch({ type: "transfer-finish", serial });

@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { errorIdentity, type AppErrorPayload } from "@/i18n/errors";
+import { useEffect, useRef } from "react";
 import { createDeviceMetricsSessionController } from "@/hooks/deviceMetricsSessionController";
 import { getDeviceBySerial } from "@/lib/device";
 import { getDeviceMetricsKey } from "@/lib/deviceMetrics";
@@ -11,6 +12,7 @@ import {
 } from "@/lib/tauri";
 import { useDeviceStore } from "@/store/device";
 import { useDeviceMetricsStore } from "@/store/deviceMetrics";
+import { useFeedbackStore } from "@/store/feedback";
 import { useSettingsStore } from "@/store/settings";
 
 export function useDeviceMetricsSession(active: boolean): void {
@@ -19,6 +21,10 @@ export function useDeviceMetricsSession(active: boolean): void {
   const backgroundEnabled = useSettingsStore((state) => state.available && state.preferences.performance.backgroundEnabled);
   const paused = useDeviceMetricsStore((state) => state.paused);
   const restartNonce = useDeviceMetricsStore((state) => state.restartNonce);
+  const showToast = useFeedbackStore((state) => state.showToast);
+  const lastErrorRef = useRef("");
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const selected = getDeviceBySerial(devices, selectedDevice);
   const onlineDevice = selected?.state === "device" ? selected : null;
   const onlineSerial = onlineDevice?.serial ?? null;
@@ -34,6 +40,19 @@ export function useDeviceMetricsSession(active: boolean): void {
       return;
     }
 
+    // The performance panel renders these errors inline; only toast when the
+    // panel is out of view, once per distinct error.
+    function reportOutOfView(error: AppErrorPayload): void {
+      const key = errorIdentity(error);
+      if (lastErrorRef.current === key) {
+        return;
+      }
+      lastErrorRef.current = key;
+      if (!activeRef.current) {
+        showToast("error", error);
+      }
+    }
+
     const store = useDeviceMetricsStore.getState();
     store.markStarting(deviceKey, onlineSerial);
     const controller = createDeviceMetricsSessionController(onlineSerial, {
@@ -42,6 +61,7 @@ export function useDeviceMetricsSession(active: boolean): void {
       start: startDeviceMetrics,
       stop: stopDeviceMetrics,
       onStarted: (session) => {
+        lastErrorRef.current = "";
         useDeviceMetricsStore
           .getState()
           .beginSession(deviceKey, onlineSerial, session.session_id);
@@ -49,15 +69,12 @@ export function useDeviceMetricsSession(active: boolean): void {
       onFrame: (frame) => {
         useDeviceMetricsStore.getState().acceptFrame(frame);
       },
-      // The performance panel renders these errors inline; no toast.
       onExit: (exit) => {
-        useDeviceMetricsStore.getState().acceptExit(
-          exit.serial,
-          exit.session_id,
-          exit.detail
-            ? { code: "metrics_stopped", causes: [exit.detail] }
-            : { code: "metrics_stopped", detail: exit.reason },
-        );
+        const error: AppErrorPayload = exit.detail
+          ? { code: "metrics_stopped", causes: [exit.detail] }
+          : { code: "metrics_stopped", detail: exit.reason };
+        useDeviceMetricsStore.getState().acceptExit(exit.serial, exit.session_id, error);
+        reportOutOfView(error);
       },
       onStopped: (session) => {
         useDeviceMetricsStore
@@ -65,9 +82,9 @@ export function useDeviceMetricsSession(active: boolean): void {
           .markStopped(session.serial, session.session_id);
       },
       onStartFailure: (detail) => {
-        useDeviceMetricsStore
-          .getState()
-          .failStart(deviceKey, onlineSerial, { code: "metrics_start", causes: [detail] });
+        const error: AppErrorPayload = { code: "metrics_start", causes: [detail] };
+        useDeviceMetricsStore.getState().failStart(deviceKey, onlineSerial, error);
+        reportOutOfView(error);
       },
       onAsyncError: (error) => {
         console.error("Failed to stop device metrics session", error);
@@ -76,5 +93,5 @@ export function useDeviceMetricsSession(active: boolean): void {
 
     void controller.run();
     return controller.dispose;
-  }, [deviceKey, enabled, onlineSerial, restartNonce]);
+  }, [deviceKey, enabled, onlineSerial, restartNonce, showToast]);
 }

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import type { AppErrorPayload } from "@/i18n/errors";
 import { createLogcatStreamController } from "@/hooks/logcatStreamController";
 import { LOGCAT_CAPACITY } from "@/lib/logcat";
 import { getDeviceBySerial } from "@/lib/device";
@@ -9,7 +10,9 @@ import {
   stopLogcat,
 } from "@/lib/tauri";
 import { useDeviceStore } from "@/store/device";
+import { useFeedbackStore } from "@/store/feedback";
 import { useLogcatStore } from "@/store/logcat";
+import { useUiStore } from "@/store/ui";
 
 export function useLogcatStream(): void {
   const devices = useDeviceStore((state) => state.devices);
@@ -85,8 +88,14 @@ export function useLogcatStream(): void {
         if (!isCurrentGeneration()) {
           return;
         }
-        // The disconnect banner renders this error inline; no toast.
-        useLogcatStore.getState().failStart({ code: "logcat_start", causes: [detail] });
+        const failure: AppErrorPayload = { code: "logcat_start", causes: [detail] };
+        useLogcatStore.getState().failStart(failure);
+        // The disconnect banner renders this error inline; only toast while the
+        // log panel is closed for the active pane.
+        const { activePane, logOpenByPane } = useUiStore.getState();
+        if (!logOpenByPane[activePane]) {
+          useFeedbackStore.getState().showToast("error", failure);
+        }
       },
       onAsyncError: console.error,
     });

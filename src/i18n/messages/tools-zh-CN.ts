@@ -408,6 +408,8 @@ export const toolMessagesZh = {
       couldNotChooseUploadFiles: ({ detail }: { detail: string }) =>
         `选择上传文件失败: ${detail}`,
       fileSavedTo: ({ path }: { path: string }) => `文件已保存到 ${path}`,
+      couldNotDownloadFile: ({ detail }: { detail: string }) =>
+        `下载文件失败: ${detail}`,
       couldNotChooseSaveLocation: ({ detail }: { detail: string }) =>
         `选择保存位置失败: ${detail}`,
       pathCopied: "路径已复制",
