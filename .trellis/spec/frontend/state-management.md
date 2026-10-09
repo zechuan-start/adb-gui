@@ -22,6 +22,7 @@
 | `useCodeGeneratorStore` | `store/codeGenerator.ts` | 生码正文、正文修订版本和最近一次生成快照 (无持久化); 长期参数由 useSettingsStore.codegen 唯一持有 |
 | `useLogcatStore` | `store/logcat.ts` | Logcat session identity, ring buffer, incremental filter index, and stream state |
 | `useUiStore` | `store/ui.ts` | Active pane, per-pane Logcat visibility and height, tool module order; persisted under `adb-gui-ui` |
+| `useFileBookmarkStore` | `store/fileBookmarks.ts` | File pane directory bookmarks and their colors, shared by every device; persisted under `adb-gui-file-bookmarks` |
 
 ---
 
@@ -120,6 +121,28 @@ Identity lives in `lib/toolLayout.ts`, not in the registry module that imports t
 Setters short-circuit an unchanged order (`sameToolOrder`): a header click commits the order it started with, a reset may run on the default order, and every accepted write notifies the layout-animation subscriber and rewrites `localStorage`.
 
 Tests must cover the initial default, a round trip through storage, each dirty-data row above, the reset action, and that an equal write keeps the same array reference.
+
+### Persisted File Bookmarks
+
+Bookmarks are user data, not a preference or layout state, so they have their own key `adb-gui-file-bookmarks` (persist `version: 1`). Keep them out of `lib/settings.ts`, whose section reset and "restore all defaults" would delete them, and out of `adb-gui-ui`. The settings dialog has no bookmark row, and no reset plan touches the store.
+
+`FileBookmark = { path: string; color: BookmarkColor | null }`. The array order is the display order; new bookmarks append with `color: null`. Paths are compared as the lexically normalized strings the backend returns (`normalize_device_path` rules mirrored by `normalizeBookmarkPath`); symlinks are not resolved.
+
+`reconcileFileBookmarks(persisted: unknown) -> FileBookmark[]` is the only entry point on the persistence boundary and never throws:
+
+| Input | Result |
+| --- | --- |
+| Not an array | `[]` |
+| Element not an object, `path` not a string, relative, NUL-bearing or above the root | Drop that element only |
+| Path with duplicate slashes, `.`, `..` or a trailing slash | Keep its normalized form |
+| `color` outside `BOOKMARK_COLORS` | Keep the bookmark with `color: null` |
+| Duplicate normalized path | Keep the first occurrence |
+
+Unlike `reconcileToolOrder`, a bad element never discards the whole list: losing every bookmark for one damaged record is worse than keeping the valid ones.
+
+`addFileBookmark`, `removeFileBookmark` and `setFileBookmarkColor` return the input array when nothing changes, and the store returns its current state for such an update so zustand notifies no subscriber. Components index the list with `fileBookmarkMap` inside a `useMemo` keyed on the array, so a file list row looks up its bookmark in constant time.
+
+Tests must cover each dirty-data row above, a restart round trip in order, that no other storage key is written, and that a no-op add, color or remove notifies nobody.
 
 ---
 

@@ -35,6 +35,7 @@ src/
 │   │   └── LogcatViewMenu.tsx
 │   ├── ActivityMonitor.tsx
 │   ├── DeviceFileManager.tsx # Device directory, transfer, and image preview workspace
+│   ├── files/            # File pane bookmark star, list, editor and shared button classes
 │   ├── CodeGeneratorPage.tsx # QR / Code 128 batch workspace
 │   ├── GeneratedCodeCanvas.tsx # Local canvas encoder boundary
 │   ├── ToastBar.tsx
@@ -64,6 +65,7 @@ src/
     ├── device.ts         # 设备状态 (devices, selectedDevice, activity)
     ├── feedback.ts       # Toast 通知状态
     ├── logcat.ts         # Logcat 会话, 数据窗口与交互状态
+    ├── fileBookmarks.ts  # 文件页目录收藏 (全设备共用, 独立持久化)
     └── theme.ts          # 主题状态
 ```
 
