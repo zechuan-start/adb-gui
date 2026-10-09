@@ -11,10 +11,10 @@ corepack pnpm test
 
 ## 1. 收藏数据与持久化
 
-- [ ] 新建 `src/lib/fileBookmarks.ts`: `BOOKMARK_COLORS`、`BookmarkColor`、`FileBookmark`、`BOOKMARK_COLOR_TEXT`、`normalizeBookmarkPath`、`reconcileFileBookmarks`、`addFileBookmark`、`removeFileBookmark`、`setFileBookmarkColor`、`fileBookmarkName`.
-- [ ] 新建 `src/lib/fileBookmarks.test.ts`.
-- [ ] 新建 `src/store/fileBookmarks.ts`: `useFileBookmarkStore`, persist key `adb-gui-file-bookmarks`, `version: 1`, `partialize` + `merge`.
-- [ ] 新建 `src/store/fileBookmarks.test.ts` (参照 `src/store/ui.test.ts` 的 localStorage 写法).
+- [x] 新建 `src/lib/fileBookmarks.ts`: `BOOKMARK_COLORS`、`BookmarkColor`、`FileBookmark`、`BOOKMARK_COLOR_TEXT`、`normalizeBookmarkPath`、`reconcileFileBookmarks`、`addFileBookmark`、`removeFileBookmark`、`setFileBookmarkColor`、`fileBookmarkName`.
+- [x] 新建 `src/lib/fileBookmarks.test.ts`.
+- [x] 新建 `src/store/fileBookmarks.ts`: `useFileBookmarkStore`, persist key `adb-gui-file-bookmarks`, `version: 1`, `partialize` + `merge`.
+- [x] 新建 `src/store/fileBookmarks.test.ts` (参照 `src/store/ui.test.ts` 的 localStorage 写法).
 
 测试必须覆盖:
 
