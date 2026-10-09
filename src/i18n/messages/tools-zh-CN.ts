@@ -432,6 +432,8 @@ export const toolMessagesZh = {
       uploadFiles: "上传文件",
       settings: "设置",
       openDownloadsFolder: "打开下载目录",
+      startDirectoryFallback: ({ path }: { path: string }) =>
+        `起始目录 ${path} 在这台设备上打不开, 已打开下载目录.`,
       directoryName: "目录名称",
       newDirectoryName: "新目录名称",
       create: "创建",

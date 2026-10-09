@@ -68,10 +68,10 @@ corepack pnpm test
 
 ## 5. 收藏下拉列表与起始目录回退接入
 
-- [ ] 新建 `src/components/files/BookmarkMenu.tsx`: 触发按钮放在 Home 右边; 浮层用 `dropdownPlacement`; 列表视图 / 编辑视图切换; 空状态; 键盘 方向键 / Home / End / Enter / Esc.
-- [ ] 跳转调用 `loadDirectory(onlineSerial, bookmark.path)`, 不带回退; 无在线设备或忙碌时跳转项禁用, 编辑仍可用.
-- [ ] `DeviceFileManager.tsx`: `loadDirectory` 增加选项参数; `loadStartDirectory` 传 `fallbackToDefault: startDirectory !== null`; 渲染回退提示条 (带 "设置" 按钮).
-- [ ] 文案: `files.deviceFileManager.startDirectoryFallback({ path })`.
+- [x] 新建 `src/components/files/BookmarkMenu.tsx`: 触发按钮放在 Home 右边; 浮层用 `dropdownPlacement`; 列表视图 / 编辑视图切换; 空状态; 键盘 方向键 / Home / End / Enter / Esc.
+- [x] 跳转调用 `loadDirectory(onlineSerial, bookmark.path)`, 不带回退; 无在线设备或忙碌时跳转项禁用, 编辑仍可用.
+- [x] `DeviceFileManager.tsx`: `loadDirectory` 增加选项参数; `loadStartDirectory` 传 `fallbackToDefault: startDirectory !== null`; 渲染回退提示条 (带 "设置" 按钮).
+- [x] 文案: `files.deviceFileManager.startDirectoryFallback({ path })`.
 
 验证:
 

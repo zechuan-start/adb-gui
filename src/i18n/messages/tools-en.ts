@@ -447,6 +447,8 @@ export const toolMessagesEn = {
       uploadFiles: "Upload files",
       settings: "Settings",
       openDownloadsFolder: "Open downloads folder",
+      startDirectoryFallback: ({ path }: { path: string }) =>
+        `Start directory ${path} is not available on this device, so the downloads folder was opened.`,
       directoryName: "Directory name",
       newDirectoryName: "New directory name",
       create: "Create",

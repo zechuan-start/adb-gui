@@ -29,15 +29,17 @@ import {
   Link,
   LoaderCircle,
   RefreshCw,
+  TriangleAlert,
   Upload,
   X,
   XCircle,
 } from "lucide-react";
+import { BookmarkFolderIcon } from "@/components/files/BookmarkFolderIcon";
+import { BookmarkMenu } from "@/components/files/BookmarkMenu";
 import { BookmarkStar } from "@/components/files/BookmarkStar";
 import { commandButtonClass, iconButtonClass } from "@/components/files/buttonClasses";
 import { getDeviceBySerial, isOnlineDevice } from "@/lib/device";
 import {
-  BOOKMARK_COLOR_TEXT,
   fileBookmarkMap,
   type BookmarkColor,
   type FileBookmark,
@@ -55,6 +57,7 @@ import {
   isDeviceDirectoryViewLoading,
   isDeviceOperationContextCurrent,
   isDeviceTransferBusy,
+  isUnavailableStartDirectoryError,
   localFileName,
   projectDeviceFiles,
   updateDeviceOperationContext,
@@ -88,6 +91,14 @@ import {
 import { useUiStore } from "@/store/ui";
 
 type FileSortBy = FilePreferences["sortBy"];
+
+interface LoadDirectoryOptions {
+  // Open the default directory when this start directory is missing or
+  // unreadable. Only automatic start-directory loads pass it.
+  fallbackToDefault?: boolean;
+  // Keep the fallback notice through the default-directory load it explains.
+  keepStartFallback?: boolean;
+}
 
 interface DeviceFileManagerProps {
   active?: boolean;
@@ -176,30 +187,49 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
   }, [onlineSerial]);
 
   const loadDirectory = useCallback(
-    async (serial: string, path: string | null) => {
-      const requestId = ++listRequestRef.current;
-      if (path !== null) dispatch({ type: "set-path-draft", value: path });
-      dispatch({ type: "list-start", serial, requestId });
-      try {
-        const listing = await listDeviceDirectory(serial, path);
-        if (!activeRef.current || requestId !== listRequestRef.current) {
-          return;
+    (serial: string, path: string | null, options: LoadDirectoryOptions = {}) => {
+      async function load(target: string | null, loadOptions: LoadDirectoryOptions): Promise<void> {
+        const requestId = ++listRequestRef.current;
+        if (target !== null) dispatch({ type: "set-path-draft", value: target });
+        dispatch({
+          type: "list-start",
+          serial,
+          requestId,
+          keepStartFallback: loadOptions.keepStartFallback,
+        });
+        try {
+          const listing = await listDeviceDirectory(serial, target);
+          if (!activeRef.current || requestId !== listRequestRef.current) {
+            return;
+          }
+          dispatch({ type: "list-success", serial, requestId, listing });
+        } catch (error) {
+          // A stale request must not fall back either, or a quick device switch
+          // would open the default directory on the device that replaced it.
+          if (!activeRef.current || requestId !== listRequestRef.current) {
+            return;
+          }
+          const failure = toAppError(error);
+          if (loadOptions.fallbackToDefault && target !== null && isUnavailableStartDirectoryError(failure)) {
+            dispatch({ type: "start-fallback", serial, requestId, path: target, error: failure });
+            await load(null, { keepStartFallback: true });
+            return;
+          }
+          // The list renders this error inline with retry actions; no toast.
+          dispatch({ type: "list-error", serial, requestId, error: failure });
         }
-        dispatch({ type: "list-success", serial, requestId, listing });
-      } catch (error) {
-        if (!activeRef.current || requestId !== listRequestRef.current) {
-          return;
-        }
-        // The list renders this error inline with retry actions; no toast.
-        dispatch({ type: "list-error", serial, requestId, error: toAppError(error) });
       }
+
+      return load(path, options);
     },
     [],
   );
 
   const loadStartDirectory = useCallback((serial: string) => {
     try {
-      void loadDirectory(serial, requireSettings().files.startDirectory);
+      const startDirectory = requireSettings().files.startDirectory;
+      // A null start directory is already the default, so nothing to fall back to.
+      void loadDirectory(serial, startDirectory, { fallbackToDefault: startDirectory !== null });
     } catch (error) {
       const requestId = ++listRequestRef.current;
       dispatch({ type: "list-start", serial, requestId });
@@ -588,6 +618,11 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
         >
           <Home className="h-4 w-4" />
         </button>
+        <BookmarkMenu
+          currentPath={visiblePath || null}
+          navigationDisabled={!onlineSerial || operationBusy || transferBusy || folderBusy}
+          onNavigate={(path) => onlineSerial && void loadDirectory(onlineSerial, path)}
+        />
         <button
           type="button"
           onClick={() => onlineSerial && state.parent && void loadDirectory(onlineSerial, state.parent)}
@@ -696,6 +731,25 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
         <span className="min-w-0 flex-1 break-words">{errorText(settingsError, t)}</span>
         <button type="button" className="shrink-0 border border-rule px-2 py-1" onClick={() => useUiStore.getState().openSettings("files")}>{t.files.deviceFileManager.settings}</button>
       </div>}
+      {contextMatches && state.startFallback && (
+        <div
+          role="status"
+          title={errorText(state.startFallback.error, t)}
+          className="flex shrink-0 items-center gap-2 border-b border-warn bg-warn-band px-3 py-2 text-xs text-warn"
+        >
+          <TriangleAlert className="h-4 w-4 shrink-0" />
+          <span className="min-w-0 flex-1 break-words">
+            {t.files.deviceFileManager.startDirectoryFallback({ path: state.startFallback.path })}
+          </span>
+          <button
+            type="button"
+            className="shrink-0 border border-rule px-2 py-1 text-ink"
+            onClick={() => useUiStore.getState().openSettings("files")}
+          >
+            {t.files.deviceFileManager.settings}
+          </button>
+        </div>
+      )}
       {contextMatches && state.listError && onlineSerial && <div className="flex shrink-0 gap-2 border-b border-rule px-3 py-2 text-xs">
         <button type="button" disabled={state.listLoading || operationBusy || transferBusy || folderBusy}
           className={commandButtonClass} onClick={() => state.pathDraft ? void loadDirectory(onlineSerial, state.pathDraft) : loadStartDirectory(onlineSerial)}><RefreshCw className="h-3.5 w-3.5" />{t.common.retry}</button>
@@ -1042,26 +1096,6 @@ function DeviceEntryIcon({
     return <FileImage className="h-4 w-4 shrink-0 text-ok" />;
   }
   return <File className="h-4 w-4 shrink-0 text-ink3" />;
-}
-
-// A colored bookmark is a filled folder, so it differs from a plain folder in
-// shape as well as hue. Colorless bookmarks keep the plain outline.
-function BookmarkFolderIcon({
-  color,
-  className,
-}: {
-  color: BookmarkColor | null;
-  className: string;
-}) {
-  return color ? (
-    <Folder
-      className={cn(className, BOOKMARK_COLOR_TEXT[color])}
-      fill="currentColor"
-      fillOpacity={0.85}
-    />
-  ) : (
-    <Folder className={cn(className, "text-note")} />
-  );
 }
 
 interface DeviceFileDetailsProps {

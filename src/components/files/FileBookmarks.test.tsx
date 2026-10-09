@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BookmarkEditor } from "@/components/files/BookmarkEditor";
+import { BookmarkMenu } from "@/components/files/BookmarkMenu";
 import { BookmarkStar } from "@/components/files/BookmarkStar";
 import { defaultSettings } from "@/lib/settings";
 import { useFileBookmarkStore } from "@/store/fileBookmarks";
@@ -128,5 +129,28 @@ describe("BookmarkEditor", () => {
 
     expect(html).toContain('title="设置不可用, 无法修改起始目录"');
     expect(html).toContain("设为起始目录");
+  });
+});
+
+describe("BookmarkMenu", () => {
+  it("renders a closed, labelled trigger that is never disabled", () => {
+    const html = renderToStaticMarkup(
+      <BookmarkMenu currentPath={null} navigationDisabled onNavigate={() => {}} />,
+    );
+
+    expect(html).toContain('aria-label="收藏夹"');
+    expect(html).toContain('aria-haspopup="dialog"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain('role="dialog"');
+    expect(html).not.toContain('disabled=""');
+  });
+
+  it("labels the trigger in English", () => {
+    useLocaleStore.getState().setPreference("en");
+    expect(
+      renderToStaticMarkup(
+        <BookmarkMenu currentPath={null} navigationDisabled={false} onNavigate={() => {}} />,
+      ),
+    ).toContain('aria-label="Bookmarks"');
   });
 });
