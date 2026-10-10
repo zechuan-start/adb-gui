@@ -195,6 +195,16 @@ Keep menus, dialogs, update prompts, and toasts visually separate from the grid 
 
 Browser smoke must cover light and dark rendering, the 900 px layout, Escape focus restoration, and a long toast message that wraps without covering index controls.
 
+### File Bookmark Colors and Surfaces
+
+The `tag-*` tokens (`orange`, `lime`, `cyan`, `blue`, `pink`, defined for light in `@theme static` and for dark in `.dark`) are user-chosen bookmark labels. Never use them for state: `note`, `ok`, `warn` and `err` keep that meaning, and the tag hues were chosen to stay clear of them and of the `ink3` file icon gray.
+
+- Change a tag value only after rerunning `research/palette-check.py` from the `10-08-files-path-bookmarks` task (archived under `.trellis/tasks/archive/2026-10/`) for both themes: every tag needs at least 3:1 contrast on the file list background and its hover band, and must remain distinguishable from the semantic colors and from the other tags.
+- Reference tags only through the static maps `BOOKMARK_COLOR_TEXT` / `BOOKMARK_COLOR_BG` in `lib/fileBookmarks.ts`, so Tailwind sees every class name.
+- A colored bookmark is a filled folder (`BookmarkFolderIcon`); a colorless one keeps the plain `text-note` outline. Shape carries the difference as well as hue, and the 38 px file row height does not change.
+- Bookmark popovers use `useDismissableLayer` (outside pointer and Escape, focus back to the trigger) and `useDropdownPlacement` (flip above and cap height inside clipping ancestors). The bookmark list edits a row by swapping its own content for `BookmarkEditor`; do not stack a second popover over it.
+- Rows in the bookmark list use `aria-disabled`, not `disabled`, while no device is online, so arrow keys still reach the edit buttons.
+
 ### Settings Controls
 
 Settings rows use a fixed control vocabulary so persisted preferences have one visual and accessibility contract:

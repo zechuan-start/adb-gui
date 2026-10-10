@@ -1,1 +1,5 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"禁止模式与质量要求, 检查新组件和 store."}
+{"file":".trellis/spec/frontend/component-guidelines.md","reason":"检查浮层外观、Esc / 外部点击、焦点归还、900px 布局与亮暗主题."}
+{"file":".trellis/spec/frontend/state-management.md","reason":"检查收藏 store 的持久化边界与协调函数是唯一入口."}
+{"file":".trellis/spec/frontend/settings-clipboard.md","reason":"检查起始目录回退只在自动打开时触发, 且规范已同步更新."}
+{"file":".trellis/spec/frontend/i18n.md","reason":"检查中英文 catalog 键完整, 无硬编码文案."}

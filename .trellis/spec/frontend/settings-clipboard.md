@@ -79,7 +79,7 @@ Correct: capture monotonically increasing context revision and operation ID, awa
 
 ### 1. Scope / Trigger
 
-- Apply when changing file/app views, starting directories, generator parameters or their settings controls.
+- Apply when changing file/app views, starting directories, generator parameters or their settings controls, or the start-directory action in the file bookmark editor.
 
 ### 2. Signatures
 
@@ -93,13 +93,18 @@ Correct: capture monotonically increasing context revision and operation ID, awa
 - Sort/filter in the final view projection, never in app source loading or the Rust file parser. Supply `appNameCollator(locale)` and include locale in the sorting memo dependencies; language switching must not trigger ADB loading. Preserve path/package selection and existing cache/icon batches.
 - Keep directory priority independent of direction; size-less directories and unknown app numeric metadata sort last. Zero-byte files are valid. Name ties use stable path/package keys.
 - Read the starting directory only on file activation, device switch and Home. `null` delegates the default to Rust. A failed target stays editable while the last successful list retains its actual path. Explicit download-directory navigation never updates the preference.
+- A start directory may be unavailable on one device and present on another, because one preference serves every device. When the automatic read of a non-null start directory fails with `files.notDirectory` or `files.directoryPermission`, `loadDirectory(serial, path, { fallbackToDefault: true })` dispatches `start-fallback` and loads `null`. The pane shows a warn notice naming the start path with a Settings action instead of the list error. The preference is never rewritten.
+- The notice survives only the default-directory load it explains (`list-start` with `keepStartFallback`); any later navigation and `reset` clear it. The fallback runs only after the request-id staleness check, so a late failure from a replaced device cannot open a directory on the new one.
+- Manual path entry, breadcrumbs, bookmark jumps and the list error's retry never pass `fallbackToDefault`. A failing default directory is not retried.
+- "Set as start directory" in the bookmark editor writes `files.startDirectory` through the same `update("files", ...)` call as the settings row, so the settings panel, Home and the fallback all read one value.
 - Hiding a selected dot entry clears selection/preview and invalidates late preview publication, while in-flight transfer snapshots remain unchanged.
 - Generator controls share `settings.codegen`. Generation captures options once; old results retain options and values. Clear removes only input/results/errors. Parameter reset preserves input/results and affects staleness without automatic generation.
 
 ### 4. Validation & Error Matrix
 
 - Invalid enum, relative/NUL device start path, wrong field type -> decoding error; preserve stored bytes.
-- Unavailable start path -> actual Android error with editable target and explicit retry/download navigation; no automatic fallback or directory creation.
+- Unavailable start path (`files.notDirectory` / `files.directoryPermission`) on an automatic start load -> open the default directory, show the fallback notice, keep the stored preference; no directory creation.
+- The same failure on manual navigation, any other failure code, a `null` start directory, or a failing default directory -> actual Android error with editable target and explicit retry/download navigation.
 - Empty custom separator -> visible field error, generation disabled; keep old results and do not reinterpret literal separators.
 - Write failure -> retain last effective option; show settings error at the active settings/page surface.
 
@@ -107,11 +112,14 @@ Correct: capture monotonically increasing context revision and operation ID, awa
 
 - Good: app sort changes reorder visible entries while the selected package remains the same.
 - Base: clearing code generation leaves Code 128 and custom separator preferences available after restart.
+- Good: a start directory that exists only on device A opens there, while device B opens the downloads folder with a notice naming the missing path.
 - Bad: adding sort options to the ADB loading effect dependencies or persisting the entire generator store.
+- Bad: rewriting `files.startDirectory` to `null` on fallback; switching back to the device that has the directory would no longer open it.
 
 ### 6. Tests Required
 
 - Test defaults/migration/write failure/group reset, every sorting dimension and direction, unknown/zero/tie behavior, filtered selection and late previews.
+- Test `isUnavailableStartDirectoryError` codes and the reducer: `start-fallback` ignores stale requests and other devices, does not set `listError`, survives `keepStartFallback`, and clears on the next `list-start` and on `reset`. Browser-smoke the fallback on entry and Home, the notice clearing on navigation, and no fallback for manual jumps or a failing default directory.
 - Test generation option snapshots, reset/clear/restart semantics and refusal when settings are unavailable.
 - Check all six settings sections in the scrolling panel at 900x600 and 1200x800 in both themes, keyboard boundaries and native restart/device reads.
 

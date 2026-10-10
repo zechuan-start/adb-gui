@@ -65,6 +65,13 @@ interface DevicePreviewState {
   error: AppErrorPayload | null;
 }
 
+// The saved start directory could not be opened, so the default directory was
+// opened instead. Kept until the next navigation so the notice explains why.
+export interface DeviceStartFallback {
+  path: string;
+  error: AppErrorPayload;
+}
+
 export interface DeviceFileManagerState {
   serial: string | null;
   path: string;
@@ -75,6 +82,7 @@ export interface DeviceFileManagerState {
   listRequestId: number;
   listLoading: boolean;
   listError: AppErrorPayload | null;
+  startFallback: DeviceStartFallback | null;
   preview: DevicePreviewState;
   transfer: DeviceTransferBatch | null;
 }
@@ -82,7 +90,7 @@ export interface DeviceFileManagerState {
 export type DeviceFileManagerAction =
   | { type: "reset"; serial: string | null }
   | { type: "set-path-draft"; value: string }
-  | { type: "list-start"; serial: string; requestId: number }
+  | { type: "list-start"; serial: string; requestId: number; keepStartFallback?: boolean }
   | {
       type: "list-success";
       serial: string;
@@ -90,6 +98,13 @@ export type DeviceFileManagerAction =
       listing: DeviceDirectoryListing;
     }
   | { type: "list-error"; serial: string; requestId: number; error: AppErrorPayload }
+  | {
+      type: "start-fallback";
+      serial: string;
+      requestId: number;
+      path: string;
+      error: AppErrorPayload;
+    }
   | { type: "select"; path: string | null }
   | { type: "preview-start"; serial: string; requestId: number; path: string }
   | {
@@ -134,6 +149,7 @@ export function createDeviceFileManagerState(serial: string | null): DeviceFileM
     listRequestId: 0,
     listLoading: false,
     listError: null,
+    startFallback: null,
     preview: emptyPreview(),
     transfer: null,
   };
@@ -184,6 +200,7 @@ export function deviceFileManagerReducer(
         listRequestId: action.requestId,
         listLoading: true,
         listError: null,
+        startFallback: action.keepStartFallback ? state.startFallback : null,
       };
     case "list-success":
       if (!matchesListRequest(state, action.serial, action.requestId)) {
@@ -208,6 +225,16 @@ export function deviceFileManagerReducer(
         ...state,
         listLoading: false,
         listError: action.error,
+      };
+    case "start-fallback":
+      // Loading continues with the default directory, so the failed start
+      // path is recorded without surfacing it as a list error.
+      if (!matchesListRequest(state, action.serial, action.requestId)) {
+        return state;
+      }
+      return {
+        ...state,
+        startFallback: { path: action.path, error: action.error },
       };
     case "select":
       return {
@@ -392,6 +419,17 @@ export function deviceDownloadDefaultName(
     return `_${safeName}`;
   }
   return safeName;
+}
+
+// Only a missing or unreadable start directory falls back to the default one;
+// device, transport and parsing failures keep their own error.
+const UNAVAILABLE_START_DIRECTORY_CODES: ReadonlySet<string> = new Set([
+  "files.notDirectory",
+  "files.directoryPermission",
+]);
+
+export function isUnavailableStartDirectoryError(error: AppErrorPayload): boolean {
+  return UNAVAILABLE_START_DIRECTORY_CODES.has(error.code);
 }
 
 export function isDeviceTransferBusy(transfer: DeviceTransferBatch | null): boolean {

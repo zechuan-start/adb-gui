@@ -1,0 +1,73 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+:root{--font-ui:"IBM Plex Sans",-apple-system,"Segoe UI","Noto Sans CJK SC","PingFang SC",sans-serif;--font-data:"IBM Plex Mono",Consolas,"Noto Sans Mono CJK SC",monospace}
+.light{--paper:#eae8e1;--ink:#1b2a4a;--ink2:#4c5a73;--ink3:#7a8394;--rule:rgba(27,42,74,.16);--rule2:rgba(27,42,74,.07);--surface:rgba(255,255,255,.42);--hover:rgba(27,42,74,.055);--note:#7a5cb8;--ok:#1f6b4f;--warn:#8a6410;--err:#a93326;--logbg:#f3f1eb;--shadow:rgba(27,42,74,.18);
+ --tag-orange:#c25e0a;--tag-lime:#5f8a00;--tag-cyan:#00798f;--tag-blue:#1a6fd1;--tag-pink:#c2357f}
+.dark{--paper:#102340;--ink:#e4eaf3;--ink2:#aebbce;--ink3:#8a98af;--rule:rgba(255,255,255,.2);--rule2:rgba(255,255,255,.08);--surface:rgba(255,255,255,.045);--hover:rgba(255,255,255,.07);--note:#b49cee;--ok:#57c99b;--warn:#e0b54a;--err:#ff7a6b;--logbg:#0e1f38;--shadow:rgba(0,0,0,.45);
+ --tag-orange:#ff9f43;--tag-lime:#b5e05a;--tag-cyan:#4fd0e0;--tag-blue:#5fb0ff;--tag-pink:#ff8cc6}
+body{margin:0;display:flex;font-family:var(--font-ui)}
+.theme{background:var(--paper);color:var(--ink);padding:18px 20px 22px;width:560px;box-sizing:border-box}
+h2{font-size:13px;margin:0 0 10px;font-weight:600}
+h3{font-size:11px;margin:16px 0 6px;color:var(--ink3);font-weight:500;font-family:var(--font-data)}
+.list{border:1px solid var(--rule);background:color-mix(in srgb,var(--logbg) 45%,transparent)}
+.hdr,.row{display:grid;grid-template-columns:minmax(140px,1fr) 64px 72px 116px;align-items:center;padding:0 12px}
+.hdr{height:32px;font:500 10px var(--font-data);color:var(--ink3);background:var(--surface);border-bottom:1px solid var(--rule)}
+.row{height:38px;font-size:11.5px;border-bottom:1px dashed var(--rule2);position:relative}
+.row.sel{background:var(--hover)}.row.sel::before{content:"";position:absolute;top:4px;bottom:4px;left:0;width:3px;background:var(--note)}
+.name{display:flex;gap:8px;align-items:center;font-weight:500}
+.t{color:var(--ink3)}.r{text-align:right;font-family:var(--font-data);color:var(--ink2)}.r3{text-align:right;font-family:var(--font-data);color:var(--ink3)}
+svg{width:16px;height:16px;flex-shrink:0}
+.sw{display:flex;gap:6px;align-items:center}
+.s{width:22px;height:22px;border:1px solid var(--rule);display:flex;align-items:center;justify-content:center;box-sizing:border-box}
+.s.on{outline:2px solid var(--ink);outline-offset:1px}
+.s i{width:12px;height:12px;display:block}
+.none i{background:linear-gradient(135deg,transparent 45%,var(--ink3) 45%,var(--ink3) 55%,transparent 55%);border:1px solid var(--ink3);box-sizing:border-box}
+.chips{display:flex;gap:10px;font:10px var(--font-data);color:var(--ink3);flex-wrap:wrap}
+.chips span{display:flex;gap:4px;align-items:center}
+.chips b{width:10px;height:10px;display:inline-block}
+.menu{border:1px solid var(--rule);background:var(--paper);box-shadow:3px 3px 0 var(--shadow);width:330px}
+.mh{display:flex;justify-content:space-between;padding:7px 10px;font:500 10.5px var(--font-data);color:var(--ink3);border-bottom:1px solid var(--rule)}
+.mi{display:flex;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px dashed var(--rule2)}
+.mi.cur{background:var(--hover)}
+.mi .tx{flex:1;min-width:0}.mi .n{font-size:11.5px;font-weight:500}.mi .p{font:10px var(--font-data);color:var(--ink3)}
+.mi .home{color:var(--ink3)}.mi .more{color:var(--ink3)}
+.edit{border:1px solid var(--rule);background:var(--paper);box-shadow:3px 3px 0 var(--shadow);width:230px;padding:10px}
+.edit .lbl{font:10px var(--font-data);color:var(--ink3);margin-bottom:6px}
+.btn{display:flex;gap:6px;align-items:center;height:28px;padding:0 8px;border:1px solid var(--rule);font:10.5px var(--font-data);margin-top:8px;color:var(--ink)}
+.btn.danger{color:var(--err)}
+.pair{display:flex;gap:14px;align-items:flex-start}
+</style></head><body>
+<template id="tpl"></template>
+<script>
+const P={folder:'<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+file:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+image:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><circle cx="10" cy="12" r="2"/><path d="m20 17-1.296-1.296a2.41 2.41 0 0 0-3.408 0L9 22"/>',
+house:'<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+dots:'<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+star:'<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/>',
+x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'};
+const icon=(k,color,fill)=>`<svg viewBox="0 0 24 24" fill="${fill?`color-mix(in srgb, ${color} 85%, transparent)`:'none'}" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${P[k]}</svg>`;
+const tag=c=>`var(--tag-${c})`;
+const rows=[
+ ['Android',icon('folder','var(--note)'),'目录','-','2026/10/01 09:12'],
+ ['DCIM',icon('folder',tag('orange'),1),'目录','-','2026/10/08 21:40'],
+ ['Documents',icon('folder','var(--note)'),'目录 · 收藏(无色)','-','2026/09/30 18:02'],
+ ['Download',icon('folder',tag('blue'),1),'目录','-','2026/10/09 08:55','sel'],
+ ['Movies',icon('folder',tag('lime'),1),'目录','-','2026/09/12 22:31'],
+ ['Music',icon('folder',tag('cyan'),1),'目录','-','2026/08/03 14:20'],
+ ['Pictures',icon('folder',tag('pink'),1),'目录','-','2026/10/07 11:47'],
+ ['IMG_0412.jpg',icon('image','var(--ok)'),'图片','3.2 MB','2026/10/08 21:40'],
+ ['notes.txt',icon('file','var(--ink3)'),'文件','4 KB','2026/10/02 10:05'],
+];
+const swatches=['orange','lime','cyan','blue','pink'];
+function panel(cls,title){
+ const list=rows.map(r=>`<div class="row ${r[5]||''}"><span class="name">${r[1]}<span>${r[0]}</span></span><span class="t">${r[2]}</span><span class="r">${r[3]}</span><span class="r3">${r[4]}</span></div>`).join('');
+ const sw=`<div class="sw"><span class="s none"><i></i></span>${swatches.map(c=>`<span class="s ${c==='blue'?'on':''}"><i style="background:${tag(c)}"></i></span>`).join('')}</div>`;
+ const menuItems=[['DCIM','/sdcard/DCIM','orange'],['Download','/sdcard/Download','blue',1,1],['Documents','/sdcard/Documents',null],['Pictures','/sdcard/Pictures','pink'],['Music','/sdcard/Music','cyan'],['Movies','/sdcard/Movies','lime']];
+ const menu=`<div class="menu"><div class="mh"><span>收藏 · 6</span></div>${menuItems.map(m=>`<div class="mi ${m[3]?'cur':''}">${m[2]?icon('folder',tag(m[2]),1):icon('folder','var(--note)')}<div class="tx"><div class="n">${m[0]}</div><div class="p">${m[1]}</div></div>${m[4]?`<span class="home" title="起始目录">${icon('house','var(--ink3)')}</span>`:''}<span class="more">${icon('dots','var(--ink3)')}</span></div>`).join('')}</div>`;
+ const edit=`<div class="edit"><div class="lbl">颜色</div>${sw}<div class="btn">${icon('house','var(--ink2)')}设为起始目录</div><div class="btn danger">${icon('x','var(--err)')}取消收藏</div></div>`;
+ const chips=`<div class="chips">${['note','ok','warn','err'].map(s=>`<span><b style="background:var(--${s})"></b>${s}</span>`).join('')}</div>`;
+ return `<div class="theme ${cls}"><h2>${title}</h2><h3>文件列表 · 收藏目录用实心彩色文件夹, 普通目录保持紫色描边</h3><div class="list"><div class="hdr"><span>名称</span><span>类型</span><span style="text-align:right">大小</span><span style="text-align:right">修改时间</span></div>${list}</div><h3>收藏下拉列表 / 星标弹出面板</h3><div class="pair">${menu}${edit}</div><h3>现有语义色 (收藏色板避开了这些)</h3>${chips}</div>`;
+}
+document.body.innerHTML=panel('light','亮色主题')+panel('dark','暗色主题');
+</script></body></html>

@@ -39,6 +39,14 @@
   --color-err-band: rgba(169, 51, 38, 0.09);
   --color-qr-light: #ffffff;
   --color-qr-dark: #0e1f38;
+  /* File bookmark labels. User-chosen highlights only, never semantic state:
+     the hues stay clear of note, ok, warn and err, and each keeps >= 3:1
+     contrast on the file list and its hover band in both themes. */
+  --color-tag-orange: #c25e0a;
+  --color-tag-lime: #5f8a00;
+  --color-tag-cyan: #00798f;
+  --color-tag-blue: #1a6fd1;
+  --color-tag-pink: #c2357f;
 
   /* Compatibility roles used by pages that have not been visually refreshed yet. */
   --color-background: var(--color-paper);
@@ -115,6 +123,11 @@
   --color-log-tag: #c6d3e6;
   --color-warn-band: rgba(224, 181, 74, 0.1);
   --color-err-band: rgba(255, 122, 107, 0.11);
+  --color-tag-orange: #ff9f43;
+  --color-tag-lime: #b5e05a;
+  --color-tag-cyan: #4fd0e0;
+  --color-tag-blue: #5fb0ff;
+  --color-tag-pink: #ff8cc6;
 }
 
 * {

@@ -29,11 +29,21 @@ import {
   Link,
   LoaderCircle,
   RefreshCw,
+  TriangleAlert,
   Upload,
   X,
   XCircle,
 } from "lucide-react";
+import { BookmarkFolderIcon } from "@/components/files/BookmarkFolderIcon";
+import { BookmarkMenu } from "@/components/files/BookmarkMenu";
+import { BookmarkStar } from "@/components/files/BookmarkStar";
+import { commandButtonClass, iconButtonClass } from "@/components/files/buttonClasses";
 import { getDeviceBySerial, isOnlineDevice } from "@/lib/device";
+import {
+  fileBookmarkMap,
+  type BookmarkColor,
+  type FileBookmark,
+} from "@/lib/fileBookmarks";
 import {
   buildDeviceBreadcrumbs,
   createDeviceFileManagerState,
@@ -47,6 +57,7 @@ import {
   isDeviceDirectoryViewLoading,
   isDeviceOperationContextCurrent,
   isDeviceTransferBusy,
+  isUnavailableStartDirectoryError,
   localFileName,
   projectDeviceFiles,
   updateDeviceOperationContext,
@@ -67,6 +78,7 @@ import {
   type DeviceFileEntry,
 } from "@/lib/tauri";
 import { useDeviceStore } from "@/store/device";
+import { useFileBookmarkStore } from "@/store/fileBookmarks";
 import { useFeedbackStore } from "@/store/feedback";
 import { cn } from "@/lib/utils";
 import { requireSettings, useSettingsStore } from "@/store/settings";
@@ -80,6 +92,14 @@ import { useUiStore } from "@/store/ui";
 
 type FileSortBy = FilePreferences["sortBy"];
 
+interface LoadDirectoryOptions {
+  // Open the default directory when this start directory is missing or
+  // unreadable. Only automatic start-directory loads pass it.
+  fallbackToDefault?: boolean;
+  // Keep the fallback notice through the default-directory load it explains.
+  keepStartFallback?: boolean;
+}
+
 interface DeviceFileManagerProps {
   active?: boolean;
 }
@@ -92,6 +112,8 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
   const devices = useDeviceStore((state) => state.devices);
   const selectedDevice = useDeviceStore((state) => state.selectedDevice);
   const showToast = useFeedbackStore((state) => state.showToast);
+  const bookmarks = useFileBookmarkStore((state) => state.bookmarks);
+  const bookmarkByPath = useMemo(() => fileBookmarkMap(bookmarks), [bookmarks]);
   const device = getDeviceBySerial(devices, selectedDevice);
   const onlineSerial = device && isOnlineDevice(device) ? device.serial : null;
   const operationContextRef = useRef<DeviceOperationContext>({
@@ -129,6 +151,8 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
     [contextMatches, visibleEntries, state.selectedPath],
   );
   const breadcrumbs = useMemo(() => buildDeviceBreadcrumbs(visiblePath), [visiblePath]);
+  const selectedBookmark =
+    selectedEntry?.kind === "directory" ? bookmarkByPath.get(selectedEntry.path) ?? null : null;
   const handleSortColumn = useCallback(
     (column: FileSortBy) => {
       if (preferences.sortBy === column) {
@@ -163,30 +187,49 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
   }, [onlineSerial]);
 
   const loadDirectory = useCallback(
-    async (serial: string, path: string | null) => {
-      const requestId = ++listRequestRef.current;
-      if (path !== null) dispatch({ type: "set-path-draft", value: path });
-      dispatch({ type: "list-start", serial, requestId });
-      try {
-        const listing = await listDeviceDirectory(serial, path);
-        if (!activeRef.current || requestId !== listRequestRef.current) {
-          return;
+    (serial: string, path: string | null, options: LoadDirectoryOptions = {}) => {
+      async function load(target: string | null, loadOptions: LoadDirectoryOptions): Promise<void> {
+        const requestId = ++listRequestRef.current;
+        if (target !== null) dispatch({ type: "set-path-draft", value: target });
+        dispatch({
+          type: "list-start",
+          serial,
+          requestId,
+          keepStartFallback: loadOptions.keepStartFallback,
+        });
+        try {
+          const listing = await listDeviceDirectory(serial, target);
+          if (!activeRef.current || requestId !== listRequestRef.current) {
+            return;
+          }
+          dispatch({ type: "list-success", serial, requestId, listing });
+        } catch (error) {
+          // A stale request must not fall back either, or a quick device switch
+          // would open the default directory on the device that replaced it.
+          if (!activeRef.current || requestId !== listRequestRef.current) {
+            return;
+          }
+          const failure = toAppError(error);
+          if (loadOptions.fallbackToDefault && target !== null && isUnavailableStartDirectoryError(failure)) {
+            dispatch({ type: "start-fallback", serial, requestId, path: target, error: failure });
+            await load(null, { keepStartFallback: true });
+            return;
+          }
+          // The list renders this error inline with retry actions; no toast.
+          dispatch({ type: "list-error", serial, requestId, error: failure });
         }
-        dispatch({ type: "list-success", serial, requestId, listing });
-      } catch (error) {
-        if (!activeRef.current || requestId !== listRequestRef.current) {
-          return;
-        }
-        // The list renders this error inline with retry actions; no toast.
-        dispatch({ type: "list-error", serial, requestId, error: toAppError(error) });
       }
+
+      return load(path, options);
     },
     [],
   );
 
   const loadStartDirectory = useCallback((serial: string) => {
     try {
-      void loadDirectory(serial, requireSettings().files.startDirectory);
+      const startDirectory = requireSettings().files.startDirectory;
+      // A null start directory is already the default, so nothing to fall back to.
+      void loadDirectory(serial, startDirectory, { fallbackToDefault: startDirectory !== null });
     } catch (error) {
       const requestId = ++listRequestRef.current;
       dispatch({ type: "list-start", serial, requestId });
@@ -575,6 +618,11 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
         >
           <Home className="h-4 w-4" />
         </button>
+        <BookmarkMenu
+          currentPath={visiblePath || null}
+          navigationDisabled={!onlineSerial || operationBusy || transferBusy || folderBusy}
+          onNavigate={(path) => onlineSerial && void loadDirectory(onlineSerial, path)}
+        />
         <button
           type="button"
           onClick={() => onlineSerial && state.parent && void loadDirectory(onlineSerial, state.parent)}
@@ -594,6 +642,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
             aria-label={t.files.deviceFileManager.absoluteDevicePath}
             className="h-8 min-w-0 flex-1 border border-rule bg-paper px-3 font-data text-[11.5px] text-ink outline-none placeholder:text-ink3 disabled:cursor-not-allowed disabled:opacity-60"
           />
+          <BookmarkStar variant="toolbar" path={visiblePath || null} />
           <button
             type="button"
             onClick={() => void handleCopyPath(visiblePath)}
@@ -682,6 +731,25 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
         <span className="min-w-0 flex-1 break-words">{errorText(settingsError, t)}</span>
         <button type="button" className="shrink-0 border border-rule px-2 py-1" onClick={() => useUiStore.getState().openSettings("files")}>{t.files.deviceFileManager.settings}</button>
       </div>}
+      {contextMatches && state.startFallback && (
+        <div
+          role="status"
+          title={errorText(state.startFallback.error, t)}
+          className="flex shrink-0 items-center gap-2 border-b border-warn bg-warn-band px-3 py-2 text-xs text-warn"
+        >
+          <TriangleAlert className="h-4 w-4 shrink-0" />
+          <span className="min-w-0 flex-1 break-words">
+            {t.files.deviceFileManager.startDirectoryFallback({ path: state.startFallback.path })}
+          </span>
+          <button
+            type="button"
+            className="shrink-0 border border-rule px-2 py-1 text-ink"
+            onClick={() => useUiStore.getState().openSettings("files")}
+          >
+            {t.files.deviceFileManager.settings}
+          </button>
+        </div>
+      )}
       {contextMatches && state.listError && onlineSerial && <div className="flex shrink-0 gap-2 border-b border-rule px-3 py-2 text-xs">
         <button type="button" disabled={state.listLoading || operationBusy || transferBusy || folderBusy}
           className={commandButtonClass} onClick={() => state.pathDraft ? void loadDirectory(onlineSerial, state.pathDraft) : loadStartDirectory(onlineSerial)}><RefreshCw className="h-3.5 w-3.5" />{t.common.retry}</button>
@@ -699,6 +767,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
           sortDisabled={!settingsAvailable}
           onSortColumn={handleSortColumn}
           selectedPath={contextMatches ? state.selectedPath : null}
+          bookmarkByPath={bookmarkByPath}
           loading={directoryLoading}
           loaded={directoryLoaded}
           error={contextMatches ? state.listError : null}
@@ -711,6 +780,7 @@ export function DeviceFileManager({ active = true }: DeviceFileManagerProps) {
         <aside className="flex min-h-0 flex-col border-l border-rule bg-surface2">
           <DeviceFileDetails
             entry={selectedEntry}
+            bookmark={selectedBookmark}
             preview={state.preview}
             disabled={controlsDisabled}
             onCopyPath={handleCopyPath}
@@ -800,6 +870,7 @@ interface DeviceFileListProps {
   sortDisabled: boolean;
   onSortColumn: (column: FileSortBy) => void;
   selectedPath: string | null;
+  bookmarkByPath: ReadonlyMap<string, FileBookmark>;
   loading: boolean;
   loaded: boolean;
   error: AppErrorPayload | null;
@@ -820,6 +891,7 @@ function DeviceFileList({
   sortDisabled,
   onSortColumn,
   selectedPath,
+  bookmarkByPath,
   loading,
   loaded,
   error,
@@ -903,7 +975,12 @@ function DeviceFileList({
                 style={{ height: virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}
               >
                 <span className="flex min-w-0 items-center gap-2">
-                  <DeviceEntryIcon entry={entry} />
+                  <DeviceEntryIcon
+                    entry={entry}
+                    bookmarkColor={
+                      entry.kind === "directory" ? bookmarkByPath.get(entry.path)?.color ?? null : null
+                    }
+                  />
                   <span className="truncate font-medium text-ink">{entry.name}</span>
                 </span>
                 <span className="truncate text-ink3">{deviceFileTypeLabel(entry, t)}</span>
@@ -1002,9 +1079,15 @@ function CenteredState({ icon, text }: { icon: ReactNode; text: string }) {
   );
 }
 
-function DeviceEntryIcon({ entry }: { entry: DeviceFileEntry }) {
+function DeviceEntryIcon({
+  entry,
+  bookmarkColor = null,
+}: {
+  entry: DeviceFileEntry;
+  bookmarkColor?: BookmarkColor | null;
+}) {
   if (entry.kind === "directory") {
-    return <Folder className="h-4 w-4 shrink-0 text-note" />;
+    return <BookmarkFolderIcon color={bookmarkColor} className="h-4 w-4 shrink-0" />;
   }
   if (entry.kind === "symlink") {
     return <Link className="h-4 w-4 shrink-0 text-ink3" />;
@@ -1017,6 +1100,7 @@ function DeviceEntryIcon({ entry }: { entry: DeviceFileEntry }) {
 
 interface DeviceFileDetailsProps {
   entry: DeviceFileEntry | null;
+  bookmark: FileBookmark | null;
   preview: {
     loading: boolean;
     data: { data_url: string } | null;
@@ -1030,6 +1114,7 @@ interface DeviceFileDetailsProps {
 
 function DeviceFileDetails({
   entry,
+  bookmark,
   preview,
   disabled,
   onCopyPath,
@@ -1049,7 +1134,7 @@ function DeviceFileDetails({
       ) : (
         <>
           <div className="flex min-w-0 items-start gap-2">
-            <DeviceEntryIcon entry={entry} />
+            <DeviceEntryIcon entry={entry} bookmarkColor={bookmark?.color ?? null} />
             <div className="min-w-0 flex-1">
               <h2 className="break-all text-sm font-semibold text-ink">{entry.name}</h2>
               <div className="mt-1 font-data text-[10.5px] text-ink3">{deviceFileTypeLabel(entry, t)}</div>
@@ -1066,7 +1151,7 @@ function DeviceFileDetails({
                 className="max-h-full max-w-full object-contain"
               />
             ) : entry.kind === "directory" ? (
-              <Folder className="h-14 w-14 text-note" />
+              <BookmarkFolderIcon color={bookmark?.color ?? null} className="h-14 w-14" />
             ) : entry.previewable ? (
               <div className="px-4 text-center text-xs text-ink3">
                 {preview.error ? errorText(preview.error, t) : t.files.deviceFileManager.imagePreviewUnavailable}
@@ -1095,15 +1180,18 @@ function DeviceFileDetails({
               {t.files.deviceFileManager.copyPath}
             </button>
             {entry.kind === "directory" ? (
-              <button
-                type="button"
-                onClick={() => onOpenDirectory(entry)}
-                disabled={disabled}
-                className={commandButtonClass}
-              >
-                <FolderOpen className="h-4 w-4" />
-                {t.files.deviceFileManager.openDirectory}
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => onOpenDirectory(entry)}
+                  disabled={disabled}
+                  className={commandButtonClass}
+                >
+                  <FolderOpen className="h-4 w-4" />
+                  {t.files.deviceFileManager.openDirectory}
+                </button>
+                <BookmarkStar variant="details" path={entry.path} />
+              </>
             ) : entry.kind === "file" ? (
               <button
                 type="button"
@@ -1197,9 +1285,3 @@ function TransferStatusIcon({ status }: { status: DeviceTransferBatch["items"][n
       return <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-err" />;
   }
 }
-
-const iconButtonClass =
-  "inline-flex h-8 w-8 shrink-0 items-center justify-center border border-rule text-ink2 hover:border-ink3 hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40";
-
-const commandButtonClass =
-  "inline-flex h-7 items-center gap-1.5 border border-rule px-2 font-data text-[10.5px] font-medium text-ink hover:border-ink3 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40";
