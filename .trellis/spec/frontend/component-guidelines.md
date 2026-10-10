@@ -203,6 +203,7 @@ The `tag-*` tokens (`orange`, `lime`, `cyan`, `blue`, `pink`, defined for light 
 - Reference tags only through the static maps `BOOKMARK_COLOR_TEXT` / `BOOKMARK_COLOR_BG` in `lib/fileBookmarks.ts`, so Tailwind sees every class name.
 - A colored bookmark is a filled folder (`BookmarkFolderIcon`); a colorless one keeps the plain `text-note` outline. Shape carries the difference as well as hue, and the 38 px file row height does not change.
 - Bookmark popovers use `useDismissableLayer` (outside pointer and Escape, focus back to the trigger) and `useDropdownPlacement` (flip above and cap height inside clipping ancestors). The bookmark list edits a row by swapping its own content for `BookmarkEditor`; do not stack a second popover over it.
+- Keep bookmark surfaces vertically scrollable with `overflow-x-hidden overflow-y-auto`. Setting only `overflow-y-auto` also computes horizontal overflow as `auto`; check the list editor and both star editors in the packaged macOS WebKit app for unwanted bottom scrollbars, and verify that long bookmark lists still scroll vertically.
 - Rows in the bookmark list use `aria-disabled`, not `disabled`, while no device is online, so arrow keys still reach the edit buttons.
 
 ### Settings Controls
