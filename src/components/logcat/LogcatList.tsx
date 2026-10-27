@@ -50,7 +50,8 @@ interface LogcatVirtualRowsProps {
   visible: boolean;
   scrollRef: RefObject<HTMLDivElement | null>;
   buffer: LogcatRingBuffer;
-  renderItems: readonly LogcatRenderItem[];
+  itemCount: number;
+  getRenderItem: (index: number) => LogcatRenderItem | undefined;
   columns: Readonly<Record<LogcatColumn, boolean>>;
   softWrap: boolean;
   cozyRows: boolean;
@@ -106,7 +107,8 @@ function LogcatVirtualRowsView({
   visible,
   scrollRef,
   buffer,
-  renderItems,
+  itemCount,
+  getRenderItem,
   columns,
   softWrap,
   cozyRows,
@@ -119,11 +121,11 @@ function LogcatVirtualRowsView({
 }: LogcatVirtualRowsProps) {
   const previouslyVisibleRef = useRef(visible);
   const getItemKey = useCallback(
-    (index: number) => renderItems[index]?.seq ?? -(index + 1),
-    [renderItems],
+    (index: number) => getRenderItem(index)?.seq ?? -(index + 1),
+    [getRenderItem],
   );
   const virtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
-    count: renderItems.length,
+    count: itemCount,
     getScrollElement: () => scrollRef.current,
     getItemKey,
     estimateSize: () => rowHeight,
@@ -160,7 +162,7 @@ function LogcatVirtualRowsView({
   return (
     <div style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}>
       {virtualizer.getVirtualItems().map((virtualItem) => {
-        const renderItem = renderItems[virtualItem.index];
+        const renderItem = getRenderItem(virtualItem.index);
         const entry = renderItem ? buffer.bySeq(renderItem.seq) : undefined;
         if (!renderItem || !entry) {
           return null;
@@ -254,6 +256,14 @@ export function LogcatList({ visible, loading }: LogcatListProps) {
     ],
   );
   const layoutKey = `${softWrap ? "wrap" : "fixed"}:${rowHeight}:${columnSignature(columns)}`;
+  // React's development performance tracks serialize changed object props.
+  // Passing the full FIFO array records thousands of row diffs on every batch.
+  // This accessor captures one immutable projection and changes with it, so
+  // memoization and virtualizer keys still invalidate after a full-buffer append.
+  const getRenderItem = useCallback(
+    (index: number) => renderItems[index],
+    [renderItems],
+  );
   const anchorIndex = useMemo(
     () => anchoredSeq === null ? null : findRenderItemIndex(renderItems, anchoredSeq),
     [anchoredSeq, renderItems],
@@ -440,7 +450,8 @@ export function LogcatList({ visible, loading }: LogcatListProps) {
             visible={visible}
             scrollRef={followScroll.scrollRef}
             buffer={buffer}
-            renderItems={renderItems}
+            itemCount={renderItems.length}
+            getRenderItem={getRenderItem}
             columns={columns}
             softWrap={softWrap}
             cozyRows={cozyRows}

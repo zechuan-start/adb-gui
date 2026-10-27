@@ -1,6 +1,5 @@
 package com.adbgui.clipboard;
 
-import android.app.KeyguardManager;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -13,7 +12,7 @@ import android.os.Process;
 
 final class ClipboardAccess {
     private final ClipboardManager clipboard;
-    private final KeyguardManager keyguard;
+    private final DeviceLockState lockState;
 
     private static final class ShellContext extends ContextWrapper {
         ShellContext(Context base) { super(base); }
@@ -44,15 +43,15 @@ final class ClipboardAccess {
         // ContextWrapper.getSystemService would retain the system context's android attribution.
         clipboard = ClipboardManager.class.getDeclaredConstructor(Context.class, Handler.class)
                 .newInstance(shell, new Handler(Looper.getMainLooper()));
-        keyguard = (KeyguardManager) shell.getSystemService(Context.KEYGUARD_SERVICE);
-        if (clipboard == null || keyguard == null) throw new Main.Failure("unsupported");
+        lockState = new DeviceLockState();
+        if (clipboard == null) throw new Main.Failure("unsupported");
     }
 
     private void checkAccess() throws Exception {
         // This helper only operates on the primary user's unlocked clipboard.
         Object user = Class.forName("android.app.ActivityManager").getMethod("getCurrentUser").invoke(null);
         if (!Integer.valueOf(0).equals(user)) throw new Main.Failure("user");
-        if (keyguard.isDeviceLocked() || keyguard.isKeyguardLocked()) throw new Main.Failure("locked");
+        if (lockState.isLocked()) throw new Main.Failure("locked");
     }
 
     String get() throws Exception {

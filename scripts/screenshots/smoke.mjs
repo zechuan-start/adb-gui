@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
 import { startDevServer, APP_URL, MOCK_SCRIPT, SNAPSHOT_TIME, uiPreferences } from "./capture.mjs";
+import { logcatMemoryCase } from "./logcatMemorySmoke.mjs";
 
 const PANES = ["tools", "apps", "files", "codegen", "decoder", "perf"];
 const SECTIONS = ["general", "logcat", "capture", "mirror", "files", "apps", "codegen"];
@@ -406,6 +407,7 @@ try {
   }
   for (const [system, expected] of [["zh-TW", "zh-CN"], ["en-US", "en"], ["ja-JP", "en"]]) await systemLocale(browser, system, expected);
   await retainedState(browser);
+  await logcatMemoryCase(browser);
   await bookmarkPopoverFocus(browser);
   for (const theme of ["light", "dark"]) {
     for (const viewport of [{ width: 900, height: 600 }, { width: 1200, height: 800 }]) {

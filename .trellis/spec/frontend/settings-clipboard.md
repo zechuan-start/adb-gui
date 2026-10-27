@@ -87,6 +87,8 @@
 - Browser-check auto push with `mock-tauri.js` (`__ADB_GUI_MOCK_CLIPBOARD_AUTO_PUSH.supported`, `__ADB_GUI_MOCK_EMIT`) at 900x600 and 1200x800 in both themes and languages: row click, persisted switch, watching / pushed / locked / too-large lines without a toast, a stale generation ignored, settings row sync and section reset, and both switches disabled when unsupported.
 - Check dialog layout at 1200x800 and 900x600 in both themes, focus trapping, Escape and keyboard tab navigation.
 - Use a real packaged Tauri app for native capture/clipboard tests. On macOS launch debug bundles through LaunchServices (`open -n`).
+- Before native clipboard writes, preserve complete host formats and device ClipData with a cleanup owner that survives the UI driver's timeout/reset; do not keep the sole snapshot in a disposable REPL or a child process that dies with it. Verify that recovery path on synthetic data first. Keep original clipboard contents out of logs, repository files and disk snapshots.
+- Bound UI waits below the controlling runtime timeout and restore/verify clipboard contents before unrelated long-running QA. A `finally` in a driver that can be terminated is not a recovery guarantee. If the original snapshot is lost, stop further writes, disable automatic push and explicitly report the failed restoration; never reuse an earlier session's restoration claim.
 
 ## 7. Wrong vs Correct
 

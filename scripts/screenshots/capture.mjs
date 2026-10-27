@@ -19,7 +19,7 @@ const REPO_ROOT = path.resolve(SCRIPT_DIR, "../..");
 const OUTPUT_DIR = path.join(REPO_ROOT, "docs/images");
 const MOCK_SCRIPT = path.join(SCRIPT_DIR, "mock-tauri.js");
 const PORT = Number(process.env.SCREENSHOT_PORT ?? 5199);
-const APP_URL = `http://localhost:${PORT}/`;
+const APP_URL = `http://127.0.0.1:${PORT}/`;
 const WINDOW_WIDTH = 1400;
 const WINDOW_HEIGHT = 880;
 const TITLE_BAR_HEIGHT = 30;
@@ -38,10 +38,12 @@ function requestedLocales() {
 }
 
 function startDevServer() {
-  const bin = path.join(REPO_ROOT, "node_modules/.bin/vite");
-  const server = spawn(bin, ["--port", String(PORT), "--strictPort"], {
+  // Invoke Node directly: .bin/vite is a shell shim and cannot be spawned on Windows.
+  const bin = path.join(REPO_ROOT, "node_modules/vite/bin/vite.js");
+  const server = spawn(process.execPath, [bin, "--host", "127.0.0.1", "--port", String(PORT), "--strictPort"], {
     cwd: REPO_ROOT,
     stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
   });
 
   return new Promise((resolve, reject) => {
@@ -62,6 +64,10 @@ function startDevServer() {
     server.on("exit", (code) => {
       clearTimeout(timeout);
       reject(new Error(`Vite dev server exited early with code ${code}`));
+    });
+    server.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
     });
   });
 }

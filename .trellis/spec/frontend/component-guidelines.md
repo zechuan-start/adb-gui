@@ -131,6 +131,25 @@ useVirtualizer({
 
 If a fixed cozy mode changes row height, pass the same `rowHeight` to `estimateSize`, the outer row style, the fixed item-offset resolver, and follow-scroll anchoring. The default non-wrapped path remains exactly 20 px.
 
+### Development Performance Track Payloads
+
+React's development performance tracks serialize changed object props into retained `PerformanceMeasure.detail`. Passing a fresh 10,000-item render projection to a child on every Logcat batch produced roughly 582 KB per component update and exhausted Windows WebView2 memory, even though the store and DOM were bounded.
+
+- Keep the immutable `renderItems` projection in its owner. Pass `itemCount` and a `useCallback((index) => renderItems[index], [renderItems])` accessor to the virtualized child, not the full array.
+- The accessor must change when the projection changes. A constant callback reading a mutable ref can defeat `memo` and leave a full-capacity FIFO showing stale rows when `itemCount` stays at 10,000.
+- Use the same accessor for keys and row lookup. Anchors and crash folds still derive from the same projection.
+- Do not turn off StrictMode/development mode, monkey-patch React, or periodically clear performance records to make memory tests pass.
+- `scripts/screenshots/logcatMemorySmoke.mjs` exercises the real development renderer in fixed and wrapped modes. After filling 10,000 rows, 40 updates must retain less than 1 MiB of component performance details, each detail under 16 KiB, while the latest seq/text remains rendered and DOM row count stays bounded. Assert the performance records exist so a production build cannot silently pass this regression.
+
+```tsx
+// Wrong: React's development prop diff serializes the complete changing FIFO.
+<LogcatVirtualRows renderItems={renderItems} />
+
+// Correct: preserve snapshot identity without putting the array in component props.
+const getRenderItem = useCallback((index: number) => renderItems[index], [renderItems]);
+<LogcatVirtualRows itemCount={renderItems.length} getRenderItem={getRenderItem} />
+```
+
 ### Native Logcat Selection
 
 - Put `select-text` only on the message span and keep every metadata field `select-none`.

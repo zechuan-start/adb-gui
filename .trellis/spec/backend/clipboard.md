@@ -22,6 +22,8 @@
 - Run `adb -s SERIAL shell -T -e none` with a generated fixed command containing `toybox timeout -s KILL 8 app_process`. Bound host input/output/wait to 10 seconds; consume all pipes concurrently with bounded buffers and reap terminated host children.
 - Use shell UID 2000, package/opPackage `com.android.shell`, and matching AttributionSource on API 31+. Instantiate ClipboardManager with the shell wrapper context; delegated `getSystemService` would retain system attribution.
 - Reject locked devices and non-primary users. Read only `ClipData.Item.getText`; do not resolve URIs. Require set readback equality. Never retry an already-submitted set, even after response loss.
+- `DeviceLockState.isLocked()` queries the system Binder interfaces directly: `ITrustManager.isDeviceLocked(0, 0)` (physical device / primary user), falling back to `isDeviceLocked(0)` only when the newer method is absent, and `IWindowManager.isKeyguardLocked()`. Either locked result rejects access. Do not construct `KeyguardManager`: Android 17 API 37 r08 initializes a UI-process `ApplicationSharedMemory` dependency that is unavailable in this shell helper. Do not fabricate that shared memory or bypass either lock check.
+- Missing services/methods, malformed return values and Binder failures fail closed. Unwrap invocation exceptions so an underlying `SecurityException` remains `permission`; never treat a failed lock query as unlocked. The primary-user check still runs before querying lock state.
 - Read back even when `setPrimaryClip` throws, because some ROMs store the clip and then throw. Matching text is success; a mismatch rethrows the submit error; a readback that itself throws reports `readback` (`clipboard.readbackFailed`).
 - Preserve the original app-info parser and read-only retry behavior. Share deployment, not its long-running query lock.
 
@@ -47,6 +49,7 @@
 - Cover atomic deployment staging/failure cleanup and the shared alias lock.
 - On a real device, check set/get/readback, lockscreen rejection, concurrent app-info, and device timeout cleanup. Record tested Android versions separately from compile compatibility.
 - Verify real Tauri native clipboard permissions and paste results; browser-only checks do not prove native I/O.
+- Run `bash scripts/build-app-info-dex/test.sh` for legacy/modern lock interfaces, unlocked/device-locked/keyguard states, permission failures and unavailable services. Rebuild the shared DEX after Java changes. Device regression must cover unlocked get/set and a rejected locked set whose original contents survive unlock; API 36 and API 37 runtime results are distinct evidence.
 
 ## 7. Wrong vs Correct
 

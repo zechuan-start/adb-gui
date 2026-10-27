@@ -21,6 +21,37 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "2026-10-21: macOS + Redmi K70 常规验收通过, 覆盖后台 5 分钟, 设备切换, USB 重连, 锁屏和手动双向传输. 隐私预览下的系统授权未完成, 保留 in_progress 等待兼容性/人工授权复测. 原设置和两端剪贴板已恢复, 测试环境已清理. 详见 validation.md. 2026-10-22: 复测确认 macOS 27.0.1 隐私预览本身不显示授权界面, 最小 AppKit 探针同样无限等待, 本机无法完成授权复测, 非应用缺陷; 恢复默认后新包 916 ms 推送成功.",
-  "meta": {}
+  "notes": "2026-10-21: macOS + Redmi K70 常规验收通过, 覆盖后台 5 分钟, 设备切换, USB 重连, 锁屏和手动双向传输. 隐私预览下的系统授权未完成, 保留 in_progress 等待兼容性/人工授权复测. 原设置和两端剪贴板已恢复, 测试环境已清理. 详见 validation.md. 2026-10-22: 复测确认 macOS 27.0.1 隐私预览本身不显示授权界面, 最小 AppKit 探针同样无限等待, 本机无法完成授权复测, 非应用缺陷; 恢复默认后新包 916 ms 推送成功. 2026-10-25: 已修复 Android 17 API 37 r08 的 KeyguardManager 初始化兼容性问题并重建共用 DEX, 也修复 Windows i18n 测试路径分隔符缺陷. Windows + Android 16 无线真机自动/双向手动剪贴板、锁屏拒绝及解锁后未写入、Android 17 模拟器传输通过. 前端 637/637、Rust 169/169、Java lock-state 测试及构建/格式/clippy 通过. 随后在开发环境定位并修复 Logcat 大数组 props 导致 React 性能记录膨胀: 40 次更新由 23.2 MB 降至 8.9 KB, StrictMode 保留. 新增固定/换行开发回归, 前端 637 项与浏览器 42 场景通过; 无线投屏停止/重启已补验. 另修复 Windows 浏览器测试启动脚本. 保留 in_progress. 两端剪贴板已恢复验证, 测试进程/端口已清理; 临时目录因前序自动审批拒绝删除而保留. 详见 validation.md 最新小节. 修复已提交: 640635d (Android 17), 60357d9 (Logcat/开发回归), d03a71f (Windows i18n); 推送目标为 fork/codex/fix-clipboard-android17. 开发修复最终实例连续约 20 分钟, renderer 最后 385 MB、无 OOM, 日志暂停/恢复通过; 所有本轮进程及测试端口已清理. 2026-10-26: 实际 NSIS/MSI 0.1.11 release 安装、启动、卸载通过，MSI 需用户管理员操作并沿用原安装路径。安装版中英文锁屏 UI、无 toast、解锁不补发、新复制 761ms 恢复通过；Windows 真机+Android 17 模拟器并发、三画质、六开关 UI/argv、参数与路径错误、无线 ADB transport 重连及退出回收补验通过。前端 637 项重跑通过。原 0.1.10 安装的 10 个文件和两个快捷方式逐一哈希恢复，卸载项恢复，进程/端口/设备探针已清理。手机 ClipData 已恢复；电脑原剪贴板因控制运行时超时重置丢失唯一内存快照而未恢复，已告知用户并停止写入。旧 QA 目录删除仍被自动审批拒绝，本轮日志/备份保留。Windows USB 物理拔插、物理 WiFi 中断/换端口、两台物理手机、Linux 原生及置顶/无音频独立测量仍未测；macOS 隐私预览授权未完成，继续 in_progress。详见 validation.md 与 research/windows-release-qa-20261026.md。 2026-10-26 晚间 USB 补验：用户提供数据线后，使用同一 NSIS 0.1.11 安装版完成 USB 真机画面、用户物理拔线后的会话清理/开始禁用、插回自动识别及手动重开投屏/日志，退出回收通过。开始前曾 offline，一次软件 reconnect 恢复，已单独记录。自动推送和 scrcpy clipboard autosync 均关闭，未再次读写剪贴板。卸载后原 0.1.10 的 10 文件、两快捷方式和卸载/安装器注册项全部恢复哈希一致；测试进程及 5037/9223 清理。Windows USB 投屏物理拔插从未测更新为通过，剪贴板重连去旧内容本阶段未复验；其他平台限制及前轮电脑原剪贴板未恢复异常不变。",
+  "meta": {
+    "windows_fix_branch": "codex/fix-clipboard-android17",
+    "windows_fix_commits": [
+      "640635d",
+      "60357d9",
+      "d03a71f"
+    ],
+    "windows_fix_remote": "fork",
+    "windows_release_qa_20261026": {
+      "evidence": "research/windows-release-qa-20261026.md",
+      "product_source_changed": false,
+      "original_install_restored": "0.1.10",
+      "host_clipboard_restored": false,
+      "device_clipboard_restored": true,
+      "old_temp_cleanup": "blocked_by_policy",
+      "remaining": [
+        "Physical WiFi loss / changed port",
+        "Two physical devices",
+        "Linux native",
+        "Independent topmost/audio behavior",
+        "macOS privacy-preview authorization"
+      ],
+      "usb_physical_reconnect": {
+        "result": "passed_for_mirroring",
+        "serial": "275179f2",
+        "installed_version": "0.1.11 NSIS",
+        "original_install_restored": "0.1.10",
+        "clipboard_autopush_reconnect_retested": false,
+        "evidence": "research/windows-release-qa-20261026.md#同日晚间补验windows-usb-物理拔插"
+      }
+    }
+  }
 }

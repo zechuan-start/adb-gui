@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from "node:fs";
-import { resolve, relative } from "node:path";
+import { resolve, relative, sep } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { en } from "./messages/en";
@@ -35,7 +35,7 @@ describe("catalog contracts", () => {
     const root = resolve(import.meta.dirname, "..");
     const violations: string[] = [];
     for (const path of sourceFiles(root)) {
-      const file = relative(root, path);
+      const file = relative(root, path).split(sep).join("/");
       if (/^i18n\/messages\/(?:.*-)?zh-CN\.ts$/.test(file)) continue;
       const source = ts.createSourceFile(
         path,
