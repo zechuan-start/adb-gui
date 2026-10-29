@@ -55,3 +55,11 @@ objc2-app-kit = { version = "0.3", default-features = false, features = ["std", 
 
 [target.'cfg(any(target_os = "macos", windows))'.dependencies]
 arboard = { version = "3", default-features = false }
+
+# Keep target/ small: dev builds keep only line tables for this crate
+# (panic backtraces still show file:line) and no debug info for dependencies.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
