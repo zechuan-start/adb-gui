@@ -8,7 +8,7 @@ use std::sync::{
     Arc, LazyLock, Mutex,
 };
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::{Child, Command};
 use tokio::sync::{watch, Notify};
@@ -53,8 +53,7 @@ static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 #[serde(rename_all = "lowercase")]
 pub enum ScrcpySource {
     Custom,
-    Path,
-    Known,
+    Bundled,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -132,8 +131,11 @@ struct DetectedScrcpy {
 }
 
 #[tauri::command]
-pub async fn detect_scrcpy(custom_path: Option<String>) -> Result<ScrcpyInfo, AppError> {
-    let detected = detect(custom_path.as_deref()).await?;
+pub async fn detect_scrcpy(
+    app: AppHandle,
+    custom_path: Option<String>,
+) -> Result<ScrcpyInfo, AppError> {
+    let detected = detect(&app, custom_path.as_deref()).await?;
     Ok(ScrcpyInfo {
         path: detected.path.to_string_lossy().into_owned(),
         version: detected.version,
@@ -158,7 +160,7 @@ pub async fn start_mirror(
 
     let extra_args = parse_extra_args(&request.extra_args)?;
     // Detect on every start instead of trusting the frontend's cached result.
-    let scrcpy = detect(request.scrcpy_path.as_deref()).await?;
+    let scrcpy = detect(&app, request.scrcpy_path.as_deref()).await?;
     let adb_path = adb::resolve_adb_path(&app)
         .map_err(|error| AppError::new(codes::MIRROR_START_FAILED).cause(error))?;
 
@@ -215,16 +217,8 @@ async fn start_lock(serial: &str) -> Arc<tokio::sync::Mutex<()>> {
     )
 }
 
-async fn detect(custom_path: Option<&str>) -> Result<DetectedScrcpy, AppError> {
-    let path_dirs: Vec<PathBuf> = std::env::var_os("PATH")
-        .map(|value| std::env::split_paths(&value).collect())
-        .unwrap_or_default();
-    let (path, source) = locate_scrcpy(
-        custom_path,
-        &path_dirs,
-        &known_scrcpy_locations(),
-        is_executable_file,
-    )?;
+async fn detect(app: &AppHandle, custom_path: Option<&str>) -> Result<DetectedScrcpy, AppError> {
+    let (path, source) = locate_scrcpy(custom_path, bundled_scrcpy_path(app), is_executable_file)?;
     let version = check_scrcpy_version(&read_version_output(&path).await?)?;
     Ok(DetectedScrcpy {
         path,
@@ -233,60 +227,22 @@ async fn detect(custom_path: Option<&str>) -> Result<DetectedScrcpy, AppError> {
     })
 }
 
+// The official build finds scrcpy-server and its icons next to the executable,
+// so the bundled files need no SCRCPY_SERVER_PATH or icon variables.
+fn bundled_scrcpy_path(app: &AppHandle) -> Result<PathBuf, AppError> {
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|error| AppError::new(codes::MIRROR_NOT_FOUND).detail(error.to_string()))?;
+    Ok(resource_dir.join("scrcpy").join(scrcpy_file_name()))
+}
+
 fn scrcpy_file_name() -> &'static str {
     if cfg!(windows) {
         "scrcpy.exe"
     } else {
         "scrcpy"
     }
-}
-
-// GUI applications do not inherit the login shell PATH (a macOS app opened from
-// Finder cannot see /opt/homebrew/bin), so common install locations follow PATH.
-#[cfg(target_os = "macos")]
-fn known_scrcpy_locations() -> Vec<PathBuf> {
-    [
-        "/opt/homebrew/bin/scrcpy",
-        "/usr/local/bin/scrcpy",
-        "/opt/local/bin/scrcpy",
-    ]
-    .into_iter()
-    .map(PathBuf::from)
-    .collect()
-}
-
-#[cfg(windows)]
-fn known_scrcpy_locations() -> Vec<PathBuf> {
-    let under = |variable: &str, parts: &[&str]| {
-        std::env::var_os(variable).map(|root| {
-            parts
-                .iter()
-                .fold(PathBuf::from(root), |path, part| path.join(part))
-        })
-    };
-    [
-        under(
-            "LOCALAPPDATA",
-            &["Microsoft", "WinGet", "Links", "scrcpy.exe"],
-        ),
-        under("USERPROFILE", &["scoop", "shims", "scrcpy.exe"]),
-        under("ProgramData", &["chocolatey", "bin", "scrcpy.exe"]),
-    ]
-    .into_iter()
-    .flatten()
-    .collect()
-}
-
-#[cfg(not(any(target_os = "macos", windows)))]
-fn known_scrcpy_locations() -> Vec<PathBuf> {
-    [
-        "/usr/local/bin/scrcpy",
-        "/usr/bin/scrcpy",
-        "/snap/bin/scrcpy",
-    ]
-    .into_iter()
-    .map(PathBuf::from)
-    .collect()
 }
 
 fn is_executable_file(path: &Path) -> bool {
@@ -306,8 +262,7 @@ fn is_executable_file(path: &Path) -> bool {
 
 fn locate_scrcpy(
     custom_path: Option<&str>,
-    path_dirs: &[PathBuf],
-    known_locations: &[PathBuf],
+    bundled_path: Result<PathBuf, AppError>,
     is_executable: impl Fn(&Path) -> bool,
 ) -> Result<(PathBuf, ScrcpySource), AppError> {
     if let Some(custom) = custom_path {
@@ -319,20 +274,12 @@ fn locate_scrcpy(
             Err(AppError::new(codes::MIRROR_CUSTOM_PATH_INVALID).param("path", custom))
         };
     }
-    // Relative PATH entries would resolve against the GUI's arbitrary working directory.
-    if let Some(path) = path_dirs
-        .iter()
-        .filter(|dir| dir.is_absolute())
-        .map(|dir| dir.join(scrcpy_file_name()))
-        .find(|path| is_executable(path))
-    {
-        return Ok((path, ScrcpySource::Path));
+    let path = bundled_path?;
+    if is_executable(&path) {
+        Ok((path, ScrcpySource::Bundled))
+    } else {
+        Err(AppError::new(codes::MIRROR_NOT_FOUND))
     }
-    known_locations
-        .iter()
-        .find(|path| is_executable(path))
-        .map(|path| (path.clone(), ScrcpySource::Known))
-        .ok_or_else(|| AppError::new(codes::MIRROR_NOT_FOUND))
 }
 
 async fn read_version_output(path: &Path) -> Result<Output, AppError> {
@@ -962,82 +909,123 @@ mod tests {
         );
     }
 
-    #[test]
-    fn locates_custom_path_then_path_then_known_locations() {
-        let root = std::env::temp_dir().join("adb-gui-mirror-locate");
-        let custom = root.join("custom").join(scrcpy_file_name());
-        let custom_text = custom.to_str().unwrap();
-        let path_dir = root.join("path-bin");
-        let path_dirs = [path_dir.clone()];
-        let in_path = path_dir.join(scrcpy_file_name());
-        let known = vec![root.join("known-1"), root.join("known-2")];
-        let executable =
-            |present: Vec<PathBuf>| move |path: &Path| present.iter().any(|item| item == path);
+    mod locate {
+        use super::*;
 
-        assert_eq!(
-            locate_scrcpy(
-                Some(custom_text),
-                &path_dirs,
-                &known,
-                executable(vec![custom.clone(), in_path.clone()])
-            ),
-            Ok((custom.clone(), ScrcpySource::Custom))
-        );
-        // An invalid custom path never falls back to a working PATH entry.
-        let invalid = locate_scrcpy(
-            Some(custom_text),
-            &path_dirs,
-            &known,
-            executable(vec![in_path.clone(), known[0].clone()]),
-        )
-        .unwrap_err();
-        assert_eq!(invalid.code, codes::MIRROR_CUSTOM_PATH_INVALID);
-        assert_eq!(
-            serde_json::to_value(&invalid).unwrap()["params"],
-            serde_json::json!({ "path": custom_text })
-        );
-        assert_eq!(
-            locate_scrcpy(
-                Some(scrcpy_file_name()),
-                &[],
-                &[],
-                executable(vec![PathBuf::from(scrcpy_file_name())])
+        fn present(paths: Vec<PathBuf>) -> impl Fn(&Path) -> bool {
+            move |path| paths.iter().any(|item| item == path)
+        }
+
+        fn custom_path() -> PathBuf {
+            std::env::temp_dir().join("custom").join(scrcpy_file_name())
+        }
+
+        fn bundled_path() -> PathBuf {
+            std::env::temp_dir()
+                .join("resources")
+                .join("scrcpy")
+                .join(scrcpy_file_name())
+        }
+
+        #[test]
+        fn prefers_a_valid_custom_path_over_the_bundled_one() {
+            let custom = custom_path();
+            assert_eq!(
+                locate_scrcpy(
+                    custom.to_str(),
+                    Ok(bundled_path()),
+                    present(vec![custom.clone(), bundled_path()])
+                ),
+                Ok((custom, ScrcpySource::Custom))
+            );
+        }
+
+        #[test]
+        fn reports_an_invalid_custom_path_without_using_the_bundled_one() {
+            let custom = custom_path();
+            let invalid = locate_scrcpy(
+                custom.to_str(),
+                Ok(bundled_path()),
+                present(vec![bundled_path()]),
             )
-            .unwrap_err()
-            .code,
-            codes::MIRROR_CUSTOM_PATH_INVALID
-        );
-        assert_eq!(
-            locate_scrcpy(
-                None,
-                &[root.join("empty"), path_dir.clone()],
-                &known,
-                executable(vec![in_path.clone(), known[0].clone()])
-            ),
-            Ok((in_path.clone(), ScrcpySource::Path))
-        );
-        assert_eq!(
-            locate_scrcpy(None, &path_dirs, &known, executable(vec![known[1].clone()])),
-            Ok((known[1].clone(), ScrcpySource::Known))
-        );
-        let relative_dirs = [PathBuf::from("relative-bin")];
-        assert_eq!(
-            locate_scrcpy(
-                None,
-                &relative_dirs,
-                &[],
-                executable(vec![relative_dirs[0].join(scrcpy_file_name())])
-            )
-            .unwrap_err()
-            .code,
-            codes::MIRROR_NOT_FOUND
-        );
-        assert_eq!(
-            locate_scrcpy(None, &path_dirs, &known, executable(Vec::new()))
+            .unwrap_err();
+            assert_eq!(invalid.code, codes::MIRROR_CUSTOM_PATH_INVALID);
+            assert_eq!(
+                serde_json::to_value(&invalid).unwrap()["params"],
+                serde_json::json!({ "path": custom.to_str().unwrap() })
+            );
+        }
+
+        #[test]
+        fn rejects_a_relative_custom_path() {
+            let relative = scrcpy_file_name();
+            assert_eq!(
+                locate_scrcpy(
+                    Some(relative),
+                    Ok(bundled_path()),
+                    present(vec![PathBuf::from(relative), bundled_path()])
+                )
                 .unwrap_err()
                 .code,
-            codes::MIRROR_NOT_FOUND
-        );
+                codes::MIRROR_CUSTOM_PATH_INVALID
+            );
+        }
+
+        #[test]
+        fn accepts_a_custom_path_when_the_resource_directory_is_unavailable() {
+            let custom = custom_path();
+            assert_eq!(
+                locate_scrcpy(
+                    custom.to_str(),
+                    Err(AppError::new(codes::MIRROR_NOT_FOUND).detail("no resources")),
+                    present(vec![custom.clone()])
+                ),
+                Ok((custom, ScrcpySource::Custom))
+            );
+        }
+
+        #[test]
+        fn uses_the_bundled_scrcpy_without_a_custom_path() {
+            assert_eq!(
+                locate_scrcpy(None, Ok(bundled_path()), present(vec![bundled_path()])),
+                Ok((bundled_path(), ScrcpySource::Bundled))
+            );
+        }
+
+        #[test]
+        fn reports_a_missing_bundled_scrcpy() {
+            assert_eq!(
+                locate_scrcpy(None, Ok(bundled_path()), present(Vec::new())),
+                Err(AppError::new(codes::MIRROR_NOT_FOUND))
+            );
+        }
+
+        #[test]
+        fn keeps_the_resource_directory_failure_detail() {
+            let failure = AppError::new(codes::MIRROR_NOT_FOUND).detail("no resources");
+            assert_eq!(
+                locate_scrcpy(None, Err(failure.clone()), present(Vec::new())),
+                Err(failure)
+            );
+        }
+    }
+
+    #[test]
+    fn serializes_the_scrcpy_source_for_the_frontend() {
+        for (source, expected) in [
+            (ScrcpySource::Custom, "custom"),
+            (ScrcpySource::Bundled, "bundled"),
+        ] {
+            assert_eq!(
+                serde_json::to_value(ScrcpyInfo {
+                    path: "/app/scrcpy".to_string(),
+                    version: "5.0.1".to_string(),
+                    source,
+                })
+                .unwrap(),
+                serde_json::json!({ "path": "/app/scrcpy", "version": "5.0.1", "source": expected })
+            );
+        }
     }
 
     #[test]

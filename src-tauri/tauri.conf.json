@@ -36,7 +36,8 @@
       "icons/Icon.icon"
     ],
     "resources": {
-      "resources/app-info.dex": "app-info.dex"
+      "resources/app-info.dex": "app-info.dex",
+      "resources/scrcpy/": "scrcpy/"
     },
     "windows": {
       "nsis": {

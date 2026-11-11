@@ -196,7 +196,7 @@ export interface DeviceMetricsExit {
   detail: AppErrorPayload | null;
 }
 
-export type ScrcpySource = "custom" | "path" | "known";
+export type ScrcpySource = "custom" | "bundled";
 
 export interface ScrcpyInfo {
   path: string;

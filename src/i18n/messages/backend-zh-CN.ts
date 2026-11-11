@@ -288,7 +288,7 @@ export const backendErrorsZh = {
   "metrics.stopFailed": ({ session }) => `无法停止设备性能采集会话 ${session}`,
   "metrics.rejected": ({ session }) => `设备性能采集会话 ${session} 已拒绝`,
   "clipboard.invalidImageDimensions": () => "剪贴板图片尺寸无效",
-  "mirror.notFound": () => "未找到 scrcpy",
+  "mirror.notFound": () => "内置 scrcpy 缺失或不可执行, 请重新安装应用",
   "mirror.customPathInvalid": ({ path }) =>
     `scrcpy 路径无效 (${path}), 文件不存在或不可执行`,
   "mirror.versionUnreadable": () => "无法读取 scrcpy 版本",

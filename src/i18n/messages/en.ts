@@ -228,8 +228,7 @@ export const en: Messages = {
       },
       scrcpyPath: {
         label: "scrcpy",
-        description:
-          "Without a chosen file, PATH and then common install locations are searched",
+        description: "The bundled scrcpy is used unless a file is chosen",
       },
       mirrorPreset: {
         label: "Quality",
@@ -296,16 +295,14 @@ export const en: Messages = {
       },
       viewOnlyNote:
         "View only does not send screen off, stay awake or show touches",
-      sources: { custom: "Custom path", path: "PATH", known: "Common location" },
+      sources: { custom: "Custom path", bundled: "Bundled" },
       version: ({ version, source }: { version: string; source: string }) =>
         `Version ${version} · ${source}`,
       detecting: "Looking for scrcpy...",
       desktopOnly: "Available in the desktop app only",
       choose: "Choose the scrcpy executable",
-      reset: "Restore automatic lookup",
+      reset: "Use the bundled scrcpy",
       redetect: "Detect again",
-      installGuide: "Installation guide",
-      linuxInstall: "use the official release package",
     },
 
     startDirectory: {

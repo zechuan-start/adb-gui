@@ -229,7 +229,7 @@ export const toolMessagesZh = {
       stopping: "正在停止...",
       noDevice: "未连接设备",
       detecting: "正在查找 scrcpy...",
-      notFound: "未找到 scrcpy",
+      notFound: "内置 scrcpy 缺失, 请重新安装应用",
       running: ({ device }: { device: string }) => `投屏中 · ${device}`,
       closed: "已关闭",
       disconnected: "设备已断开",

@@ -3,10 +3,7 @@ import { errorText, useT } from "@/i18n";
 import { useEffect, useId, useState } from "react";
 import { FolderOpen, RefreshCw, RotateCcw } from "lucide-react";
 import { ChipGroup } from "@/components/settings/controls/ChipGroup";
-import {
-  MirrorPresetControl,
-  ScrcpyInstallHints,
-} from "@/components/settings/MirrorPreferences";
+import { MirrorPresetControl } from "@/components/settings/MirrorPreferences";
 import { SettingRow, SettingsFieldset } from "@/components/settings/SettingRow";
 import { currentDetection, mirrorOptionChips } from "@/lib/mirror";
 import { scrcpyPathError } from "@/lib/settings";
@@ -148,9 +145,6 @@ function ScrcpyPathPreference() {
             <RefreshCw className="h-4 w-4" />
           </button>
         </div>
-        {detection.status === "error" && detection.error.code === "mirror.notFound" && (
-          <ScrcpyInstallHints className="mt-2 text-[11px]" />
-        )}
         {pickError && (
           <p role="alert" className="mt-2 break-all text-err">
             {errorText(pickError, t)}

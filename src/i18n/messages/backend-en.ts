@@ -355,7 +355,7 @@ export const backendErrorsEn = {
     `Device metrics session ${session} was rejected`,
   "clipboard.invalidImageDimensions": () =>
     "Clipboard image dimensions are invalid",
-  "mirror.notFound": () => "scrcpy was not found",
+  "mirror.notFound": () => "The bundled scrcpy is missing or not executable. Reinstall the app.",
   "mirror.customPathInvalid": ({ path }) =>
     `Invalid scrcpy path (${path}): the file does not exist or is not executable`,
   "mirror.versionUnreadable": () => "Cannot read the scrcpy version",

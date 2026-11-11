@@ -11,15 +11,6 @@ import {
 } from "@/lib/settings";
 import type { MirrorOutcome, MirrorRequest, ScrcpyInfo } from "@/lib/tauri";
 
-export const SCRCPY_INSTALL_URL = "https://github.com/Genymobile/scrcpy#get-the-app";
-
-// Commands are product data, not prose; Linux points at the release packages
-// because distribution repositories often ship scrcpy 1.x.
-export const SCRCPY_INSTALL_COMMANDS = [
-  { platform: "macOS", command: "brew install scrcpy" },
-  { platform: "Windows", command: "winget install --exact Genymobile.scrcpy" },
-] as const;
-
 export type MirrorDetection =
   | { status: "idle" }
   | { status: "detecting"; scrcpyPath: string | null }

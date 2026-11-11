@@ -1,10 +1,7 @@
 import { errorText, useT } from "@/i18n";
 import { useEffect, type ReactNode } from "react";
 import { ArrowRight, Play, RefreshCw, Square } from "lucide-react";
-import {
-  MirrorPresetControl,
-  ScrcpyInstallHints,
-} from "@/components/settings/MirrorPreferences";
+import { MirrorPresetControl } from "@/components/settings/MirrorPreferences";
 import { getDeviceBySerial, getDeviceDisplayLabel, isOnlineDevice } from "@/lib/device";
 import {
   currentDetection,
@@ -166,29 +163,10 @@ function statusLine(
     case "detecting":
       return { tone: "muted", text: t.tools.mirrorTool.detecting };
     case "notFound":
-      return {
-        tone: "err",
-        text: t.tools.mirrorTool.notFound,
-        extra: (
-          <>
-            <ScrcpyInstallHints />
-            {parts.redetect}
-          </>
-        ),
-      };
-    case "tooOld":
-      return {
-        tone: "err",
-        text: errorText(view.error, t),
-        extra: (
-          <>
-            <ScrcpyInstallHints />
-            {parts.redetect}
-          </>
-        ),
-      };
+      return { tone: "err", text: t.tools.mirrorTool.notFound, extra: parts.redetect };
     case "pathInvalid":
       return { tone: "err", text: errorText(view.error, t), title: errorText(view.error, t), extra: parts.openSettings };
+    case "tooOld":
     case "detectionFailed":
       return {
         tone: "err",

@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/mirror.md", "reason": "scrcpy discovery, argv, session contracts being changed"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "AppError payload rules for mirror.notFound"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Resource mapping and Rust quality rules"}
+{"file": ".trellis/spec/frontend/i18n.md", "reason": "Bilingual copy changes and removed messages"}
+{"file": ".trellis/spec/frontend/settings-clipboard.md", "reason": "mirror preference group and settings row behavior"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend test and smoke requirements"}

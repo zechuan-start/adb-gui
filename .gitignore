@@ -27,6 +27,9 @@ dist-ssr
 src-tauri/target
 src-tauri/gen
 scripts/build-app-info-dex/out
+# Installed by scripts/fetch-scrcpy.mjs
+src-tauri/resources/scrcpy/*
+!src-tauri/resources/scrcpy/.gitkeep
 
 # Local secrets (signing keys)
 .local/

@@ -6,16 +6,17 @@ import { logcatMemoryCase } from "./logcatMemorySmoke.mjs";
 const PANES = ["tools", "apps", "files", "codegen", "decoder", "perf"];
 const SECTIONS = ["general", "logcat", "capture", "mirror", "files", "apps", "codegen"];
 const MIRROR_SERIAL = "9A271FFAZ004TR";
+const BUNDLED_SCRCPY = "/Applications/ADB GUI.app/Contents/Resources/scrcpy/scrcpy";
 const MIRROR_TEXT = {
   en: {
     start: "Start mirroring", stop: "Stop mirroring", running: "Mirroring · Pixel 7", failed: "Failed to start:",
-    disconnected: "Device disconnected", notFound: "scrcpy not found", tooOld: "scrcpy 1.21 is too old",
-    pathInvalid: "Invalid scrcpy path", rows: ["scrcpy", "Quality", "Options", "Extra arguments"], reset: "Restore defaults",
+    disconnected: "Device disconnected", notFound: "The bundled scrcpy is missing", tooOld: "scrcpy 1.21 is too old",
+    pathInvalid: "Invalid scrcpy path", version: "Version 5.0.1 · Bundled", rows: ["scrcpy", "Quality", "Options", "Extra arguments"], reset: "Restore defaults",
   },
   "zh-CN": {
     start: "开始投屏", stop: "停止投屏", running: "投屏中 · Pixel 7", failed: "启动失败:",
-    disconnected: "设备已断开", notFound: "未找到 scrcpy", tooOld: "scrcpy 1.21 过旧",
-    pathInvalid: "scrcpy 路径无效", rows: ["scrcpy", "画质", "选项", "额外参数"], reset: "恢复默认",
+    disconnected: "设备已断开", notFound: "内置 scrcpy 缺失", tooOld: "scrcpy 1.21 过旧",
+    pathInvalid: "scrcpy 路径无效", version: "版本 5.0.1 · 内置", rows: ["scrcpy", "画质", "选项", "额外参数"], reset: "恢复默认",
   },
 };
 
@@ -125,6 +126,7 @@ async function mirrorCase(browser, locale, theme, viewport) {
     try {
       await status.getByText(text[scrcpy]).waitFor();
       assert(await button.isDisabled(), `${label}/${scrcpy}: start stays disabled`);
+      assert.doesNotMatch(await status.innerText(), /brew|winget/i, `${label}/${scrcpy}: no install hints`);
       await layout(page, `${label}/${scrcpy}`);
       assert.deepEqual(errors, [], `${label}/${scrcpy}: browser errors`);
     } finally { await context.close(); }
@@ -164,7 +166,8 @@ async function mirrorCase(browser, locale, theme, viewport) {
     assert.equal(await page.locator("#settings-nav-mirror").getAttribute("aria-current"), "true", `${label}: anchor index marks the mirror section`);
     const section = page.locator("#settings-section-mirror");
     for (const row of text.rows) await section.getByText(row, { exact: true }).first().waitFor();
-    assert.equal(await section.getByText("/opt/homebrew/bin/scrcpy").count(), 1, `${label}: detected path shown`);
+    assert.equal(await section.getByText(BUNDLED_SCRCPY).count(), 1, `${label}: bundled path shown`);
+    await section.getByText(text.version, { exact: true }).waitFor();
     const extra = section.getByRole("textbox");
     await extra.fill("--max-fps=60 -s abc");
     await section.locator('[role="alert"]').filter({ hasText: "-s" }).waitFor();

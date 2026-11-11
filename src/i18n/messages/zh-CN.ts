@@ -220,7 +220,7 @@ export const zhCN = {
       },
       scrcpyPath: {
         label: "scrcpy",
-        description: "未选择文件时, 依次在 PATH 和常见安装位置查找",
+        description: "未选择文件时使用内置 scrcpy",
       },
       mirrorPreset: {
         label: "画质",
@@ -302,16 +302,14 @@ export const zhCN = {
         viewOnly: "仅查看",
       },
       viewOnlyNote: "仅查看时不传入息屏投屏, 保持唤醒和显示触摸",
-      sources: { custom: "自定义路径", path: "PATH", known: "常见位置" },
+      sources: { custom: "自定义路径", bundled: "内置" },
       version: ({ version, source }: { version: string; source: string }) =>
         `版本 ${version} · ${source}`,
       detecting: "正在查找 scrcpy...",
       desktopOnly: "仅在桌面应用中可用",
       choose: "选择 scrcpy 可执行文件",
-      reset: "恢复自动查找",
+      reset: "恢复使用内置 scrcpy",
       redetect: "重新检测",
-      installGuide: "安装指引",
-      linuxInstall: "使用官方发布包",
     },
 
     startDirectory: {

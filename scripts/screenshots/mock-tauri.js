@@ -467,7 +467,7 @@
     const failure = MIRROR_FAILURES[window.__ADB_GUI_MOCK_SCRCPY ?? "ready"];
     if (failure) throw failure(customPath);
     return customPath === null
-      ? { path: "/opt/homebrew/bin/scrcpy", version: "5.0.1", source: "known" }
+      ? { path: "/Applications/ADB GUI.app/Contents/Resources/scrcpy/scrcpy", version: "5.0.1", source: "bundled" }
       : { path: customPath, version: "5.0.1", source: "custom" };
   }
 

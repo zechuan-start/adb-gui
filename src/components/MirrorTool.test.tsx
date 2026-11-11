@@ -63,11 +63,18 @@ const DEVICE: DeviceInfo = {
   alias_identity: null,
   device_id: null,
 };
+const BUNDLED_PATH = "/Applications/ADB GUI.app/Contents/Resources/scrcpy/scrcpy";
 const READY: MirrorDetection = {
   status: "ready",
   scrcpyPath: null,
-  info: { path: "/opt/homebrew/bin/scrcpy", version: "5.0.1", source: "known" },
+  info: { path: BUNDLED_PATH, version: "5.0.1", source: "bundled" },
 };
+const NOT_FOUND = { status: "error", scrcpyPath: null, error: { code: "mirror.notFound" } } as const;
+const TOO_OLD = {
+  status: "error",
+  scrcpyPath: null,
+  error: { code: "mirror.tooOld", params: { version: "1.21", minimum: "2.0" } },
+} as const;
 const LONG_ERROR = "Could not open video stream: ".repeat(8).trim();
 
 function render({
@@ -109,10 +116,10 @@ describe("mirror tool states", () => {
   it.each([
     ["no device", { device: null }, zhCN.tools.mirrorTool.noDevice, en.tools.mirrorTool.noDevice, false],
     ["detecting", { detection: { status: "detecting", scrcpyPath: null } as const }, zhCN.tools.mirrorTool.detecting, en.tools.mirrorTool.detecting, false],
-    ["not found", { detection: { status: "error", scrcpyPath: null, error: { code: "mirror.notFound" } } as const }, zhCN.tools.mirrorTool.notFound, en.tools.mirrorTool.notFound, false],
+    ["bundled scrcpy missing", { detection: NOT_FOUND }, zhCN.tools.mirrorTool.notFound, en.tools.mirrorTool.notFound, false],
     [
       "too old",
-      { detection: { status: "error", scrcpyPath: null, error: { code: "mirror.tooOld", params: { version: "1.21", minimum: "2.0" } } } as const },
+      { detection: TOO_OLD },
       zhCN.errors["mirror.tooOld"]({ version: "1.21", minimum: "2.0" }),
       en.errors["mirror.tooOld"]({ version: "1.21", minimum: "2.0" }),
       false,
@@ -151,11 +158,18 @@ describe("mirror tool states", () => {
     expect(markup).not.toMatch(/\p{Script=Han}/u);
   });
 
-  it("offers install commands when scrcpy is missing", () => {
-    const markup = render({ detection: { status: "error", scrcpyPath: null, error: { code: "mirror.notFound" } } });
-    expect(markup).toContain("brew install scrcpy");
-    expect(markup).toContain("winget install --exact Genymobile.scrcpy");
-    expect(markup).toContain(zhCN.settings.mirror.installGuide);
+  it("offers only a new detection when the bundled scrcpy is missing", () => {
+    const markup = render({ detection: NOT_FOUND });
+    expect(markup).toContain(zhCN.tools.mirrorTool.redetect);
+    expect(markup).not.toContain(zhCN.tools.mirrorTool.openSettings);
+    expect(markup).not.toMatch(/brew|winget/i);
+  });
+
+  it("points a too-old custom scrcpy at settings and a new detection", () => {
+    const markup = render({ detection: TOO_OLD });
+    expect(markup).toContain(zhCN.tools.mirrorTool.redetect);
+    expect(markup).toContain(zhCN.tools.mirrorTool.openSettings);
+    expect(markup).not.toMatch(/brew|winget/i);
   });
 
   it("shows scrcpy's error beside the retry button and keeps the full text in the title", () => {
@@ -217,8 +231,8 @@ describe("mirror settings section", () => {
 
   it("renders the detected scrcpy and all four rows", () => {
     const markup = section();
-    expect(markup).toContain("/opt/homebrew/bin/scrcpy");
-    expect(markup).toContain(zhCN.settings.mirror.version({ version: "5.0.1", source: zhCN.settings.mirror.sources.known }));
+    expect(markup).toContain(BUNDLED_PATH);
+    expect(markup).toContain(zhCN.settings.mirror.version({ version: "5.0.1", source: zhCN.settings.mirror.sources.bundled }));
     for (const label of [
       zhCN.settings.rows.scrcpyPath.label,
       zhCN.settings.rows.mirrorPreset.label,

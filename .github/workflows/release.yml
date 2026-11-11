@@ -87,15 +87,19 @@ jobs:
         include:
           - name: macOS arm64
             platform: macos-latest
+            target: aarch64-apple-darwin
             args: "--target aarch64-apple-darwin"
           - name: macOS x64
             platform: macos-latest
+            target: x86_64-apple-darwin
             args: "--target x86_64-apple-darwin"
           - name: Windows x64
             platform: windows-latest
+            target: x86_64-pc-windows-msvc
             args: ""
           - name: Linux x64
             platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
             args: ""
 
     runs-on: ${{ matrix.platform }}
@@ -141,6 +145,9 @@ jobs:
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Fetch bundled scrcpy
+        run: node scripts/fetch-scrcpy.mjs --target ${{ matrix.target }}
 
       - name: Build workflow artifacts
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}

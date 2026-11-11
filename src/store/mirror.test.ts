@@ -17,7 +17,7 @@ function deferred<T>() {
 
 function api(overrides: Partial<MirrorApi> = {}): MirrorApi {
   return {
-    detect: vi.fn(async (): Promise<ScrcpyInfo> => ({ path: "/opt/homebrew/bin/scrcpy", version: "5.0.1", source: "known" })),
+    detect: vi.fn(async (): Promise<ScrcpyInfo> => ({ path: "/Applications/ADB GUI.app/Contents/Resources/scrcpy/scrcpy", version: "5.0.1", source: "bundled" })),
     start: vi.fn(async (serial: string): Promise<MirrorSessionInfo> => ({ serial, session_id: 1 })),
     stop: vi.fn(async () => {}),
     list: vi.fn(async (): Promise<MirrorSessionInfo[]> => []),

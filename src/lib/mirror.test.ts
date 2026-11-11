@@ -14,7 +14,7 @@ import { defaultSettings } from "@/lib/settings";
 const ready: MirrorDetection = {
   status: "ready",
   scrcpyPath: null,
-  info: { path: "/opt/homebrew/bin/scrcpy", version: "5.0.1", source: "known" },
+  info: { path: "/Applications/ADB GUI.app/Contents/Resources/scrcpy/scrcpy", version: "5.0.1", source: "bundled" },
 };
 const base = { native: true, online: true, detection: ready, session: undefined, lastExit: undefined };
 const failed = (code: string, params?: Record<string, string>): MirrorDetection => ({

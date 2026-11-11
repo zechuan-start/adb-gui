@@ -235,7 +235,7 @@ export const toolMessagesEn = {
       stopping: "Stopping...",
       noDevice: "No device connected",
       detecting: "Looking for scrcpy...",
-      notFound: "scrcpy not found",
+      notFound: "The bundled scrcpy is missing. Reinstall the app.",
       running: ({ device }: { device: string }) => `Mirroring · ${device}`,
       closed: "Closed",
       disconnected: "Device disconnected",

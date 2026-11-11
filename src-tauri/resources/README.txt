@@ -18,6 +18,25 @@ tauri.conf.json: every platform would inherit all three adb builds.
 Source: https://developer.android.com/tools/releases/platform-tools
 Refresh with: scripts/fetch-platform-tools.sh
 
+Bundled scrcpy
+
+scrcpy/ holds the official scrcpy release for one target and is not committed.
+Only scrcpy/.gitkeep is tracked, so Tauri can resolve the directory before the
+files exist. Unlike adb, each installer needs a build for its CPU architecture
+and Tauri resource maps only vary by operating system, so CI fills this
+directory for the target it is building.
+
+Local development: run `node scripts/fetch-scrcpy.mjs` once. Without it the app
+builds and runs, but mirroring reports that the bundled scrcpy is missing.
+Other targets: `node scripts/fetch-scrcpy.mjs --target <rust-triple>`.
+
+Source: https://github.com/Genymobile/scrcpy/releases
+Update: change VERSION and the four checksums (from the release's
+SHA256SUMS.txt) in scripts/fetch-scrcpy.mjs, then compare the release contents
+with the file lists there. Windows DLL names change with FFmpeg and SDL.
+The official package's adb is deliberately left out: scrcpy runs with the
+application's adb through the ADB environment variable.
+
 App information helper
 
 app-info.dex is loaded on an Android device with app_process to collect

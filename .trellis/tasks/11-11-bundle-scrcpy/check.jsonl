@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/mirror.md", "reason": "Implementation must match the updated scrcpy contract"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Rust checks and resource mapping"}
+{"file": ".trellis/spec/frontend/i18n.md", "reason": "Both locales stay in sync after removing install hints"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend checks and browser smoke coverage"}
