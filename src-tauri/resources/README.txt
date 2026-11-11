@@ -10,6 +10,11 @@ Layout:
   windows/AdbWinApi.dll
   windows/AdbWinUsbApi.dll
 
+Each installer ships only its own platform directory. tauri.conf.json bundles
+app-info.dex, and tauri.{macos,linux,windows}.conf.json each add one directory.
+Tauri merges those maps by key, so never map the whole resources/ directory in
+tauri.conf.json: every platform would inherit all three adb builds.
+
 Source: https://developer.android.com/tools/releases/platform-tools
 Refresh with: scripts/fetch-platform-tools.sh
 

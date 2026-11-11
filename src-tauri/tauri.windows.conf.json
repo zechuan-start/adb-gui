@@ -11,5 +11,10 @@
         "decorations": false
       }
     ]
+  },
+  "bundle": {
+    "resources": {
+      "resources/windows/": "windows/"
+    }
   }
 }
